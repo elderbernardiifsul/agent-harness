@@ -7,7 +7,7 @@ import { PADROES, validarConfig } from '../lib/config.mjs';
 import { gravarJson, lerJson } from '../lib/estado.mjs';
 import { siglaValida, siglaDeLogin } from '../lib/frente.mjs';
 import { git, existeRamo, ramoAtual } from '../lib/git.mjs';
-import { loginAtual } from '../lib/github.mjs';
+import { loginAtual, protegerRamo, repoAtual } from '../lib/github.mjs';
 import { VERSAO } from '../versao.mjs';
 
 export const descricao = 'instala o harness neste projeto, a partir do clone do agent-harness';
@@ -22,6 +22,9 @@ const PREFIXO_NUCLEO = '.harness/nucleo/';
 const COM_VALOR = new Set(['--projeto', '--sigla', '--agentes', '--teste']);
 const ARQUIVO_CLAUDE = '.claude/settings.json';
 const FIM_DO_COMANDO_DO_HARNESS = 'tools/ah gancho claude-code';
+const ARQUIVO_CI = '.github/workflows/ah-ci.yml';
+const MARCA_DA_CI = '# Gerado pelo agent-harness (ah init)';
+const COMANDO_DA_CI_DESLIGADA = 'echo "defina ci.comandoDeTeste em .harness/config.json"';
 const eObjeto = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 // Lista os arquivos do núcleo a copiar. Links simbólicos nunca são seguidos (ficam em `ignorados`),
@@ -43,12 +46,13 @@ export function listarArquivosDoNucleo(dir) {
 }
 
 function lerOpcoes(args) {
-  const o = { sobrescrever: false };
+  const o = { sobrescrever: false, 'sem-protecao': false };
   for (let i = 0; i < args.length; i++) {
     let [nome, valor] = args[i].startsWith('--') && args[i].includes('=') ? [args[i].slice(0, args[i].indexOf('=')), args[i].slice(args[i].indexOf('=') + 1)] : [args[i], undefined];
     if (nome === '--sobrescrever' && valor === undefined) { o.sobrescrever = true; continue; }
+    if (nome === '--sem-protecao' && valor === undefined) { o['sem-protecao'] = true; continue; }
     if (!COM_VALOR.has(nome)) {
-      throw new ErroDeUso(`Opção desconhecida: ${args[i].slice(0, 40)}\nPróximo passo: use ah init [--projeto <nome>] [--sigla <sigla>] [--agentes claude-code] [--teste "<comando>"] [--sobrescrever]`);
+      throw new ErroDeUso(`Opção desconhecida: ${args[i].slice(0, 40)}\nPróximo passo: use ah init [--projeto <nome>] [--sigla <sigla>] [--agentes claude-code] [--teste "<comando>"] [--sem-protecao] [--sobrescrever]`);
     }
     if (valor === undefined) {
       valor = args[++i];
@@ -69,6 +73,7 @@ function montarConfig(modeloJson, o, raiz) {
   const cfg = JSON.parse(modeloJson);
   cfg.projeto = o.projeto ?? nomeDeProjetoPadrao(raiz);
   if (o.teste !== undefined) cfg.ci.comandoDeTeste = o.teste;
+  if (typeof cfg.ci.comandoDeTeste === 'string') textoDeYaml(cfg.ci.comandoDeTeste, 'ci.comandoDeTeste');
   if (o.agentes !== undefined) {
     const lista = o.agentes.split(',').map(s => s.trim()).filter(Boolean);
     const ruim = lista.find(a => !AGENTES_SUPORTADOS.includes(a));
@@ -83,6 +88,25 @@ function montarConfig(modeloJson, o, raiz) {
     throw new ErroDeUso(`Valor inválido para ${e.campo}: ${e.motivo}\nPróximo passo: corrija a opção e rode ah init de novo`);
   }
   return cfg;
+}
+
+// Texto de um escalar YAML numa linha: simples quando for seguro, senão entre aspas simples.
+// Quebra de linha e caracteres de controle não cabem numa linha e são recusados.
+export function textoDeYaml(texto, campo) {
+  if (/[\u0000-\u001f\u007f\u0085\u2028\u2029]/.test(texto)) {
+    throw new ErroDeUso(`Valor inválido para ${campo}: não pode ter quebra de linha nem caractere de controle\nPróximo passo: escreva o comando numa linha só (use um script do projeto se precisar de vários passos)`);
+  }
+  const simples = /^[A-Za-z0-9_./][^:#'"`@&*!|>%{}\[\],?]*$/.test(texto) && !/\s$/.test(texto) && !/:(\s|$)/.test(texto);
+  return simples ? texto : `'${texto.replaceAll("'", "''")}'`;
+}
+
+// Texto do workflow a partir do modelo; sem comando, o trabalho nasce desligado.
+function textoDaCi(modelo, base, comando) {
+  const ligado = typeof comando === 'string' && comando.length > 0;
+  return modelo
+    .replaceAll('{{BASE}}', textoDeYaml(base, 'git.base'))
+    .replaceAll('{{DESLIGADO}}', ligado ? '' : '    if: false\n')
+    .replaceAll('{{COMANDO}}', textoDeYaml(ligado ? comando : COMANDO_DA_CI_DESLIGADA, 'ci.comandoDeTeste'));
 }
 
 function resolverSigla(o, amb, arquivoMaquina) {
@@ -176,6 +200,12 @@ export async function executar(args, amb) {
   const configExiste = fs.existsSync(path.join(raiz, '.harness', 'config.json'));
   const cfg = montarConfig(fs.readFileSync(path.join(dirModelos, 'config.json'), 'utf8'), o, raiz);
 
+  const configLida = configExiste ? lerJson(path.join(raiz, '.harness', 'config.json'), {}) : null;
+  const configFinal = configExiste
+    ? { git: { ...PADROES.git, ...(configLida?.git ?? {}) }, github: { ...PADROES.github, ...(configLida?.github ?? {}) }, ci: { ...PADROES.ci, ...(configLida?.ci ?? {}) } }
+    : cfg;
+  const textoCi = textoDaCi(fs.readFileSync(path.join(dirModelos, 'ci', 'ah-ci.yml'), 'utf8'), configFinal.git.base, configFinal.ci.comandoDeTeste);
+
   let agentesFinais = cfg.agentes;
   try {
     if (configExiste) agentesFinais = lerJson(path.join(raiz, '.harness', 'config.json'), {})?.agentes ?? cfg.agentes;
@@ -188,9 +218,10 @@ export async function executar(args, amb) {
   const conflitos = [];
   const mantidos = [];
   const mesclados = [];
+  const atualizados = [];
 
   // Grava `conteudo` em `rel` (caminho com "/"), sem sair da raiz do projeto nem seguir links.
-  function colocar(rel, conteudo, { modo, nunca = false, mescla = false } = {}) {
+  function colocar(rel, conteudo, { modo, nunca = false, mescla = false, atualizaSe = null } = {}) {
     const destino = path.join(raiz, ...rel.split('/'));
     const pai = raizReal(path.dirname(destino));
     if (pai !== real && !pai.startsWith(real + path.sep)) {
@@ -211,6 +242,7 @@ export async function executar(args, amb) {
       }
       if (nunca) { mantidos.push(rel); return; }
       if (mescla) { escrever(); mesclados.push(rel); return; }
+      if (atualizaSe && atualizaSe(fs.readFileSync(destino, 'utf8'))) { escrever(); atualizados.push(rel); return; }
       if (!o.sobrescrever) { conflitos.push(rel); return; }
       escrever(); sobrescritos.push(rel); return;
     }
@@ -243,12 +275,14 @@ export async function executar(args, amb) {
   // Ganchos do Claude Code: o conteúdo já é a mescla do arquivo atual, então pode trocá-lo.
   if (settingsClaude !== null) colocar(ARQUIVO_CLAUDE, Buffer.from(settingsClaude), { mescla: true });
 
+  // CI modelo: o init reescreve o arquivo enquanto ele tiver a marca do harness (o comando pode ter mudado na configuração).
+  colocar(ARQUIVO_CI, Buffer.from(textoCi), { atualizaSe: atual => atual.includes(MARCA_DA_CI) });
+
   // 4. Sigla na máquina.
   const novo = { ...(sigla.gravado ?? {}), sigla: sigla.sigla, login: sigla.login };
   gravarJson(arquivoMaquina, novo);
 
   // 5. Ramos locais que faltam (sem trocar de ramo e sem empurrar).
-  const configFinal = configExiste ? { git: { ...PADROES.git, ...(lerJson(path.join(raiz, '.harness', 'config.json'), {}).git ?? {}) } } : cfg;
   const nomesRamos = [configFinal.git.base, ...configFinal.git.protegidos];
   const origem = configFinal.git.protegidos.find(r => existeRamo(raiz, r, { env: amb.env })) ?? ramoAtual(raiz, amb.env) ?? 'HEAD';
   const ramosCriados = [];
@@ -259,6 +293,28 @@ export async function executar(args, amb) {
     else amb.avisar(`Não criei o ramo ${ramo.slice(0, 60)}: ${(r ? r.erro.trim() : 'nome inválido') || 'o git recusou'}\n`);
   }
 
+  // 6. Proteção dos ramos no servidor: falha nunca derruba o init.
+  const protegidos = [];
+  if (!o['sem-protecao']) {
+    const remoto = configFinal.git.remoto;
+    const opcoes = { cwd: raiz, env: amb.env };
+    if (git(['remote', 'get-url', remoto], opcoes).codigo !== 0) {
+      amb.avisar(`Sem o remoto ${remoto.slice(0, 40)}: não protegi os ramos no servidor. Só a trava local protege.\nFaça: adicione o remoto, dê o primeiro push e rode ah init de novo\n`);
+    } else {
+      const repo = configFinal.github?.repo ?? repoAtual(opcoes);
+      for (const ramo of configFinal.git.protegidos) {
+        const noRemoto = !ramo.startsWith('-') && git(['ls-remote', '--exit-code', '--heads', remoto, `refs/heads/${ramo}`], opcoes).codigo === 0;
+        if (!noRemoto) { amb.avisar(`${ramo.slice(0, 60)} ainda não está no remoto; rode ah init de novo depois do primeiro push\n`); continue; }
+        const r = repo ? protegerRamo(ramo, { ...opcoes, repo }) : { ok: false, motivo: 'não consegui descobrir o repositório do GitHub (o gh está instalado e logado?)' };
+        if (r.ok) protegidos.push(ramo);
+        else amb.avisar(`Sem proteção no servidor para ${ramo.slice(0, 60)}: ${r.motivo}. Só a trava local protege.\n`);
+      }
+    }
+  }
+  if (!(typeof configFinal.ci.comandoDeTeste === 'string' && configFinal.ci.comandoDeTeste)) {
+    amb.avisar('CI criada desligada: defina ci.comandoDeTeste em .harness/config.json e rode ah init de novo\n');
+  }
+
   // Relatório.
   const dosArquivos = criados.filter(r => !r.startsWith(PREFIXO_NUCLEO));
   const doNucleo = criados.filter(r => r.startsWith(PREFIXO_NUCLEO)).length;
@@ -267,6 +323,8 @@ export async function executar(args, amb) {
   linhas.push(...dosArquivos.map(r => `  ${r}`), ...ramosCriados.map(r => `  ramo ${r} (local)`));
   if (linhas.length) amb.escrever(`Criei:\n${linhas.join('\n')}\n`);
   if (sobrescritos.length) amb.escrever(`Sobrescrevi:\n${sobrescritos.map(r => `  ${r}`).join('\n')}\n`);
+  if (atualizados.length) amb.escrever(`Atualizei:\n${atualizados.map(r => `  ${r}`).join('\n')}\n`);
+  if (protegidos.length) amb.escrever(`Protegi no servidor: ${protegidos.join(', ')}\n`);
   if (mesclados.length) amb.escrever(`Acrescentei os ganchos do harness em:\n${mesclados.map(r => `  ${r}`).join('\n')}\n`);
   if (mantidos.length) amb.escrever(`Mantive como estavam:\n${mantidos.map(r => `  ${r}`).join('\n')}\n`);
   if (ignorados.length) amb.escrever(`Não copiei links simbólicos do núcleo:\n${ignorados.map(r => `  ${r}`).join('\n')}\n`);

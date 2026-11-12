@@ -1,0 +1,17 @@
+# Gerado pelo agent-harness (ah init). Para personalizar, apague esta linha: o init deixa de reescrever o arquivo.
+name: ah-ci
+
+on:
+  pull_request:
+  push:
+    branches: [ {{BASE}} ]
+
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+{{DESLIGADO}}    steps:
+      - uses: actions/checkout@v4
+      - run: {{COMANDO}}

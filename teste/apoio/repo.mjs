@@ -98,9 +98,9 @@ export function escreverConfig(p, config = {}) {
 // Repositório de teste com o init já aplicado e commitado (por caminho), para os testes partirem de um repositório limpo.
 export function criarProjeto(opcoes = {}) {
   const p = criarRepo(opcoes);
-  const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as']);
+  const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']);
   if (r.codigo !== 0) throw new Error(`ah init falhou: ${r.erro}`);
-  for (const args of [['add', '--', '.harness', 'tools', 'docs/agents', '.claude'], ['commit', '-m', 'chore: instala o harness']]) {
+  for (const args of [['add', '--', '.harness', 'tools', 'docs/agents', '.claude', '.github'], ['commit', '-m', 'chore: instala o harness']]) {
     const g = p.git(args);
     if (g.codigo !== 0) throw new Error(`git ${args.join(' ')} falhou: ${g.erro}`);
   }
