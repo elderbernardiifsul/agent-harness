@@ -5,7 +5,9 @@ import { writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { criarRepo } from './apoio/repo.mjs';
-import { varrer } from '../ferramentas/varre-termos.mjs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { varrer, FalhaDoGit } from '../ferramentas/varre-termos.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const script = join(aqui, '..', 'ferramentas', 'varre-termos.mjs');
@@ -40,4 +42,28 @@ test('sem lista sai com código 2', () => {
     codigo = e.status;
   }
   assert.equal(codigo, 2);
+});
+
+test('raiz que não é repositório git lança com motivo e próximo passo', () => {
+  const pasta = mkdtempSync(join(tmpdir(), 'ah-sem-git-'));
+  try {
+    assert.throws(
+      () => varrer({ raiz: pasta, termos: ['x'] }),
+      (e) => e instanceof FalhaDoGit && Boolean(e.motivo) && Boolean(e.proximo),
+    );
+  } finally {
+    rmSync(pasta, { recursive: true, force: true });
+  }
+});
+
+test('repositório sem commits não lança', () => {
+  const pasta = mkdtempSync(join(tmpdir(), 'ah-vazio-'));
+  try {
+    execFileSync('git', ['init', '-b', 'main', pasta], { stdio: 'pipe' });
+    writeFileSync(join(pasta, 'a.txt'), 'nada\n');
+    execFileSync('git', ['add', 'a.txt'], { cwd: pasta, stdio: 'pipe' });
+    assert.deepEqual(varrer({ raiz: pasta, termos: ['x'] }), []);
+  } finally {
+    rmSync(pasta, { recursive: true, force: true });
+  }
 });
