@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ErroDeUso, raizPrincipal, dirEstado as caminhoDoEstado } from '../lib/caminhos.mjs';
 import { ErroDeConfig, carregarConfig, configAusente } from '../lib/config.mjs';
-import { ErroDeEstado } from '../lib/estado.mjs';
+import { ErroDeEstado, registrarEvento } from '../lib/estado.mjs';
 import { idDaSessao } from '../lib/sessao.mjs';
 
 const DIR_COMANDOS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'comandos');
@@ -47,6 +47,7 @@ export async function despachar(argv, {
   if (!NOME_VALIDO.test(nome) || !listar(dirComandos).includes(nome)) {
     return recusar(avisar, `comando desconhecido: ${nome.slice(0, 40)}`, 'rode `ah --help` para ver os comandos');
   }
+  let amb = null;
   try {
     const modulo = await import(pathToFileURL(path.join(dirComandos, `${nome}.mjs`)).href);
     if (pedeAjuda(args)) {
@@ -83,7 +84,7 @@ export async function despachar(argv, {
       return recusar(avisar, 'não sei qual é a sessão', 'defina AH_SESSAO ou ligue o adaptador do agente');
     }
 
-    const amb = {
+    amb = {
       cwd, env, raiz, config,
       dirEstado: config ? caminhoDoEstado(config.projeto, env, process.platform, os.homedir()) : null,
       sessaoId: sessaoId || null,
@@ -93,6 +94,12 @@ export async function despachar(argv, {
   } catch (e) {
     if (e instanceof ErroDeUso || e instanceof ErroDeEstado) {
       const [motivo, ...resto] = e.saida.split('\n');
+      // Recusa de comando também vai para os eventos (decisão 12); falhar aqui não muda a recusa.
+      if (e instanceof ErroDeUso && amb?.dirEstado) {
+        try {
+          registrarEvento(amb.dirEstado, { tipo: 'recusa-de-comando', comando: nome, sessao: amb.sessaoId, motivo });
+        } catch { /* sem como registrar: a recusa sai do mesmo jeito */ }
+      }
       return recusar(avisar, motivo, resto.join('\n').replace(/^Próximo passo:\s*/, '') || 'rode `ah doctor`');
     }
     if (e instanceof ErroDeConfig) return recusar(avisar, e.message, 'corrija .harness/config.json');

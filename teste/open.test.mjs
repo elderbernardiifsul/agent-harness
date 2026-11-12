@@ -12,6 +12,12 @@ const fechaSimulado = (p, sessao = 'sessao-teste-0001') => {
   const s = JSON.parse(fs.readFileSync(arq, 'utf8'));
   s.frente = null;
   fs.writeFileSync(arq, JSON.stringify(s));
+  // A dona é a fonte (fatia 2): a frente deixa de ser da sessão, mas o arquivo fica.
+  const dir = path.join(p.estado, 'loja', 'frentes');
+  for (const nome of fs.readdirSync(dir).filter(n => n.endsWith('.json'))) {
+    const f = JSON.parse(fs.readFileSync(path.join(dir, nome), 'utf8'));
+    if (f.dona === sessao) fs.writeFileSync(path.join(dir, nome), JSON.stringify({ ...f, dona: null, estado: 'passada' }));
+  }
 };
 
 test('open cria ramo, worktree, estado e comenta nos tickets', () => {

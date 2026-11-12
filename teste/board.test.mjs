@@ -12,7 +12,7 @@ const SEM_SESSAO = { env: { AH_SESSAO: '' } };
 test('board lista a frente; vazio diz que não há', () => {
   const vazio = criarProjeto();
   assert.match(vazio.ah(['board']).saida, /Nenhuma frente aberta\./);
-  assert.deepEqual(JSON.parse(vazio.ah(['board', '--json']).saida), { frentes: [] });
+  assert.deepEqual(JSON.parse(vazio.ah(['board', '--json']).saida), { frentes: [], sessoes: [] });
   vazio.limpar();
 
   const p = criarProjeto();
@@ -60,7 +60,8 @@ test('board corta textos longos e notas com quebra de linha não quebram a tabel
   f.notas = [{ em: 'x', sessao: 's', texto: 'primeira' }, { em: 'y', sessao: 's', texto: `linha um\nlinha dois\r\n${'n'.repeat(200)}` }];
   gravarFrenteDoTeste(p, f);
   const linhas = p.ah(['board']).saida.split('\n').filter(Boolean);
-  assert.equal(linhas.length, 2, 'cabeçalho e uma linha');
+  assert.equal(linhas.length, 3, 'cabeçalho, uma linha e a das sessões vivas');
+  assert.match(linhas[2], /^Sessões vivas: /);
   assert.match(linhas[1], /linha um linha dois/);
   assert.doesNotMatch(linhas[1], /primeira/);
   assert.ok(linhas[1].length < 200, `linha longa demais: ${linhas[1].length}`);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { criarProjeto } from './apoio/repo.mjs';
+import { criarProjeto, envelhecerSinal } from './apoio/repo.mjs';
 
 const HISTORICO = 'docs/agents/historico-das-frentes.md';
 const ler = (p, rel) => fs.readFileSync(path.join(p.raiz, rel), 'utf8');
@@ -436,5 +436,45 @@ test('D2: frente sem commits novos fecha com código 0', () => {
   const r = p.ah(['close']);
   assert.equal(r.codigo, 0, r.erro);
   assert.match(r.saida, /Frente as-1 vazia fechada\./);
+  p.limpar();
+});
+
+// ---- fatia 2: a dona é a fonte; frente de sessão que não está viva se fecha de outra
+test('close aceita frente cuja dona tem o sinal vencido', () => {
+  const { p, wt } = comFrente();
+  mescla(p);
+  const viva = p.ah(['close', 'carrinho'], { env: { AH_SESSAO: 'sessao-b-0002' } });
+  assert.equal(viva.codigo, 1);
+  assert.match(viva.erro, /ainda está aberta/);
+  envelhecerSinal(p, 'sessao-teste-0001', 500);
+  const r = p.ah(['close', 'carrinho'], { env: { AH_SESSAO: 'sessao-b-0002' } });
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /A frente era da sessão sessao-teste-0001, que não está viva \(sinal vencido\); esta sessão a fechou\./);
+  assert.ok(!fs.existsSync(wt));
+  p.limpar();
+});
+
+test('close aceita frente passada, sem dona', () => {
+  const { p } = comFrente();
+  mescla(p);
+  const f = lerFrenteDoTeste(p, 'carrinho');
+  f.estado = 'passada';
+  f.dona = null;
+  fs.writeFileSync(arquivoDaFrente(p, 'carrinho'), JSON.stringify(f));
+  const r = p.ah(['close', 'carrinho'], OUTRA);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /A frente era da sessão \(sem dona\)/);
+  p.limpar();
+});
+
+test('orquestrador fecha uma das frentes e o foco passa para a que sobrou', () => {
+  const p = criarProjeto();
+  p.ah(['papel', 'orquestrador']);
+  assert.equal(p.ah(['open', 'carrinho']).codigo, 0);
+  assert.equal(p.ah(['open', 'frete']).codigo, 0);
+  assert.equal(p.ah(['close', 'frete']).codigo, 0);
+  assert.equal(JSON.parse(p.ah(['whoami', '--json']).saida).frente, 'carrinho');
+  assert.equal(p.ah(['close', 'carrinho']).codigo, 0);
+  assert.equal(JSON.parse(p.ah(['whoami', '--json']).saida).frente, null);
   p.limpar();
 });

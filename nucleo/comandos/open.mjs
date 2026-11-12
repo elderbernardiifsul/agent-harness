@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { ErroDeUso, arquivoDaMaquina, dirWorktrees } from '../lib/caminhos.mjs';
 import { comTrava, lerJson, registrarEvento } from '../lib/estado.mjs';
-import { gravarFrente, lerFrente, listarFrentes, nomeValido, novaFrente, proximoId, siglaValida } from '../lib/frente.mjs';
+import { frentesDa, gravarFrente, lerFrente, listarFrentes, nomeValido, novaFrente, proximoId, siglaValida } from '../lib/frente.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
 import { comentar, loginAtual } from '../lib/github.mjs';
 import { gravarSessao, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
@@ -126,8 +126,13 @@ export async function executar(args, amb) {
     } else {
       tocarSinal(dirEstado, amb.sessaoId);
     }
-    if (sessao.frente) {
-      throw recusa(`Esta sessão já tem a frente ${String(sessao.frente.nome ?? sessao.frente).slice(0, 60)}.`, 'continue nela ou encerre com ah close antes de abrir outra');
+    // A dona da frente é a fonte: o executor com frente ativa não abre outra; o orquestrador abre quantas quiser.
+    if (sessao.papel !== 'orquestrador') {
+      const minhas = frentesDa(listarFrentes(dirEstado), amb.sessaoId);
+      if (minhas.length) {
+        throw recusa(`Esta sessão já tem a frente ${minhas.map(f => f.nome).join(', ').slice(0, 60)}.`,
+          'continue nela ou encerre com ah close antes de abrir outra (o orquestrador abre várias: ah papel orquestrador)');
+      }
     }
     const repetido = lerFrente(dirEstado, o.nome) ? 'frente'
       : existeRamo(amb.raiz, ramo, { env: amb.env }) ? 'ramo local'

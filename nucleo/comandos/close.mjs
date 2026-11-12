@@ -2,10 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ErroDeUso } from '../lib/caminhos.mjs';
 import { comTrava, registrarEvento } from '../lib/estado.mjs';
-import { gravarFrente, lerFrente, linhaDoHistorico, nomeValido, removerFrente } from '../lib/frente.mjs';
+import { frentesDa, gravarFrente, lerFrente, linhaDoHistorico, listarFrentesTolerante, nomeValido, removerFrente } from '../lib/frente.mjs';
 import { existeRamo, ramoAtual, git } from '../lib/git.mjs';
 import { comentar } from '../lib/github.mjs';
 import { gravarSessao, idCurto, lerSessao, tocarSinal } from '../lib/sessao.mjs';
+import { vidaDaSessao } from '../lib/vida.mjs';
 
 export const descricao = 'fecha a frente da sessão sem perder trabalho';
 export const uso = 'ah close [<nome>] [--resumo "<texto>"] [--descartar-ignorados]';
@@ -96,13 +97,16 @@ export async function executar(args, amb) {
       amb.escrever(`Sessão ${idCurto(amb.sessaoId)} sem frente.\n`);
       return 0;
     }
-    // Frente de outra sessão: se a dona já encerrou (ou não tem registro), esta sessão fecha,
-    // com as mesmas conferências; se a dona ainda está aberta, recusa com o id inteiro.
+    // Frente de outra sessão: se a dona não está viva (encerrada, morta, sem registro) ou a frente
+    // está passada (sem dona), esta sessão fecha, com as mesmas conferências; com a dona viva, recusa
+    // com o id inteiro.
     let sessaoDona = null;
     let daEncerrada = false;
+    let vidaDaDona = null;
     if (frente.dona !== amb.sessaoId) {
       sessaoDona = frente.dona ? lerSessao(dirEstado, frente.dona) : null;
-      if (sessaoDona && !sessaoDona.fim) {
+      vidaDaDona = frente.dona ? vidaDaSessao(dirEstado, frente.dona, { config: cfg }) : null;
+      if (vidaDaDona?.estado === 'viva') {
         throw recusa(`A frente ${frente.id} ${frente.nome} é da sessão ${frente.dona}, que ainda está aberta, não desta.`,
           `peça à sessão dona que rode ah close; se ela morreu sem encerrar, rode AH_SESSAO=${frente.dona} tools/ah close ${frente.nome}`);
       }
@@ -249,19 +253,22 @@ export async function executar(args, amb) {
 
     // 6. Estado.
     removerFrente(dirEstado, frente.nome);
-    if (sessao && !daEncerrada) {
-      sessao.frente = null;
-      gravarSessao(dirEstado, sessao);
-    }
-    if (sessaoDona && (sessaoDona.frente?.nome ?? sessaoDona.frente) === frente.nome) {
-      sessaoDona.frente = null;
-      gravarSessao(dirEstado, sessaoDona);
-    }
+    // O foco que apontava para a frente fechada passa para a frente mais nova que sobrou à sessão (ou nenhuma).
+    const soltarFoco = s => {
+      if (!s || (s.frente?.nome ?? s.frente) !== frente.nome) return;
+      s.frente = frentesDa(listarFrentesTolerante(dirEstado).frentes, s.id).at(-1)?.nome ?? null;
+      gravarSessao(dirEstado, s);
+    };
+    soltarFoco(sessao);
+    soltarFoco(sessaoDona);
     registrarEvento(dirEstado, { tipo: 'fechamento', sessao: amb.sessaoId, id: frente.id, nome: frente.nome, aberta: frente.abertaEm, fechada: new Date().toISOString() });
 
     // 7. Saída.
     amb.escrever(`Frente ${frente.id} ${frente.nome} fechada.\n`);
-    if (daEncerrada) amb.escrever(`A frente era da sessão ${frente.dona ?? '(sem dona)'}, já encerrada; esta sessão a fechou.\n`);
+    if (daEncerrada) {
+      const como = vidaDaDona?.estado === 'morta' ? `que não está viva (${vidaDaDona.motivo})` : 'já encerrada';
+      amb.escrever(`A frente era da sessão ${frente.dona ?? '(sem dona)'}, ${como}; esta sessão a fechou.\n`);
+    }
     if (g(['remote']).saida.split('\n').includes(remoto)) amb.escrever(`Falta: git push ${remoto} ${base}\n`);
     return 0;
   }, { venceMs: 120000 });
