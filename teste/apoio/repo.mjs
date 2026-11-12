@@ -1,7 +1,10 @@
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync, realpathSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const RAIZ_HARNESS = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 function executar(args, { cwd, env }) {
   try {
@@ -28,7 +31,12 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
     GIT_COMMITTER_EMAIL: 'ana@exemplo.test',
     AH_ESTADO: estado,
     AH_SESSAO: 'sessao-teste-0001',
+    AH_GH: join(RAIZ_HARNESS, 'teste', 'apoio', 'gh-falso.mjs'),
+    GH_FALSO_LOG: join(base, 'gh.log'),
   };
+  delete env.CLAUDE_CODE_SESSION_ID;
+  delete env.GH_FALSO_FORA;
+  delete env.GH_FALSO_RESPOSTAS;
   const git = (args, { cwd = raiz } = {}) => executar(args, { cwd, env });
   const exigir = (args, cwd) => {
     const r = executar(args, { cwd, env });
@@ -58,8 +66,29 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
     estado,
     env,
     git,
+    ghChamadas() {
+      if (!existsSync(env.GH_FALSO_LOG)) return [];
+      return readFileSync(env.GH_FALSO_LOG, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
+    },
+    ghResponder(lista) {
+      const arq = join(base, 'gh-respostas.json');
+      writeFileSync(arq, JSON.stringify(lista));
+      env.GH_FALSO_RESPOSTAS = arq;
+    },
+    ah(args, { cwd = raiz, env: extra = {} } = {}) {
+      const r = spawnSync(process.execPath, [join(RAIZ_HARNESS, 'nucleo', 'bin', 'ah.mjs'), ...args], {
+        cwd, env: { ...env, ...extra }, encoding: 'utf8',
+      });
+      return { codigo: r.status ?? 1, saida: r.stdout ?? '', erro: r.stderr ?? '' };
+    },
     limpar() {
       rmSync(base, { recursive: true, force: true, maxRetries: 3 });
     },
   };
+}
+
+// Grava .harness/config.json no repositório de teste.
+export function escreverConfig(p, config = {}) {
+  mkdirSync(join(p.raiz, '.harness'), { recursive: true });
+  writeFileSync(join(p.raiz, '.harness', 'config.json'), JSON.stringify({ projeto: 'loja', ...config }, null, 2));
 }
