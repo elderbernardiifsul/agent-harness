@@ -267,6 +267,9 @@ export async function executar(args, amb) {
     colocar(arquivoManifesto, Buffer.from(`${JSON.stringify({ versao: VERSAO, commit, copiadoEm: new Date().toISOString() }, null, 2)}\n`));
   }
 
+  // Modelo dos ganchos: o doctor da cópia instalada confere o settings.json contra ele.
+  colocar(PREFIXO_NUCLEO + 'modelos/claude-code/ganchos.json', fs.readFileSync(path.join(dirModelos, 'claude-code', 'ganchos.json')), { atualizaSe: () => true });
+
   // 2. Configuração e extensões: nunca sobrescritas.
   colocar('.harness/config.json', Buffer.from(`${JSON.stringify(cfg, null, 2)}\n`), { nunca: true });
   colocar(ENTRADA_GITKEEP, Buffer.alloc(0), { nunca: true });

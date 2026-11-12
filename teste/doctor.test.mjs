@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { criarProjeto, criarRepo, gravar, dirDoTeste } from './apoio/repo.mjs';
 
 test('projeto recém-preparado: sem falhas', () => {
@@ -17,7 +18,7 @@ test('projeto recém-preparado: sem falhas', () => {
 
 test('o ensaio do gancho não suja o estado real', () => {
   const p = criarProjeto();
-  p.ah(['doctor']);
+  assert.match(p.ah(['doctor']).saida, /^ok\s+Gancho responde/m);
   assert.equal(fs.existsSync(path.join(dirDoTeste(p), 'eventos.jsonl')), false);
   assert.equal(fs.existsSync(path.join(dirDoTeste(p), 'sessoes')), false);
 });
@@ -141,4 +142,66 @@ test('criarRepo sem init: doctor acusa configuração ausente', () => {
   const r = criarRepo().ah(['doctor']);
   assert.equal(r.codigo, 1);
   assert.match(r.saida, /^FALHOU\s+.*config\.json.*ah init/m);
+});
+
+const trocarComandoDoPre = (p, comando) => {
+  const f = path.join(p.raiz, '.claude', 'settings.json');
+  const s = JSON.parse(fs.readFileSync(f, 'utf8'));
+  s.hooks.PreToolUse[0].hooks[0].command = comando;
+  fs.writeFileSync(f, JSON.stringify(s));
+};
+
+test('código 2 por outro motivo não vale como gancho que responde', () => {
+  const p = criarProjeto();
+  trocarComandoDoPre(p, 'echo falhou >&2; exit 2 # tools/ah gancho claude-code');
+  assert.match(p.ah(['doctor']).saida, /^FALHOU\s+Gancho responde.*saiu com 2 mas sem a recusa T5: falhou/m);
+});
+
+test('cópia instalada confere todos os ganchos, não só o PreToolUse', () => {
+  const p = criarProjeto();
+  assert.ok(fs.existsSync(path.join(p.raiz, '.harness', 'nucleo', 'modelos', 'claude-code', 'ganchos.json')));
+  const f = path.join(p.raiz, '.claude', 'settings.json');
+  const s = JSON.parse(fs.readFileSync(f, 'utf8'));
+  s.hooks = { PreToolUse: s.hooks.PreToolUse };
+  fs.writeFileSync(f, JSON.stringify(s));
+  const r = spawnSync(path.join(p.raiz, 'tools', 'ah'), ['doctor'], { cwd: p.raiz, env: p.env, encoding: 'utf8' });
+  assert.match(r.stdout, /^FALHOU\s+Ganchos do Claude Code instalados/m);
+});
+
+test('cópia sem o modelo dos ganchos falha apontando o init', () => {
+  const p = criarProjeto();
+  fs.rmSync(path.join(p.raiz, '.harness', 'nucleo', 'modelos'), { recursive: true });
+  const r = spawnSync(path.join(p.raiz, 'tools', 'ah'), ['doctor'], { cwd: p.raiz, env: p.env, encoding: 'utf8' });
+  assert.match(r.stdout, /^FALHOU\s+Ganchos do Claude Code instalados.*ah init/m);
+});
+
+test('init repetido atualiza o modelo copiado', () => {
+  const p = criarProjeto();
+  const f = path.join(p.raiz, '.harness', 'nucleo', 'modelos', 'claude-code', 'ganchos.json');
+  fs.writeFileSync(f, '{}');
+  assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']).codigo, 0);
+  assert.ok(JSON.parse(fs.readFileSync(f, 'utf8')).hooks.PreToolUse);
+});
+
+test('pasta de estado ilegível é falha com o caminho', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, () => {
+  const p = criarProjeto();
+  const pasta = path.join(dirDoTeste(p), 'frentes');
+  fs.mkdirSync(pasta, { recursive: true });
+  fs.chmodSync(pasta, 0);
+  try { assert.match(p.ah(['doctor']).saida, /^FALHOU\s+Arquivos de estado legíveis.*frentes/m); } finally { fs.chmodSync(pasta, 0o755); }
+});
+
+test('login local no histórico é aviso, não ok', () => {
+  const p = criarProjeto();
+  fs.writeFileSync(path.join(p.estado, 'maquina.json'), JSON.stringify({ sigla: 'as', login: 'local' }));
+  assert.match(p.ah(['doctor']).saida, /^aviso\s+Sigla sem choque: não conferi o histórico sem login do gh/m);
+});
+
+test('sem ramos protegidos a proteção no servidor é aviso', () => {
+  const p = criarProjeto();
+  const f = path.join(p.raiz, '.harness', 'config.json');
+  const c = JSON.parse(fs.readFileSync(f, 'utf8'));
+  c.git.protegidos = [];
+  fs.writeFileSync(f, JSON.stringify(c));
+  assert.match(p.ah(['doctor']).saida, /^aviso\s+Proteção no servidor: .*protegido/m);
 });

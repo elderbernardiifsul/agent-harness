@@ -40,12 +40,14 @@ function lerSettings(raiz) {
   }
 }
 
+// O modelo mora em modelos/ no clone (fonte) e em .harness/nucleo/modelos/ na cópia instalada pelo init.
 function lerModelo() {
-  try {
-    return JSON.parse(fs.readFileSync(path.join(NUCLEO, '..', 'modelos', 'claude-code', 'ganchos.json'), 'utf8'));
-  } catch {
-    return null; // a cópia instalada no projeto não leva os modelos
+  for (const base of [path.join(NUCLEO, 'modelos'), path.join(NUCLEO, '..', 'modelos')]) {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(base, 'claude-code', 'ganchos.json'), 'utf8'));
+    } catch { /* tenta o outro lugar */ }
   }
+  return null;
 }
 
 const comandoDoPre = settings => {
@@ -67,7 +69,10 @@ function arquivosDeEstado(dirEstado) {
   const lista = [];
   for (const pasta of ['sessoes', 'frentes']) {
     let nomes = [];
-    try { nomes = fs.readdirSync(path.join(dirEstado, pasta)); } catch { /* pasta ausente: nada a ler */ }
+    try { nomes = fs.readdirSync(path.join(dirEstado, pasta)); } catch (e) {
+      if (e.code === 'ENOENT') continue; // pasta ausente: nada a ler
+      throw new ErroDeEstado(`não consegui ler a pasta ${path.join(dirEstado, pasta)} (${e.code ?? e.message})`, path.join(dirEstado, pasta));
+    }
     for (const n of nomes) if (n.endsWith('.json') && !n.startsWith('.')) lista.push(path.join(dirEstado, pasta, n));
   }
   return lista;
@@ -115,7 +120,12 @@ export const VERIFICACOES = [
     const nome = 'Arquivos de estado legíveis';
     if (!amb.dirEstado) return null;
     const ruins = [];
-    for (const arq of arquivosDeEstado(amb.dirEstado)) {
+    let arquivos = [];
+    try { arquivos = arquivosDeEstado(amb.dirEstado); } catch (e) {
+      if (e instanceof ErroDeEstado) return falha(nome, `${e.arquivo} ilegível; confira as permissões da pasta`);
+      throw e;
+    }
+    for (const arq of arquivos) {
       try { lerJson(arq); } catch (e) { if (e instanceof ErroDeEstado) ruins.push(arq); else throw e; }
     }
     return ruins.length ? falha(nome, `${ruins.join(', ')} ilegível; apague ou conserte o arquivo`) : ok(nome);
@@ -132,7 +142,7 @@ export const VERIFICACOES = [
     }
     if (!siglaValida(maquina?.sigla)) return falha(nome, 'esta máquina não tem sigla; rode ah init --sigla <sigla>, com 2 a 4 letras minúsculas');
     const { sigla, login } = maquina;
-    if (typeof login !== 'string' || login === '' || login === 'local') return ok(nome);
+    if (typeof login !== 'string' || login === '' || login === 'local') return aviso(nome, 'não conferi o histórico sem login do gh; instale o gh, rode gh auth login e depois ah init');
     let texto = '';
     try { texto = fs.readFileSync(path.join(amb.raiz, HISTORICO), 'utf8'); } catch { /* sem histórico: sem choque */ }
     for (const linha of texto.split('\n')) {
@@ -162,12 +172,9 @@ export const VERIFICACOES = [
     const { settings, erro } = lerSettings(amb.raiz);
     if (!settings) return falha(nome, `${ARQUIVO_CLAUDE.replaceAll('\\', '/')} ${erro}; rode ah init`);
     const modelo = lerModelo();
-    if (modelo) {
-      const completo = JSON.stringify(mesclarGanchos(settings, modelo)) === JSON.stringify(settings);
-      return completo ? ok(nome) : falha(nome, 'faltam ou diferem os ganchos que o init instala; rode ah init');
-    }
-    // Cópia instalada: sem o modelo do init, confere ao menos o gancho que impede o push.
-    return comandoDoPre(settings) ? ok(nome) : falha(nome, 'falta o gancho PreToolUse do harness; rode ah init');
+    if (!modelo) return falha(nome, 'não achei o modelo dos ganchos (modelos/claude-code/ganchos.json) no núcleo; rode ah init');
+    const completo = JSON.stringify(mesclarGanchos(settings, modelo)) === JSON.stringify(settings);
+    return completo ? ok(nome) : falha(nome, 'faltam ou diferem os ganchos que o init instala; rode ah init');
   }),
 
   verificacao('Gancho responde', amb => {
@@ -176,7 +183,8 @@ export const VERIFICACOES = [
     const { settings } = lerSettings(amb.raiz);
     const comando = settings ? comandoDoPre(settings) : null;
     if (!comando) return falha(nome, 'não achei o gancho PreToolUse do harness; rode ah init');
-    const alvo = amb.config.git.protegidos[0] ?? amb.config.git.base;
+    const alvo = amb.config.git.protegidos[0];
+    if (!alvo) return aviso(nome, 'não há ramo protegido para ensaiar o gancho; defina git.protegidos em .harness/config.json');
     const evento = {
       hook_event_name: 'PreToolUse', session_id: 'doctor-ensaio', cwd: amb.raiz, tool_name: 'Bash',
       tool_input: { command: `git push ${amb.config.git.remoto} ${alvo}` },
@@ -185,9 +193,14 @@ export const VERIFICACOES = [
     try {
       const env = { ...amb.env, CLAUDE_PROJECT_DIR: amb.raiz, AH_ESTADO: tmp, AH_SESSAO: 'doctor-ensaio' };
       const r = process.platform === 'win32'
+        // Windows não tem sh: ali roda o ah.mjs instalado direto, que é o que tools/ah.cmd executa.
         ? spawnSync(process.execPath, [path.join(amb.raiz, '.harness', 'nucleo', 'bin', 'ah.mjs'), 'gancho', 'claude-code'], { cwd: amb.raiz, env, input: JSON.stringify(evento), encoding: 'utf8', timeout: 30000 })
         : spawnSync('sh', ['-c', comando], { cwd: amb.raiz, env, input: JSON.stringify(evento), encoding: 'utf8', timeout: 30000 });
-      if (r.status === 2) return ok(nome);
+      if (r.status === 2) {
+        if (/Recusado \(T5\)/.test(`${r.stderr ?? ''}\n${r.stdout ?? ''}`)) return ok(nome);
+        const linha = (r.stderr ?? '').trim().split('\n')[0].slice(0, 200);
+        return falha(nome, `saiu com 2 mas sem a recusa T5: ${linha || '(sem mensagem)'}; rode ah init --sobrescrever e confira tools/ah`);
+      }
       const motivo = r.error ? String(r.error.message) : `saiu com código ${r.status}`;
       return falha(nome, `o gancho não recusou \`git push ${amb.config.git.remoto} ${alvo}\` (${motivo}); rode ah init --sobrescrever e confira tools/ah`);
     } finally {
@@ -201,6 +214,7 @@ export const VERIFICACOES = [
     if (!ghPronto(amb, ctx)) return aviso(nome, 'sem o gh não consegui conferir a proteção dos ramos; só a trava local protege');
     const o = { cwd: amb.raiz, env: amb.env };
     const repo = amb.config.github?.repo ?? repoAtual(o);
+    if (!amb.config.git.protegidos.length) return aviso(nome, 'não há ramo protegido para conferir no servidor; defina git.protegidos em .harness/config.json');
     return amb.config.git.protegidos.map(ramo => {
       const item = `Proteção de ${ramo} no servidor`;
       const r = protecaoDoRamo(ramo, { ...o, repo });
