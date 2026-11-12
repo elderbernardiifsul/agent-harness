@@ -1,0 +1,9 @@
+{
+  "name": "agent-harness",
+  "version": "0.1.0",
+  "description": "Harness de programação com vários agentes.",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "scripts": { "test": "node --test teste/" }
+}

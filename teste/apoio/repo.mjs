@@ -1,0 +1,65 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+function executar(args, { cwd, env }) {
+  try {
+    const saida = execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: 'pipe' });
+    return { codigo: 0, saida, erro: '' };
+  } catch (e) {
+    return { codigo: e.status ?? 1, saida: String(e.stdout ?? ''), erro: String(e.stderr ?? '') };
+  }
+}
+
+export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, sufixo = '' } = {}) {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), `ah-teste${sufixo}-`)));
+  const raiz = join(base, 'repo');
+  const estado = join(base, 'estado');
+  const configVazia = join(base, 'gitconfig');
+  writeFileSync(configVazia, '');
+  const env = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: configVazia,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_AUTHOR_NAME: 'ana-souza',
+    GIT_AUTHOR_EMAIL: 'ana@exemplo.test',
+    GIT_COMMITTER_NAME: 'ana-souza',
+    GIT_COMMITTER_EMAIL: 'ana@exemplo.test',
+    AH_ESTADO: estado,
+    AH_SESSAO: 'sessao-teste-0001',
+  };
+  const git = (args, { cwd = raiz } = {}) => executar(args, { cwd, env });
+  const exigir = (args, cwd) => {
+    const r = executar(args, { cwd, env });
+    if (r.codigo !== 0) throw new Error(`git ${args.join(' ')} falhou: ${r.erro}`);
+  };
+
+  exigir(['init', '-b', 'main', raiz], base);
+  writeFileSync(join(raiz, 'README.md'), 'repositório de teste\n');
+  exigir(['add', 'README.md'], raiz);
+  exigir(['commit', '-m', 'commit inicial'], raiz);
+  for (const ramo of ramos) {
+    if (ramo !== 'main') exigir(['branch', ramo], raiz);
+  }
+  if (ramos.includes('dev')) exigir(['switch', 'dev'], raiz);
+  else if (!ramos.includes('main') && ramos.length) exigir(['switch', ramos[0]], raiz);
+
+  let remotoCaminho = null;
+  if (remoto) {
+    remotoCaminho = join(base, 'remoto.git');
+    exigir(['init', '--bare', '-b', 'main', remotoCaminho], base);
+    exigir(['remote', 'add', 'origin', remotoCaminho], raiz);
+  }
+
+  return {
+    raiz,
+    remoto: remotoCaminho,
+    estado,
+    env,
+    git,
+    limpar() {
+      rmSync(base, { recursive: true, force: true, maxRetries: 3 });
+    },
+  };
+}
