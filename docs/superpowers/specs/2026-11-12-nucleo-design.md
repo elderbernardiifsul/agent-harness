@@ -396,3 +396,20 @@ Cada fatia da seção 12.1 tem o próprio "pronto": os itens abaixo que dizem re
 - A extensão de exemplo funciona e o guia de extensão foi seguido do zero por um agente sem contexto, que conseguiu criar o comando novo.
 - O ensaio com agente de verdade passou para Claude Code, Codex e OpenCode no alcance que a tabela de capacidades declara para cada um, com a saída guardada.
 - A varredura de anonimização não acha nada.
+
+## 15. Outros agentes se adaptam sozinhos [autor, 12/11/2026]
+
+Onde esta seção e as anteriores divergirem, vale esta.
+
+O autor decidiu que o harness não traz adaptadores do Codex e do OpenCode escritos e ensaiados por quem constrói. O agente que chega ao repositório lê as instruções, escreve ou ajusta o próprio adaptador, roda os testes e corrige por conta própria.
+
+A fatia 4 da seção 12.1 passa a entregar:
+
+- **Roteiro de adaptação** em `docs/agentes/`: o contrato dos quatro eventos (seção 8), o adaptador do Claude Code como exemplo, o passo a passo para escrever o adaptador e o arquivo de gancho de outro agente, e como provar que funciona.
+- **Testes de contrato** que todo adaptador precisa passar, para o agente rodar, ver o que falha e corrigir.
+- **Ponteiro no `AGENTS.md`** que o `init` instala, para o agente achar o roteiro sem ninguém mandar.
+- **Item no `doctor`:** sem adaptador para o agente em uso, diz que as travas automáticas não valem e aponta o roteiro.
+
+Ficam sem efeito: os adaptadores do Codex e do OpenCode como entrega (seção 8), o ensaio com os três agentes (seção 8, "Prova de cada adaptador", item 2, para os outros dois) e o último item do "pronto quando" (seção 14) no que diz respeito a Codex e OpenCode. O ensaio com o Claude Code de verdade continua.
+
+No "pronto quando", o item passa a ser: um agente sem contexto, seguindo só o roteiro, consegue dizer o que falta para o adaptador dele e rodar os testes de contrato.
