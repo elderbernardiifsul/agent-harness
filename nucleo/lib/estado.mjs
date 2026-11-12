@@ -65,49 +65,85 @@ export function validarNomeSeguro(nome, rotulo) {
 
 // `venceMs` precisa ser maior que o pior caso de `fn`: passado esse prazo outra chamada pode tomar a trava
 // (a liberação só apaga a trava se ainda for desta chamada, mas a exclusão já terá sido perdida).
-export async function comTrava(dir, nome, fn, { esperaMs = 5000, venceMs = 30000 } = {}) {
-  validarNomeSeguro(nome, 'Nome da trava');
-  const marca = randomUUID();
-  const pasta = path.join(dir, 'travas', nome);
-  fs.mkdirSync(path.dirname(pasta), { recursive: true });
-  const limite = Date.now() + esperaMs;
+// Uma tentativa de pegar a trava: true se pegou; false se outro a tem e ela não venceu.
+function tentarPegar(pasta, venceMs, marca) {
   for (;;) {
     try {
       fs.mkdirSync(pasta);
-      break;
+      return true;
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
     }
-    if (travaVencida(pasta, venceMs)) {
-      // Só um rename vence; quem perde (ENOENT) tenta de novo.
-      const tomada = `${pasta}.vencida.${process.pid}.${Date.now()}.${marca.slice(0, 8)}`;
-      try {
-        fs.renameSync(pasta, tomada);
-      } catch (e) {
-        if (e.code === 'ENOENT') continue;
-        throw e;
-      }
-      if (travaVencida(tomada, venceMs)) {
-        fs.rmSync(tomada, { recursive: true, force: true });
-      } else {
-        // Era uma trava recém-tomada por outro: devolve ao lugar.
-        try { fs.renameSync(tomada, pasta); } catch { fs.rmSync(tomada, { recursive: true, force: true }); }
-      }
-      continue;
+    if (!travaVencida(pasta, venceMs)) return false;
+    // Só um rename vence; quem perde (ENOENT) tenta de novo.
+    const tomada = `${pasta}.vencida.${process.pid}.${Date.now()}.${marca.slice(0, 8)}`;
+    try {
+      fs.renameSync(pasta, tomada);
+    } catch (e) {
+      if (e.code === 'ENOENT') continue;
+      throw e;
     }
-    if (Date.now() >= limite) {
-      throw new ErroDeEstado(`Esperei ${esperaMs} ms pela trava "${nome}" e ela não foi solta`, pasta,
-        `se outro ah está rodando, espere ele terminar e repita; uma trava esquecida vence sozinha em até ${Math.ceil(venceMs / 1000)} s (a trava é a pasta ${pasta})`);
+    if (travaVencida(tomada, venceMs)) {
+      fs.rmSync(tomada, { recursive: true, force: true });
+    } else {
+      // Era uma trava recém-tomada por outro: devolve ao lugar.
+      try { fs.renameSync(tomada, pasta); } catch { fs.rmSync(tomada, { recursive: true, force: true }); }
     }
+  }
+}
+
+function prepararTrava(dir, nome) {
+  validarNomeSeguro(nome, 'Nome da trava');
+  const pasta = path.join(dir, 'travas', nome);
+  fs.mkdirSync(path.dirname(pasta), { recursive: true });
+  return { pasta, marca: randomUUID() };
+}
+
+const travaPresa = (nome, pasta, esperaMs, venceMs) => new ErroDeEstado(`Esperei ${esperaMs} ms pela trava "${nome}" e ela não foi solta`, pasta,
+  `se outro ah está rodando, espere ele terminar e repita; uma trava esquecida vence sozinha em até ${Math.ceil(venceMs / 1000)} s (a trava é a pasta ${pasta})`);
+
+const marcarDono = (pasta, marca) => fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ pid: process.pid, em: new Date().toISOString(), marca }));
+
+function soltar(pasta, marca) {
+  let dono = null;
+  try { dono = JSON.parse(fs.readFileSync(path.join(pasta, 'dono.json'), 'utf8')); } catch { /* sem dono legível */ }
+  if (dono?.marca === marca) fs.rmSync(pasta, { recursive: true, force: true });
+}
+
+// `venceMs` precisa ser maior que o pior caso de `fn`: passado esse prazo outra chamada pode tomar a trava
+// (a liberação só apaga a trava se ainda for desta chamada, mas a exclusão já terá sido perdida).
+export async function comTrava(dir, nome, fn, { esperaMs = 5000, venceMs = 30000 } = {}) {
+  const { pasta, marca } = prepararTrava(dir, nome);
+  const limite = Date.now() + esperaMs;
+  while (!tentarPegar(pasta, venceMs, marca)) {
+    if (Date.now() >= limite) throw travaPresa(nome, pasta, esperaMs, venceMs);
     await dormir(20);
   }
   try {
-    fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ pid: process.pid, em: new Date().toISOString(), marca }));
+    marcarDono(pasta, marca);
     return await fn();
   } finally {
-    let dono = null;
-    try { dono = JSON.parse(fs.readFileSync(path.join(pasta, 'dono.json'), 'utf8')); } catch { /* sem dono legível */ }
-    if (dono?.marca === marca) fs.rmSync(pasta, { recursive: true, force: true });
+    soltar(pasta, marca);
+  }
+}
+
+const PAUSA = new Int32Array(new SharedArrayBuffer(4));
+const dormirSinc = ms => Atomics.wait(PAUSA, 0, 0, ms);
+
+// Versão síncrona do comTrava, com a mesma pasta e o mesmo dono.json (as duas se excluem entre si).
+// Para trechos curtos que só mexem em arquivo, chamados de código síncrono.
+export function comTravaSinc(dir, nome, fn, { esperaMs = 5000, venceMs = 30000 } = {}) {
+  const { pasta, marca } = prepararTrava(dir, nome);
+  const limite = Date.now() + esperaMs;
+  while (!tentarPegar(pasta, venceMs, marca)) {
+    if (Date.now() >= limite) throw travaPresa(nome, pasta, esperaMs, venceMs);
+    dormirSinc(20);
+  }
+  try {
+    marcarDono(pasta, marca);
+    return fn();
+  } finally {
+    soltar(pasta, marca);
   }
 }
 

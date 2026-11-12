@@ -34,6 +34,16 @@ export function comentar(ticket, corpo, o = {}) {
   return gh(['issue', 'comment', String(ticket), '--body-file', '-'], { ...o, entrada: corpo }).codigo === 0;
 }
 
+// gh issue edit <ticket> ...args (ex.: ['--add-assignee', '@me', '--add-label', 'em-andamento']).
+export function editarTicket(ticket, args, o = {}) {
+  return gh(['issue', 'edit', String(ticket), ...args], o).codigo === 0;
+}
+
+// Cria (ou atualiza, com --force) o rótulo de reserva.
+export function criarRotulo(rotulo, o = {}) {
+  return gh(['label', 'create', rotulo, '--color', 'FBCA04', '--description', 'reservado por uma frente do agent-harness', '--force'], o).codigo === 0;
+}
+
 const CORPO_DA_PROTECAO = {
   required_status_checks: null,
   enforce_admins: true,

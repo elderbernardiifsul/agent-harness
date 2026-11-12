@@ -4,7 +4,7 @@ import { ErroDeUso } from '../lib/caminhos.mjs';
 import { comTrava, registrarEvento } from '../lib/estado.mjs';
 import { frentesDa, gravarFrente, lerFrente, linhaDoHistorico, listarFrentesTolerante, nomeValido, removerFrente } from '../lib/frente.mjs';
 import { existeRamo, ramoAtual, git } from '../lib/git.mjs';
-import { comentar } from '../lib/github.mjs';
+import { comentarOuEnfileirar, reenviarComAviso } from '../lib/pendentes.mjs';
 import { gravarSessao, idCurto, lerSessao, tocarSinal } from '../lib/sessao.mjs';
 import { vidaDaSessao } from '../lib/vida.mjs';
 
@@ -51,6 +51,7 @@ function listaCortada(itens, rotulo) {
 }
 
 export async function executar(args, amb) {
+  await reenviarComAviso(amb.dirEstado, { cwd: amb.raiz, env: amb.env }, amb.avisar);
   const o = lerOpcoes(args);
   if (o.nome !== null && !nomeValido(o.nome)) {
     throw recusa(`Nome de frente inválido: ${o.nome.slice(0, 40) || '(vazio)'}`, 'use o nome que ah board mostra (ex.: ah close carrinho)');
@@ -203,8 +204,8 @@ export async function executar(args, amb) {
     if (!frente.fechamentoComentado) {
       for (const ticket of frente.tickets ?? []) {
         const corpo = `Frente ${frente.id} (${frente.nome}) fechada.\n\n${resumo}\n`;
-        if (!comentar(ticket, corpo, { cwd: raiz, env })) {
-          amb.avisar(`Aviso: não consegui comentar no ticket #${ticket}; comente à mão que a frente ${frente.id} foi fechada.\n`);
+        if (!comentarOuEnfileirar(dirEstado, ticket, corpo, { cwd: raiz, env, evento: { sessao: amb.sessaoId, frente: frente.nome } })) {
+          amb.avisar(`Aviso: não consegui comentar no ticket #${ticket}; o comentário ficou na fila; sai no próximo comando com rede.\n`);
         }
       }
       frente.fechamentoComentado = true;

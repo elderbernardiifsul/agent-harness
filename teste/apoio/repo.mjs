@@ -16,6 +16,10 @@ function executar(args, { cwd, env }) {
   }
 }
 
+function lerTicketsFalsos(arquivo) {
+  return existsSync(arquivo) ? JSON.parse(readFileSync(arquivo, 'utf8')) : {};
+}
+
 export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, sufixo = '' } = {}) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), `ah-teste${sufixo}-`)));
   const raiz = join(base, 'repo');
@@ -35,11 +39,14 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
     AH_SESSAO: 'sessao-teste-0001',
     AH_GH: join(RAIZ_HARNESS, 'teste', 'apoio', 'gh-falso.mjs'),
     GH_FALSO_LOG: join(base, 'gh.log'),
+    GH_FALSO_TICKETS: join(base, 'gh-tickets.json'),
   };
   delete env.CLAUDE_CODE_SESSION_ID;
   delete env.AH_PID_AGENTE;
   delete env.GH_FALSO_FORA;
   delete env.GH_FALSO_RESPOSTAS;
+  delete env.GH_FALSO_LOGIN;
+  delete env.GH_FALSO_CORRIDA;
   const git = (args, { cwd = raiz } = {}) => executar(args, { cwd, env });
   const exigir = (args, cwd) => {
     const r = executar(args, { cwd, env });
@@ -77,6 +84,17 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
       const arq = join(base, 'gh-respostas.json');
       writeFileSync(arq, JSON.stringify(lista));
       env.GH_FALSO_RESPOSTAS = arq;
+    },
+    // Ticket como o gh falso o guarda; ausente nasce aberto e vazio.
+    ghTicket(n) {
+      const t = lerTicketsFalsos(env.GH_FALSO_TICKETS)[String(n)] ?? {};
+      return { state: t.state ?? 'OPEN', assignees: t.assignees ?? [], labels: t.labels ?? [], comments: t.comments ?? [] };
+    },
+    // Acrescenta campos a um ticket do gh falso (ex.: {apagado: true}, {labels: ['em-andamento']}).
+    ghSemear(n, parcial) {
+      const t = lerTicketsFalsos(env.GH_FALSO_TICKETS);
+      t[String(n)] = { state: 'OPEN', assignees: [], labels: [], comments: [], ...(t[String(n)] ?? {}), ...parcial };
+      writeFileSync(env.GH_FALSO_TICKETS, JSON.stringify(t, null, 2));
     },
     ah(args, { cwd = raiz, env: extra = {}, entrada } = {}) {
       const r = spawnSync(process.execPath, [join(RAIZ_HARNESS, 'nucleo', 'bin', 'ah.mjs'), ...args], {

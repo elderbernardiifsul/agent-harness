@@ -5,7 +5,8 @@ import { ErroDeUso, arquivoDaMaquina, dirWorktrees } from '../lib/caminhos.mjs';
 import { comTrava, lerJson, registrarEvento } from '../lib/estado.mjs';
 import { frentesDa, gravarFrente, lerFrente, listarFrentes, nomeValido, novaFrente, proximoId, siglaValida } from '../lib/frente.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
-import { comentar, loginAtual } from '../lib/github.mjs';
+import { loginAtual } from '../lib/github.mjs';
+import { comentarOuEnfileirar, reenviarComAviso } from '../lib/pendentes.mjs';
 import { gravarSessao, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
 import { inicioDoProcesso, pidDeComando } from '../lib/vida.mjs';
 
@@ -99,6 +100,7 @@ function lerHistorico(amb, refs) {
 const recusa = (motivo, saida) => new ErroDeUso(`${motivo}\nPróximo passo: ${saida}`);
 
 export async function executar(args, amb) {
+  await reenviarComAviso(amb.dirEstado, { cwd: amb.raiz, env: amb.env }, amb.avisar);
   const o = lerOpcoes(args);
   if (!nomeValido(o.nome)) {
     throw recusa(`Nome de frente inválido: ${String(o.nome ?? '').slice(0, 40) || '(vazio)'}`, 'use de 2 a 49 caracteres: minúsculas, números e hífen, começando por letra ou número (ex.: ah open carrinho)');
@@ -175,9 +177,8 @@ export async function executar(args, amb) {
 
     for (const ticket of tickets) {
       const corpo = `Frente ${id} (${frente.nome}) aberta por @${login}.\n\n<!-- ah:frente id=${id} nome=${frente.nome} ramo=${frente.ramo} -->\n`;
-      if (!comentar(ticket, corpo, { cwd: amb.raiz, env: amb.env })) {
-        amb.avisar(`Aviso: não consegui comentar no ticket #${ticket}; comente à mão que a frente ${id} começou.\n`);
-        registrarEvento(dirEstado, { tipo: 'comentario-falhou', sessao: amb.sessaoId, frente: frente.nome, ticket });
+      if (!comentarOuEnfileirar(dirEstado, ticket, corpo, { cwd: amb.raiz, env: amb.env, evento: { sessao: amb.sessaoId, frente: frente.nome } })) {
+        amb.avisar(`Aviso: não consegui comentar no ticket #${ticket}; o comentário ficou na fila; sai no próximo comando com rede.\n`);
       }
     }
 
