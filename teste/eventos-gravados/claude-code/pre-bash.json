@@ -1,0 +1,17 @@
+{
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "/tmp/loja/.transcricao/00000000-0000-4000-8000-000000000001.jsonl",
+  "cwd": "/tmp/loja",
+  "prompt_id": "00000000-0000-4000-8000-0000000000a1",
+  "permission_mode": "auto",
+  "effort": {
+    "level": "high"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "git push origin main",
+    "description": "Envia a branch main para o remoto origin"
+  },
+  "tool_use_id": "toolu_00000000000000000000000001"
+}

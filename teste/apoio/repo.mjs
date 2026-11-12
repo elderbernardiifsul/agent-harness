@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync, realpathSync, readFileSync, mkdirSy
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { carregarConfig } from '../../nucleo/lib/config.mjs';
 
 const RAIZ_HARNESS = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -76,9 +77,9 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
       writeFileSync(arq, JSON.stringify(lista));
       env.GH_FALSO_RESPOSTAS = arq;
     },
-    ah(args, { cwd = raiz, env: extra = {} } = {}) {
+    ah(args, { cwd = raiz, env: extra = {}, entrada } = {}) {
       const r = spawnSync(process.execPath, [join(RAIZ_HARNESS, 'nucleo', 'bin', 'ah.mjs'), ...args], {
-        cwd, env: { ...env, ...extra }, encoding: 'utf8',
+        cwd, env: { ...env, ...extra }, encoding: 'utf8', input: entrada, maxBuffer: 64 * 1024 * 1024,
       });
       return { codigo: r.status ?? 1, saida: r.stdout ?? '', erro: r.stderr ?? '' };
     },
@@ -99,9 +100,36 @@ export function criarProjeto(opcoes = {}) {
   const p = criarRepo(opcoes);
   const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as']);
   if (r.codigo !== 0) throw new Error(`ah init falhou: ${r.erro}`);
-  for (const args of [['add', '--', '.harness', 'tools', 'docs/agents'], ['commit', '-m', 'chore: instala o harness']]) {
+  for (const args of [['add', '--', '.harness', 'tools', 'docs/agents', '.claude'], ['commit', '-m', 'chore: instala o harness']]) {
     const g = p.git(args);
     if (g.codigo !== 0) throw new Error(`git ${args.join(' ')} falhou: ${g.erro}`);
   }
   return p;
+}
+
+// Grava um arquivo (relativo à raiz) no repositório de teste.
+export function gravar(p, rel, texto) {
+  const destino = join(p.raiz, rel);
+  mkdirSync(dirname(destino), { recursive: true });
+  writeFileSync(destino, texto);
+}
+
+// Pasta de estado do projeto `loja` no teste.
+export const dirDoTeste = p => join(p.estado, 'loja');
+
+// Ambiente de `tratar` para chamar o contrato no próprio processo.
+export function amb(p) {
+  return { cwd: p.raiz, env: p.env, raiz: p.raiz, config: carregarConfig(p.raiz), dirEstado: dirDoTeste(p), pid: process.pid };
+}
+
+// Evento gravado do Claude Code, com campos de topo trocados.
+export function gravado(nome, troca = {}) {
+  const obj = JSON.parse(readFileSync(join(RAIZ_HARNESS, 'teste', 'eventos-gravados', 'claude-code', nome), 'utf8'));
+  return { ...obj, ...troca };
+}
+
+// Roda `ah gancho claude-code` com um PreToolUse da ferramenta dada.
+export function ganchoPre(p, toolInput, toolName = 'Bash', { cwd = p.raiz, env } = {}) {
+  const base = gravado(toolName === 'Bash' ? 'pre-bash.json' : 'pre-edit.json', { cwd, tool_name: toolName, tool_input: toolInput });
+  return p.ah(['gancho', 'claude-code'], { entrada: JSON.stringify(base), env });
 }

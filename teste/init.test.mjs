@@ -16,7 +16,8 @@ test('init cria a estrutura e não faz commit', () => {
   const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as']);
   assert.equal(r.codigo, 0, r.erro);
   for (const f of ['.harness/nucleo/bin/ah.mjs', '.harness/nucleo/MANIFEST.json', '.harness/config.json', '.harness/extensoes/.gitkeep',
-    'tools/ah', 'tools/ah.cmd', 'docs/agents/sessoes-paralelas.md', 'docs/agents/historico-das-frentes.md']) {
+    'tools/ah', 'tools/ah.cmd', 'docs/agents/sessoes-paralelas.md', 'docs/agents/historico-das-frentes.md', '.claude/settings.json',
+    '.harness/nucleo/adaptadores/contrato.mjs', '.harness/nucleo/adaptadores/claude-code.mjs', '.harness/nucleo/comandos/gancho.mjs']) {
     assert.ok(fs.existsSync(path.join(p.raiz, f)), f);
   }
   assert.equal(JSON.parse(ler(p, '.harness/config.json')).projeto, 'loja');
@@ -154,5 +155,83 @@ test('tools/ah sem Node recusa com código 2', { skip: process.platform === 'win
     assert.match(r.stderr, /Recusado: o Node não foi encontrado\.\nFaça: instale o Node 22 ou mais novo e rode tools\/ah doctor/);
   } finally {
     fs.rmSync(vazio, { recursive: true, force: true });
+  }
+});
+
+// ---- ganchos do Claude Code
+
+const COMANDO = '"$CLAUDE_PROJECT_DIR"/tools/ah gancho claude-code';
+const EVENTOS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'Stop', 'SessionEnd'];
+const doHarness = grupo => (grupo.hooks ?? []).filter(h => typeof h.command === 'string' && h.command.trim().endsWith('tools/ah gancho claude-code'));
+const contarDoHarness = (s, ev) => (s.hooks[ev] ?? []).reduce((n, g) => n + doHarness(g).length, 0);
+
+test('init instala os ganchos do Claude Code em .claude/settings.json', () => {
+  const p = criarRepo();
+  assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as']).codigo, 0);
+  const s = JSON.parse(ler(p, '.claude/settings.json'));
+  for (const ev of EVENTOS) {
+    assert.equal(contarDoHarness(s, ev), 1, ev);
+    const grupo = s.hooks[ev].find(g => doHarness(g).length);
+    assert.deepEqual(doHarness(grupo)[0], { type: 'command', command: COMANDO });
+  }
+  assert.equal(s.hooks.PreToolUse[0].matcher, 'Bash|PowerShell|Edit|Write|NotebookEdit');
+});
+
+test('init mescla os ganchos sem apagar os de terceiros nem duplicar', () => {
+  const p = criarRepo();
+  const terceiro = { type: 'command', command: 'echo terceiro' };
+  const previo = {
+    permissions: { allow: ['Bash(npm test:*)'] },
+    model: 'qualquer',
+    hooks: {
+      PreToolUse: [{ matcher: 'Bash', hooks: [terceiro] }],
+      Stop: [{ hooks: [{ type: 'command', command: 'echo fim' }] }],
+      Notification: [{ hooks: [{ type: 'command', command: 'echo aviso' }] }],
+    },
+  };
+  fs.mkdirSync(path.join(p.raiz, '.claude'));
+  gravar(p, '.claude/settings.json', JSON.stringify(previo, null, 2));
+  assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as']).codigo, 0);
+  const primeira = ler(p, '.claude/settings.json');
+  const r = p.ah(['init']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.equal(ler(p, '.claude/settings.json'), primeira);
+  const s = JSON.parse(primeira);
+  assert.deepEqual(s.permissions, previo.permissions);
+  assert.equal(s.model, 'qualquer');
+  assert.deepEqual(s.hooks.Notification, previo.hooks.Notification);
+  assert.deepEqual(s.hooks.PreToolUse[0], { matcher: 'Bash', hooks: [terceiro] });
+  assert.ok(s.hooks.Stop.some(g => g.hooks.some(h => h.command === 'echo fim')));
+  for (const ev of EVENTOS) assert.equal(contarDoHarness(s, ev), 1, ev);
+});
+
+test('init atualiza a entrada antiga do harness em vez de acrescentar outra', () => {
+  const p = criarRepo();
+  const terceiro = { type: 'command', command: 'echo junto' };
+  const previo = { hooks: { PreToolUse: [
+    { matcher: 'Bash|Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: COMANDO }, terceiro] },
+    { matcher: 'Read', hooks: [{ type: 'command', command: 'echo leu' }] },
+  ] } };
+  fs.mkdirSync(path.join(p.raiz, '.claude'));
+  gravar(p, '.claude/settings.json', JSON.stringify(previo));
+  assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as']).codigo, 0);
+  const s = JSON.parse(ler(p, '.claude/settings.json'));
+  assert.equal(contarDoHarness(s, 'PreToolUse'), 1);
+  const nosso = s.hooks.PreToolUse.find(g => doHarness(g).length);
+  assert.equal(nosso.matcher, 'Bash|PowerShell|Edit|Write|NotebookEdit');
+  assert.ok(s.hooks.PreToolUse.some(g => g.matcher === 'Bash|Edit|Write|MultiEdit|NotebookEdit' && g.hooks.length === 1 && g.hooks[0].command === 'echo junto'));
+  assert.ok(s.hooks.PreToolUse.some(g => g.matcher === 'Read'));
+});
+
+test('init recusa .claude/settings.json inválido sem sobrescrever nem criar nada', () => {
+  const p = criarRepo();
+  fs.mkdirSync(path.join(p.raiz, '.claude'));
+  for (const texto of ['{ quebrado', '[]', '{"hooks": []}', '{"hooks": {"Stop": {}}}']) {
+    gravar(p, '.claude/settings.json', texto);
+    const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as']);
+    assert.equal(r.codigo, 1, texto);
+    assert.match(r.erro, /^Recusado: .*\.claude\/settings\.json.*\nFaça: /, texto);
+    assert.equal(ler(p, '.claude/settings.json'), texto);
+    assert.equal(fs.existsSync(path.join(p.raiz, '.harness')), false, texto);
   }
 });

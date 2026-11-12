@@ -1,0 +1,15 @@
+{
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "transcript_path": "/tmp/loja/.transcricao/00000000-0000-4000-8000-000000000001.jsonl",
+  "cwd": "/tmp/loja",
+  "prompt_id": "00000000-0000-4000-8000-0000000000a1",
+  "permission_mode": "auto",
+  "effort": {
+    "level": "high"
+  },
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "Feito: o git push foi recusado pelo gancho.",
+  "background_tasks": [],
+  "session_crons": []
+}

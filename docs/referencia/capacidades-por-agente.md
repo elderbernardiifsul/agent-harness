@@ -42,6 +42,17 @@ Onde a documentação e o ensaio discordam, a célula diz os dois e qual vale.
 3. **Ganchos em `claude -p`.** Rodam sem pedir confiança [CC-hooks, "Workspace trust"]. Também rodam os ganchos e plugins do usuário (`~/.claude/settings.json`). Para isolar o ensaio, use `--setting-sources project`. As permissões não interferem: o `PreToolUse` roda antes da checagem de permissão, e o código 2 recusa mesmo se a permissão permitiria.
 4. **Formato da recusa.** O Claude Code prefixa a saída de erro (`PreToolUse:Bash hook error: [...]:`). Não conte com a mensagem chegando crua ao modelo; a primeira linha do motivo continua legível.
 
+## O que o adaptador do Claude Code decide
+
+Decisões do adaptador (`nucleo/adaptadores/claude-code.mjs`, `modelos/claude-code/ganchos.json`) tiradas do ensaio acima:
+
+- **Seletor do `PreToolUse`:** `Bash|PowerShell|Edit|Write|NotebookEdit`. `MultiEdit` não existe na versão ensaiada; `PowerShell` entra e é tratado como comando (`tool_input.command`), assim como `Monitor`, que chega pelo seletor `Bash`. Ferramenta fora dessa lista é entrada inválida e segue a regra de quebra.
+- **`source` do `SessionStart`:** `startup` e `clear` viram `novo`; `resume`, `compact` e `fork` viram `continuacao`; valor desconhecido ou ausente vira `novo`. O `model` pode faltar e então fica nulo.
+- **`Stop`:** sair com código 2 faria o agente continuar. `UserPromptSubmit`, `Stop` e `SessionEnd` (sinal e fim) sempre saem com 0; aviso vai para a saída de erro.
+- **Campos que não se usam:** `permission_mode` e `effort` (variam por modo e por versão).
+- **Recusa:** código 2 com o texto na saída de erro; o modelo recebe o texto depois do prefixo `PreToolUse:<ferramenta> hook error: [<comando>]: `, por isso nada depende de a mensagem começar a linha.
+- **Quando o gancho quebra** (entrada que não é JSON, evento ou ferramenta desconhecidos, campo de tipo errado, `session_id` com `/` ou `..`, configuração inválida ou ausente, estado corrompido, erro interno): no `PreToolUse`, recusa com `Recusado (T0): o harness não conseguiu avaliar (<motivo>).` e `Faça: rode tools/ah doctor`, código 2; nos outros eventos, uma linha de aviso e código 0. Passam mesmo assim um comando que é uma única chamada a `tools/ah`, `./tools/ah`, `ah` ou `<raiz>/tools/ah` (depois de interpretado pelo shell do harness) e a edição de `.harness/config.json` (pelo caminho resolvido). Evento que vem de fora de um projeto do harness passa sem nada.
+
 ## Proteção de ramo no GitHub
 
 - **Ramos protegidos** [GH-prot], [GH-api]: disponíveis em repositórios públicos com GitHub Free e GitHub Free para organizações, e em repositórios públicos e privados com GitHub Pro, GitHub Team, GitHub Enterprise Cloud e GitHub Enterprise Server. Repositório privado de conta Free não tem.
