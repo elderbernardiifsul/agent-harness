@@ -140,5 +140,7 @@ test('10. gh pr merge com opções de valor antes do número', () => {
     assert.equal(av(`gh pr merge ${o} 8`).trava, 'T5', o);
   }
 });
-// Fora até o conserto do shell.mjs entrar (o env ainda vaza o `export`):
-// test('export AH_GUARD=off não vale para o comando seguinte', () => assert.equal(av('export AH_GUARD=off; git push origin main').trava, 'T5'));
+test('AH_GUARD exportado ou solto em comando anterior não vale para o seguinte', () => {
+  assert.equal(av('export AH_GUARD=off; git push origin main').trava, 'T5');
+  assert.equal(av('AH_GUARD=off; git push origin main').trava, 'T5');
+});
