@@ -145,18 +145,67 @@ test('várias atribuições e a forma +=', () => {
 test('atribuição com aspas no nome não é atribuição', () => {
   assert.deepEqual(so(`"A=1" git push`), ['A=1 git push']);
 });
-test('atribuição solta e export valem para os comandos seguintes', () => {
-  const cs = comandosSimples('AH_GUARD=off; git push', '/r');
+test('env só leva o prefixo e o invólucro (R10)', () => {
   assert.deepEqual(so('AH_GUARD=off; git push'), ['git push']);
-  assert.equal(cs[0].env.AH_GUARD, 'off');
-  assert.equal(comandosSimples('export AH_GUARD=off && git push', '/r')[1].env.AH_GUARD, 'off');
-  assert.equal(comandosSimples('export A=1; unset A; git push', '/r').at(-1).env.A, undefined);
-  assert.equal(comandosSimples('(export A=1); git push', '/r').at(-1).env.A, undefined);
+  assert.equal(comandosSimples('AH_GUARD=off; git push', '/r')[0].env.AH_GUARD, undefined);
+  assert.equal(comandosSimples('export AH_GUARD=off; git push', '/r').at(-1).env.AH_GUARD, undefined);
+  assert.equal(comandosSimples('export AH_GUARD=off && git push', '/r').at(-1).env.AH_GUARD, undefined);
+  assert.equal(comandosSimples('AH_GUARD=off eval true; git push', '/r').at(-1).env.AH_GUARD, undefined);
+  assert.equal(comandosSimples(`AH_GUARD=off eval 'git push'`, '/r')[0].env.AH_GUARD, 'off');
+  assert.deepEqual(comandosSimples('env A=1 git push', '/r')[0].env, { A: '1' });
 });
 test('env do lado de fora chega ao bash -c', () => {
   const [c] = comandosSimples(`AH_GUARD=off bash -c 'git push'`, '/r');
   assert.equal(c.env.AH_GUARD, 'off');
   assert.deepEqual(c.argv, ['git', 'push']);
+});
+
+// Rodada de consertos 1.
+test('escapes de printf e echo entregues a um shell', () => {
+  const ultimo = t => comandosSimples(t, '/r').filter(c => c.argv[0] === 'git').map(c => c.argv);
+  const alvo = [['git', 'push', 'origin', 'main']];
+  assert.deepEqual(ultimo(`printf 'git push origin main\\n' | sh`), alvo);
+  assert.deepEqual(ultimo(`printf 'git push origin main\\n' | bash`), alvo);
+  // echo sem -e: a leitura crua (bash) e a decodificada (dash) aparecem as duas.
+  assert.ok(ultimo(`echo 'git push origin main\\n' | sh`).some(x => x.join(' ') === 'git push origin main'));
+  assert.deepEqual(ultimo(`echo -e 'git\\x20push origin main' | sh`), alvo);
+  assert.deepEqual(ultimo(`printf '%s %s\\n' 'git push' 'origin main' | sh`), alvo);
+  assert.deepEqual(ultimo(`printf '%b' 'git\\tpush\\040origin main' | sh`), alvo);
+  assert.deepEqual(ultimo(`printf 'git\\0160ush origin main' | sh`).length, 0);
+  assert.deepEqual(ultimo(`printf 'git \\160ush origin main' | sh`), alvo);
+  assert.deepEqual(ultimo(`echo -e 'git \\0160ush origin main' | sh`), alvo);
+  assert.throws(() => so(`printf '%s' "$X" | sh`), erro);
+  assert.throws(() => so(`printf "$F" | sh`), erro);
+  assert.deepEqual(so(`printf '%s' "$X"`), ['printf %s $X']);
+});
+test('cd X || cmd: o lado direito roda no cwd de antes (R11)', () => {
+  const cs = comandosSimples('cd /w || git add -A', '/r');
+  assert.equal(cs[1].cwd, '/r');
+  assert.equal(comandosSimples('cd a && x || y', '/r').at(-1).cwd, null);
+  assert.equal(comandosSimples('cd /w || git add -A; git log', '/r').at(-1).cwd, path.resolve('/w'));
+  assert.equal(comandosSimples('cd sub || exit 1; git log', '/r').at(-1).cwd, path.resolve('/r', 'sub'));
+  assert.equal(comandosSimples('cd a && git x', '/r').at(-1).cwd, path.resolve('/r', 'a'));
+});
+test('cadeia de eval tem orçamento global', () => {
+  for (const t of ['eval '.repeat(95) + 'a '.repeat(50000), 'eval '.repeat(95) + 'a '.repeat(250000), 'eval '.repeat(300) + 'a '.repeat(1000)]) {
+    const inicio = Date.now();
+    try { comandosSimples(t, '/r'); } catch (e) { assert.ok(erro(e), String(e)); }
+    assert.ok(Date.now() - inicio < 2000, `lento: ${t.length}`);
+  }
+});
+test('env - é o -i do POSIX', () => assert.deepEqual(comandosSimples('env - git push origin main', '/r')[0].argv, ['git', 'push', 'origin', 'main']));
+test('chave com alternativa vazia some', () => {
+  assert.deepEqual(comandosSimples('{,git} push origin main', '/r')[0].argv, ['git', 'push', 'origin', 'main']);
+  assert.deepEqual(comandosSimples('{git,} push origin main', '/r')[0].argv, ['git', 'push', 'origin', 'main']);
+  assert.deepEqual(comandosSimples('""git push', '/r')[0].argv, ['git', 'push']);
+  assert.deepEqual(comandosSimples('echo "" x', '/r')[0].argv, ['echo', '', 'x']);
+});
+test('invólucro e git -C pelo nome-base, argv[0] fiel', () => {
+  assert.deepEqual(comandosSimples('/usr/bin/env git push', '/r')[0].argv, ['git', 'push']);
+  const [a] = comandosSimples('/usr/bin/git -C x push', '/r');
+  assert.deepEqual(a.argv, ['/usr/bin/git', 'push']); assert.equal(a.cwd, path.resolve('/r', 'x'));
+  const [b] = comandosSimples('~/bin/git -C x push', '/r');
+  assert.deepEqual(b.argv, ['~/bin/git', 'push']); assert.equal(b.cwd, path.resolve('/r', 'x'));
 });
 
 // Envoltórios.
