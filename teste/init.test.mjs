@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { criarRepo, criarProjeto } from './apoio/repo.mjs';
 import { VERSAO } from '../nucleo/versao.mjs';
 import { listarArquivosDoNucleo } from '../nucleo/comandos/init.mjs';
@@ -291,4 +292,24 @@ test('C1: já no ramo base o init não manda trocar; commit na main é acusado p
   for (const args of passosImpressos(r2.saida)) assert.equal(p.git(args).codigo, 0, args.join(' '));
   assert.equal(p.ah(['open', 'carrinho']).codigo, 0);
   p.limpar();
+});
+
+// ---- onda final: I2 e M3 (modelos que o init copia)
+const MODELOS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'modelos');
+test('I2: sessoes-paralelas.md descreve só as travas que existem nesta fatia', () => {
+  const t = fs.readFileSync(path.join(MODELOS, 'sessoes-paralelas.md'), 'utf8');
+  for (const trava of ['T0', 'T2', 'T5']) assert.ok(t.includes(trava), trava);
+  assert.doesNotMatch(t, /não grava arquivos fora do worktree da própria frente|só por uma vez|pull request: `feat/);
+  assert.match(t, /git merge --no-ff feat\/<nome>/);
+  assert.match(t, /próxima versão/);
+  assert.match(t, /a T0 nunca é liberada/);
+});
+test('M3: o cabeçalho do histórico descreve a linha que o close grava, sem confundir o doctor', async () => {
+  const t = fs.readFileSync(path.join(MODELOS, 'historico-das-frentes.md'), 'utf8');
+  assert.ok(t.includes('`- <data> · <id> · <nome> · @<login> · <tickets> · <resumo>`'));
+  const { linhaDoHistorico, idsNoHistorico } = await import('../nucleo/lib/frente.mjs');
+  const linha = linhaDoHistorico({ id: 'as-1', nome: 'carrinho', abertaPor: 'ana-souza', tickets: [1], abertaEm: '2026-11-12T10:00:00-03:00' }, 'soma', new Date());
+  assert.match(linha, /^- \d{4}-\d{2}-\d{2} · as-1 · carrinho · @ana-souza · #1 · soma$/);
+  // nenhuma linha do cabeçalho tem id e @login juntos (o doctor leria como choque de sigla)
+  for (const l of t.split('\n')) assert.ok(!(idsNoHistorico(l, 'as').length && /@[A-Za-z0-9]/.test(l)), l);
 });
