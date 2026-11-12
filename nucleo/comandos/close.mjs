@@ -5,7 +5,7 @@ import { comTrava, registrarEvento } from '../lib/estado.mjs';
 import { gravarFrente, lerFrente, linhaDoHistorico, nomeValido, removerFrente } from '../lib/frente.mjs';
 import { existeRamo, ramoAtual, git } from '../lib/git.mjs';
 import { comentar } from '../lib/github.mjs';
-import { gravarSessao, idCurto, lerSessao } from '../lib/sessao.mjs';
+import { gravarSessao, idCurto, lerSessao, tocarSinal } from '../lib/sessao.mjs';
 
 export const descricao = 'fecha a frente da sessão sem perder trabalho';
 export const uso = 'ah close [<nome>] [--resumo "<texto>"] [--descartar-ignorados]';
@@ -71,6 +71,7 @@ export async function executar(args, amb) {
 
   return comTrava(dirEstado, 'frentes', async () => {
     const sessao = lerSessao(dirEstado, amb.sessaoId);
+    if (sessao) tocarSinal(dirEstado, amb.sessaoId);
     const nomeDaSessao = sessao?.frente ? (sessao.frente.nome ?? sessao.frente) : null;
     const nome = o.nome ?? nomeDaSessao;
     if (!nome) throw recusa('Esta sessão não tem frente.', 'rode ah board para ver as frentes abertas');

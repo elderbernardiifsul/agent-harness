@@ -1,9 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {
   siglaValida, siglaDeLogin, nomeValido, idsNoHistorico, proximoId, novaFrente, linhaDoHistorico,
+  lerFrente, listarFrentes, listarFrentesTolerante, frentesDa, migrarFrente,
 } from '../nucleo/lib/frente.mjs';
+import { gravarJson } from '../nucleo/lib/estado.mjs';
 
 test('siglaDeLogin', () => {
   assert.equal(siglaDeLogin('ana-souza'), 'as');
@@ -50,9 +54,9 @@ test('novaFrente monta ramo e worktree', () => {
     caminhos: ['src/'], dona: null, login: 'ana-souza', agora: new Date('2026-03-04T15:00:00Z'),
   });
   assert.deepEqual(f, {
-    esquema: 1, id: 'as-6', nome: 'carrinho', ramo: 'feat/carrinho', worktree: path.join(dir, 'carrinho'),
+    esquema: 2, id: 'as-6', nome: 'carrinho', ramo: 'feat/carrinho', worktree: path.join(dir, 'carrinho'),
     tickets: [1], plano: null, caminhos: ['src/'], dona: null, abertaPor: 'ana-souza',
-    abertaEm: '2026-03-04T12:00:00-03:00', estado: 'ativa', notas: [],
+    abertaEm: '2026-03-04T12:00:00-03:00', estado: 'ativa', notas: [], reserva: null,
   });
 });
 
@@ -62,4 +66,51 @@ test('novaFrente com fuso UTC usa +00:00', () => {
     tickets: [], plano: null, caminhos: [], dona: null, login: 'ana-souza', agora: new Date('2026-03-04T15:00:00Z'),
   });
   assert.equal(f.abertaEm, '2026-03-04T15:00:00+00:00');
+});
+
+function temp(t) {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'ah-fre-'));
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  return d;
+}
+
+const v1 = (nome, extra = {}) => ({
+  esquema: 1, id: 'as-1', nome, ramo: `feat/${nome}`, worktree: path.join('wt', nome), tickets: [], plano: null, caminhos: [],
+  dona: 's1', abertaPor: 'ana-souza', abertaEm: '2026-03-04T12:00:00-03:00', estado: 'ativa', notas: [], ...extra,
+});
+
+test('frente do esquema 1 ganha reserva nula ao ser lida; frentesDa filtra ativas da dona', t => {
+  const dir = temp(t);
+  gravarJson(path.join(dir, 'frentes', 'carrinho.json'), v1('carrinho'));
+  const f = lerFrente(dir, 'carrinho');
+  assert.equal(f.reserva, null); assert.equal(f.esquema, 2);
+  assert.equal(listarFrentes(dir)[0].esquema, 2);
+  const frentes = [
+    { nome: 'a', estado: 'ativa', dona: 's1' }, { nome: 'b', estado: 'passada', dona: 's1' }, { nome: 'c', estado: 'ativa', dona: 's2' },
+  ];
+  assert.equal(frentesDa(frentes, 's1').length, 1);
+  assert.deepEqual(frentesDa(frentes, 's1').map(x => x.nome), ['a']);
+});
+
+test('frente do esquema 2 mantém a reserva; esquema maior recusa pedindo para atualizar', t => {
+  const dir = temp(t);
+  const reserva = { logins: ['ana-souza'], tickets: [1] };
+  gravarJson(path.join(dir, 'frentes', 'carrinho.json'), { ...v1('carrinho'), esquema: 2, reserva });
+  assert.deepEqual(lerFrente(dir, 'carrinho').reserva, reserva);
+  gravarJson(path.join(dir, 'frentes', 'nova.json'), { ...v1('nova'), esquema: 3 });
+  assert.throws(() => lerFrente(dir, 'nova'), e => e.name === 'ErroDeEstado' && /atualize o harness/.test(e.saida));
+  assert.throws(() => migrarFrente({ esquema: 7 }), e => e.name === 'ErroDeEstado' && /ah init --sobrescrever/.test(e.saida));
+});
+
+test('listarFrentesTolerante separa as ilegíveis sem lançar', t => {
+  const dir = temp(t);
+  assert.deepEqual(listarFrentesTolerante(dir), { frentes: [], ilegiveis: [] });
+  gravarJson(path.join(dir, 'frentes', 'carrinho.json'), v1('carrinho'));
+  gravarJson(path.join(dir, 'frentes', 'busca.json'), v1('busca', { abertaEm: '2026-03-03T12:00:00-03:00' }));
+  fs.writeFileSync(path.join(dir, 'frentes', 'quebrada.json'), 'não é json');
+  gravarJson(path.join(dir, 'frentes', 'futura.json'), { ...v1('futura'), esquema: 5 });
+  const l = listarFrentesTolerante(dir);
+  assert.deepEqual(l.frentes.map(f => f.nome), ['busca', 'carrinho']);
+  assert.deepEqual(l.ilegiveis.sort(), ['futura', 'quebrada']);
+  assert.throws(() => listarFrentes(dir), e => e.name === 'ErroDeEstado');
 });

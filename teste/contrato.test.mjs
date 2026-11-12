@@ -6,7 +6,7 @@ import path from 'node:path';
 import { criarProjeto, amb, dirDoTeste } from './apoio/repo.mjs';
 import { tratar, passaNaQuebra, respostaNaQuebra } from '../nucleo/adaptadores/contrato.mjs';
 import { montarResumo } from '../nucleo/lib/resumo.mjs';
-import { lerSessao } from '../nucleo/lib/sessao.mjs';
+import { lerSessao, idadeDoSinalMs } from '../nucleo/lib/sessao.mjs';
 import { lerEventos } from '../nucleo/lib/estado.mjs';
 import { gravarFrente } from '../nucleo/lib/frente.mjs';
 import { aplicarPadroes } from '../nucleo/lib/config.mjs';
@@ -167,10 +167,11 @@ test('antes: o T2 usa o cwd do evento, não o do processo', () => {
 
 test('sinal toca o sinal de vida e fim encerra a sessão', async () => {
   tratar({ tipo: 'inicio', sessao: 's5', agente: 'claude-code', cwd: p.raiz, origem: 'novo' }, amb(p));
-  const antesDoSinal = lerSessao(dirDoTeste(p), 's5').sinal;
-  await new Promise(r => setTimeout(r, 5));
+  const arqSinal = path.join(dirDoTeste(p), 'sessoes', 's5.sinal');
+  const velho = new Date(Date.now() - 3600000);
+  fs.utimesSync(arqSinal, velho, velho);
   assert.deepEqual(tratar({ tipo: 'sinal', sessao: 's5' }, amb(p)), {});
-  assert.notEqual(lerSessao(dirDoTeste(p), 's5').sinal, antesDoSinal);
+  assert.ok(idadeDoSinalMs(dirDoTeste(p), 's5') < 60000);
   assert.deepEqual(tratar({ tipo: 'fim', sessao: 's5' }, amb(p)), {});
   assert.ok(lerSessao(dirDoTeste(p), 's5').fim);
   assert.equal(lerEventos(dirDoTeste(p)).at(-1).tipo, 'sessao-fim');

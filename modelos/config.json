@@ -8,5 +8,6 @@
   "ci": { "comandoDeTeste": null },
   "agentes": ["claude-code"],
   "extensoes": {},
-  "fuso": "America/Sao_Paulo"
+  "fuso": "America/Sao_Paulo",
+  "sessoes": { "prazoDoSinalMin": 120 }
 }

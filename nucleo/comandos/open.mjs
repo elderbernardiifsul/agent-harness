@@ -6,7 +6,8 @@ import { comTrava, lerJson, registrarEvento } from '../lib/estado.mjs';
 import { gravarFrente, lerFrente, listarFrentes, nomeValido, novaFrente, proximoId, siglaValida } from '../lib/frente.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
 import { comentar, loginAtual } from '../lib/github.mjs';
-import { gravarSessao, lerSessao, registrarSessao, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
+import { gravarSessao, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
+import { inicioDoProcesso, pidDeComando } from '../lib/vida.mjs';
 
 export const descricao = 'abre uma frente de trabalho: ramo, worktree, registro e comentário nos tickets';
 export const uso = 'ah open <nome> [--tickets 1,2] [--plano <arquivo>] [--caminhos <globs>]';
@@ -120,7 +121,10 @@ export async function executar(args, amb) {
     let sessao = lerSessao(dirEstado, amb.sessaoId);
     if (!sessao) {
       const doAgente = !amb.env.AH_SESSAO && amb.env[VARIAVEL_SESSAO_CLAUDE];
-      sessao = registrarSessao(dirEstado, { id: amb.sessaoId, agente: doAgente ? 'claude' : 'desconhecido', pid: process.pid });
+      const pid = pidDeComando(amb.env);
+      sessao = registrarSessao(dirEstado, { id: amb.sessaoId, agente: doAgente ? 'claude' : 'desconhecido', pid, pidInicio: pid === null ? null : inicioDoProcesso(pid) });
+    } else {
+      tocarSinal(dirEstado, amb.sessaoId);
     }
     if (sessao.frente) {
       throw recusa(`Esta sessão já tem a frente ${String(sessao.frente.nome ?? sessao.frente).slice(0, 60)}.`, 'continue nela ou encerre com ah close antes de abrir outra');

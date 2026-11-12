@@ -49,3 +49,17 @@ test('M4: config ausente pelo código ENOENT, não pelo texto', async () => {
     p.limpar();
   }
 });
+
+test('sessoes.prazoDoSinalMin: padrão 120, inteiro de 1 a 10080', () => {
+  assert.equal(aplicarPadroes({ projeto: 'loja' }).sessoes.prazoDoSinalMin, 120);
+  for (const v of [0, 10081, 1.5, '60']) assert.deepEqual(validarConfig({ projeto: 'loja', sessoes: { prazoDoSinalMin: v } }).erros.map(e => e.campo), ['sessoes.prazoDoSinalMin']);
+  for (const v of [1, 60, 10080]) assert.equal(validarConfig({ projeto: 'loja', sessoes: { prazoDoSinalMin: v } }).ok, true);
+  assert.equal(aplicarPadroes({ projeto: 'loja', sessoes: { prazoDoSinalMin: 30 } }).sessoes.prazoDoSinalMin, 30);
+});
+
+test('o modelo de configuração traz a seção sessoes e passa na validação', () => {
+  const modelo = JSON.parse(fs.readFileSync(new URL('../modelos/config.json', import.meta.url), 'utf8'));
+  assert.deepEqual(modelo.sessoes, { prazoDoSinalMin: 120 });
+  assert.equal(modelo.versaoDoEsquema, 1);
+  assert.equal(validarConfig({ ...modelo, projeto: 'loja' }).ok, true);
+});

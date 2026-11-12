@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
-import { criarRepo, criarProjeto, escreverConfig } from './apoio/repo.mjs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, utimesSync } from 'node:fs';
+import { criarRepo, criarProjeto, escreverConfig, dirDoTeste } from './apoio/repo.mjs';
+import { lerSessao, idadeDoSinalMs } from '../nucleo/lib/sessao.mjs';
 import { despachar } from '../nucleo/bin/ah.mjs';
 
 const p = criarRepo();
@@ -130,4 +131,39 @@ test('I3: nota --help não grava nota; depois de -- o --help é texto', () => {
   assert.equal(q.ah(['nota', '--', '--help']).codigo, 0);
   assert.deepEqual(frente().notas.map(n => n.texto), ['--help']);
   q.limpar();
+});
+
+test('ah whoami não grava o pid do próprio processo; com AH_PID_AGENTE grava', () => {
+  const p = criarProjeto(); p.ah(['whoami']);
+  try {
+    assert.equal(lerSessao(dirDoTeste(p), 'sessao-teste-0001').pid, null);
+    p.ah(['whoami'], { env: { AH_PID_AGENTE: String(process.pid) } });
+    assert.equal(lerSessao(dirDoTeste(p), 'sessao-teste-0001').pid, process.pid);
+    if (process.platform === 'linux') assert.match(lerSessao(dirDoTeste(p), 'sessao-teste-0001').pidInicio, /^\d+$/);
+    // sem a variável, o pid gravado fica
+    p.ah(['whoami']);
+    assert.equal(lerSessao(dirDoTeste(p), 'sessao-teste-0001').pid, process.pid);
+  } finally {
+    p.limpar();
+  }
+});
+
+test('os comandos da sessão tocam o sinal de vida', () => {
+  const p = criarProjeto();
+  try {
+    const d = dirDoTeste(p);
+    const arq = path.join(d, 'sessoes', 'sessao-teste-0001.sinal');
+    const envelhecer = () => { const velho = new Date(Date.now() - 3600000); utimesSync(arq, velho, velho); };
+    assert.equal(p.ah(['whoami']).codigo, 0);
+    envelhecer(); p.ah(['whoami']);
+    assert.ok(idadeDoSinalMs(d, 'sessao-teste-0001') < 60000, 'whoami');
+    envelhecer(); assert.equal(p.ah(['open', 'carrinho']).codigo, 0);
+    assert.ok(idadeDoSinalMs(d, 'sessao-teste-0001') < 60000, 'open');
+    envelhecer(); assert.equal(p.ah(['nota', 'mexendo']).codigo, 0);
+    assert.ok(idadeDoSinalMs(d, 'sessao-teste-0001') < 60000, 'nota');
+    envelhecer(); p.ah(['close']);
+    assert.ok(idadeDoSinalMs(d, 'sessao-teste-0001') < 60000, 'close');
+  } finally {
+    p.limpar();
+  }
 });

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { lerJson, gravarJson, validarNomeSeguro } from './estado.mjs';
+import { conferirEsquema, ESQUEMA_DO_ESTADO } from './sessao.mjs';
 
 export const siglaValida = s => typeof s === 'string' && /^[a-z]{2,4}$/.test(s);
 export const nomeValido = n => typeof n === 'string' && /^[a-z0-9][a-z0-9-]{1,48}$/.test(n);
@@ -43,7 +44,7 @@ function localComDeslocamento(data, desloc) {
 export function novaFrente({ id, nome, config, dirWorktrees, tickets, plano, caminhos, dona, login, agora }) {
   const desloc = deslocamento(config.fuso, agora);
   return {
-    esquema: 1,
+    esquema: ESQUEMA_DO_ESTADO,
     id,
     nome,
     ramo: config.git.prefixo + nome,
@@ -56,6 +57,7 @@ export function novaFrente({ id, nome, config, dirWorktrees, tickets, plano, cam
     abertaEm: localComDeslocamento(agora, desloc) + desloc,
     estado: 'ativa',
     notas: [],
+    reserva: null,
   };
 }
 
@@ -68,8 +70,16 @@ export function linhaDoHistorico(frente, resumo, agora) {
 
 const arquivoDaFrente = (dirEstado, nome) => path.join(dirEstado, 'frentes', `${validarNomeSeguro(nome, 'Nome da frente')}.json`);
 
+// Esquema 2: `estado` é 'ativa' ou 'passada'; `reserva` é {logins, tickets} ou null; opcionais
+// `passadaEm`, `passadaPor`, `retomadaEm`, `tomadaEm`, `tomadaDe`, `atribuidaPor`, `reconstruida`.
+export function migrarFrente(obj) {
+  if (conferirEsquema(obj, 'A frente') === ESQUEMA_DO_ESTADO) return obj;
+  return { ...obj, esquema: ESQUEMA_DO_ESTADO, reserva: obj.reserva ?? null };
+}
+
 export function lerFrente(dirEstado, nome) {
-  return lerJson(arquivoDaFrente(dirEstado, nome), null);
+  const obj = lerJson(arquivoDaFrente(dirEstado, nome), null);
+  return obj === null ? null : migrarFrente(obj);
 }
 
 export function gravarFrente(dirEstado, frente) {
@@ -80,18 +90,39 @@ export function removerFrente(dirEstado, nome) {
   fs.rmSync(arquivoDaFrente(dirEstado, nome), { force: true });
 }
 
-// Todas as frentes em disco, da mais antiga para a mais nova.
-export function listarFrentes(dirEstado) {
-  let nomes;
+function nomesDasFrentes(dirEstado) {
   try {
-    nomes = fs.readdirSync(path.join(dirEstado, 'frentes'));
+    return fs.readdirSync(path.join(dirEstado, 'frentes')).filter(n => n.endsWith('.json') && !n.startsWith('.')).map(n => n.slice(0, -5));
   } catch (e) {
     if (e.code === 'ENOENT') return [];
     throw e;
   }
-  return nomes
-    .filter(n => n.endsWith('.json') && !n.startsWith('.'))
-    .map(n => lerFrente(dirEstado, n.slice(0, -5)))
-    .filter(Boolean)
-    .sort((a, b) => String(a.abertaEm).localeCompare(String(b.abertaEm)) || String(a.nome).localeCompare(String(b.nome)));
+}
+
+const porAbertura = (a, b) => String(a.abertaEm).localeCompare(String(b.abertaEm)) || String(a.nome).localeCompare(String(b.nome));
+
+// Todas as frentes em disco, da mais antiga para a mais nova. Um arquivo ilegível lança.
+export function listarFrentes(dirEstado) {
+  return nomesDasFrentes(dirEstado).map(n => lerFrente(dirEstado, n)).filter(Boolean).sort(porAbertura);
+}
+
+// Como listarFrentes, mas o arquivo que não se lê vai por nome em `ilegiveis` em vez de lançar.
+export function listarFrentesTolerante(dirEstado) {
+  const frentes = [];
+  const ilegiveis = [];
+  for (const nome of nomesDasFrentes(dirEstado)) {
+    try {
+      const f = lerFrente(dirEstado, nome);
+      if (f) frentes.push(f);
+    } catch (e) {
+      if (e.name !== 'ErroDeEstado') throw e;
+      ilegiveis.push(nome);
+    }
+  }
+  return { frentes: frentes.sort(porAbertura), ilegiveis };
+}
+
+// Frentes ativas de que a sessão é dona.
+export function frentesDa(frentes, sessaoId) {
+  return frentes.filter(f => f.estado === 'ativa' && f.dona === sessaoId);
 }

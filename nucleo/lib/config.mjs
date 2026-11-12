@@ -21,6 +21,7 @@ export const PADROES = Object.freeze({
   agentes: ['claude-code'],
   extensoes: {},
   fuso: 'America/Sao_Paulo',
+  sessoes: { prazoDoSinalMin: 120 },
 });
 
 const eObjeto = v => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -48,6 +49,9 @@ const ESQUEMA = {
   agentes: v => (eListaDeTextos(v) ? null : 'deve ser uma lista de nomes'),
   extensoes: v => (eObjeto(v) ? null : 'deve ser um objeto'),
   fuso: v => (eTexto(v) ? null : 'deve ser um fuso como America/Sao_Paulo'),
+  sessoes: {
+    prazoDoSinalMin: v => (Number.isInteger(v) && v >= 1 && v <= 10080 ? null : 'deve ser um número inteiro de minutos, de 1 a 10080'),
+  },
 };
 
 function conferir(obj, esquema, prefixo, erros) {

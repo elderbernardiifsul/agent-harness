@@ -1,7 +1,7 @@
 import { ErroDeUso } from '../lib/caminhos.mjs';
 import { comTrava, registrarEvento } from '../lib/estado.mjs';
 import { gravarFrente, lerFrente } from '../lib/frente.mjs';
-import { lerSessao } from '../lib/sessao.mjs';
+import { lerSessao, tocarSinal } from '../lib/sessao.mjs';
 
 export const descricao = 'acrescenta uma nota à frente da sessão';
 export const uso = 'ah nota <texto>';
@@ -12,6 +12,7 @@ export async function executar(args, amb) {
   const texto = (args[0] === '--' ? args.slice(1) : args).join(' ').trim();
   if (!texto) throw new ErroDeUso('A nota está vazia.\nPróximo passo: escreva o texto, como ah nota "mexendo no total"');
   const sessao = lerSessao(amb.dirEstado, amb.sessaoId);
+  if (sessao) tocarSinal(amb.dirEstado, amb.sessaoId);
   const nome = sessao?.frente ? (sessao.frente.nome ?? sessao.frente) : null;
   if (!nome) throw new ErroDeUso('Esta sessão não tem frente ativa.\nPróximo passo: rode ah open <nome> para abrir uma');
   return comTrava(amb.dirEstado, 'frentes', async () => {
