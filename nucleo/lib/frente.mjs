@@ -72,14 +72,15 @@ const arquivoDaFrente = (dirEstado, nome) => path.join(dirEstado, 'frentes', `${
 
 // Esquema 2: `estado` é 'ativa' ou 'passada'; `reserva` é {logins, tickets} ou null; opcionais
 // `passadaEm`, `passadaPor`, `retomadaEm`, `tomadaEm`, `tomadaDe`, `atribuidaPor`, `reconstruida`.
-export function migrarFrente(obj) {
-  if (conferirEsquema(obj, 'A frente') === ESQUEMA_DO_ESTADO) return obj;
+export function migrarFrente(obj, arquivo = null) {
+  if (conferirEsquema(obj, 'A frente', arquivo) === ESQUEMA_DO_ESTADO) return obj;
   return { ...obj, esquema: ESQUEMA_DO_ESTADO, reserva: obj.reserva ?? null };
 }
 
 export function lerFrente(dirEstado, nome) {
-  const obj = lerJson(arquivoDaFrente(dirEstado, nome), null);
-  return obj === null ? null : migrarFrente(obj);
+  const arquivo = arquivoDaFrente(dirEstado, nome);
+  const obj = lerJson(arquivo, null);
+  return obj === null ? null : migrarFrente(obj, arquivo);
 }
 
 export function gravarFrente(dirEstado, frente) {

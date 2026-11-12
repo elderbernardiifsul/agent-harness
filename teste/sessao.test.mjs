@@ -112,6 +112,17 @@ test('esquema desconhecido recusa pedindo para atualizar', t => {
   assert.throws(() => migrarSessao({ esquema: 3 }), e => e.name === 'ErroDeEstado' && /ah init --sobrescrever/.test(e.saida));
 });
 
+test('recusa de esquema traz o arquivo e um conserto que não é o doctor', t => {
+  const dir = temp(t);
+  const v9 = path.join(dir, 'sessoes', 'v9.json');
+  gravarJson(v9, { esquema: 9, id: 'v9' });
+  assert.throws(() => lerSessao(dir, 'v9'), e => e.arquivo === v9 && e.message.includes(v9) && e.esquema === true);
+  const v0 = path.join(dir, 'sessoes', 'v0.json');
+  gravarJson(v0, { esquema: 0, id: 'v0' });
+  assert.throws(() => lerSessao(dir, 'v0'), e => e.arquivo === v0 && e.message.includes(v0)
+    && /conserte o campo "esquema"/.test(e.saida) && !/ah doctor/.test(e.saida));
+});
+
 test('listarSessoes separa as ilegíveis; apagarSessao tira o JSON e o sinal', t => {
   const dir = temp(t);
   assert.deepEqual(listarSessoes(dir), { sessoes: [], ilegiveis: [] });

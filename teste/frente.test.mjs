@@ -100,6 +100,8 @@ test('frente do esquema 2 mantém a reserva; esquema maior recusa pedindo para a
   gravarJson(path.join(dir, 'frentes', 'nova.json'), { ...v1('nova'), esquema: 3 });
   assert.throws(() => lerFrente(dir, 'nova'), e => e.name === 'ErroDeEstado' && /atualize o harness/.test(e.saida));
   assert.throws(() => migrarFrente({ esquema: 7 }), e => e.name === 'ErroDeEstado' && /ah init --sobrescrever/.test(e.saida));
+  const arq = path.join(dir, 'frentes', 'nova.json');
+  assert.throws(() => lerFrente(dir, 'nova'), e => e.arquivo === arq && e.message.includes(arq));
 });
 
 test('listarFrentesTolerante separa as ilegíveis sem lançar', t => {

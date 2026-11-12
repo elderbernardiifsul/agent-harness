@@ -7,6 +7,7 @@ export class ErroDeEstado extends Error {
     super(mensagem);
     this.name = 'ErroDeEstado';
     this.arquivo = arquivo;
+    this.proximo = proximo;
     this.saida = `${mensagem}\nPróximo passo: ${proximo}`;
   }
 }

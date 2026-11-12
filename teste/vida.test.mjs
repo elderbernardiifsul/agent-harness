@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import {
   processoExiste, inicioDoProcesso, pidDoAgente, pidDeComando, prazoMs, estadoDaSessao, vidaDaSessao,
 } from '../nucleo/lib/vida.mjs';
@@ -32,11 +33,33 @@ test('inicioDoProcesso de processo inexistente ou pid inválido é nulo', async 
 });
 
 test('inicioDoProcesso distingue dois processos', { skip: process.platform !== 'linux' }, async () => {
+  // O filho nasce bem depois deste processo (que já carregou os módulos e rodou testes).
+  await new Promise(r => setTimeout(r, 50));
   const p = processoVivo();
   try {
-    assert.match(inicioDoProcesso(p.pid), /^\d+$/);
+    const doFilho = inicioDoProcesso(p.pid);
+    assert.match(doFilho, /^\d+$/);
+    assert.notEqual(doFilho, inicioDoProcesso(process.pid));
+    assert.ok(Number(doFilho) > Number(inicioDoProcesso(process.pid)));
   } finally {
     await p.matar();
+  }
+});
+
+const temPs = spawnSync('ps', ['-o', 'lstart=', '-p', String(process.pid)], { encoding: 'utf8' }).status === 0;
+test('inicioDoProcesso pelo ps não muda com o fuso nem com o idioma do ambiente', { skip: process.platform === 'win32' || !temPs }, () => {
+  const antes = { TZ: process.env.TZ, LANG: process.env.LANG, LC_ALL: process.env.LC_ALL };
+  const ler = (tz, lang) => {
+    process.env.TZ = tz; process.env.LANG = lang; process.env.LC_ALL = lang;
+    return inicioDoProcesso(process.pid, 'darwin');
+  };
+  try {
+    const a = ler('America/Sao_Paulo', 'pt_BR.UTF-8');
+    const b = ler('Asia/Tokyo', 'C');
+    assert.ok(a);
+    assert.equal(a, b);
+  } finally {
+    for (const [k, v] of Object.entries(antes)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   }
 });
 

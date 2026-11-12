@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { arquivoDaMaquina, dirEstado as caminhoDoEstado } from '../lib/caminhos.mjs';
 import { ErroDeConfig, carregarConfig, configAusente } from '../lib/config.mjs';
 import { ErroDeEstado, lerJson } from '../lib/estado.mjs';
-import { idsNoHistorico, listarFrentes, siglaValida } from '../lib/frente.mjs';
+import { idsNoHistorico, lerFrente, listarFrentes, siglaValida } from '../lib/frente.mjs';
+import { lerSessao } from '../lib/sessao.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
 import { gh, protecaoDoRamo, repoAtual } from '../lib/github.mjs';
 import { mesclarGanchos } from './init.mjs';
@@ -74,7 +75,7 @@ function arquivosDeEstado(dirEstado) {
       if (e.code === 'ENOENT') continue; // pasta ausente: nada a ler
       throw new ErroDeEstado(`não consegui ler a pasta ${path.join(dirEstado, pasta)} (${e.code ?? e.message})`, path.join(dirEstado, pasta));
     }
-    for (const n of nomes) if (n.endsWith('.json') && !n.startsWith('.')) lista.push(path.join(dirEstado, pasta, n));
+    for (const n of nomes) if (n.endsWith('.json') && !n.startsWith('.')) lista.push({ pasta, nome: n.slice(0, -5), arq: path.join(dirEstado, pasta, n) });
   }
   return lista;
 }
@@ -126,10 +127,21 @@ export const VERIFICACOES = [
       if (e instanceof ErroDeEstado) return falha(nome, `${e.arquivo} ilegível; confira as permissões da pasta`);
       throw e;
     }
-    for (const arq of arquivos) {
-      try { lerJson(arq); } catch (e) { if (e instanceof ErroDeEstado) ruins.push(arq); else throw e; }
+    // Lê como os comandos leem (com a migração de esquema): esquema desconhecido ou mais novo também é falha.
+    const comEsquema = [];
+    for (const { pasta, nome: n, arq } of arquivos) {
+      try {
+        if (pasta === 'sessoes') lerSessao(amb.dirEstado, n); else lerFrente(amb.dirEstado, n);
+      } catch (e) {
+        if (!(e instanceof ErroDeEstado)) throw e;
+        if (e.esquema) comEsquema.push(`${e.message}; ${e.proximo}`); else ruins.push(arq);
+      }
     }
-    return ruins.length ? falha(nome, `${ruins.join(', ')} ilegível; apague ou conserte o arquivo`) : ok(nome);
+    const partes = [
+      ...(ruins.length ? [`${ruins.join(', ')} ilegível; apague ou conserte o arquivo`] : []),
+      ...comEsquema,
+    ];
+    return partes.length ? falha(nome, partes.join('; ')) : ok(nome);
   }),
 
   verificacao('Sigla sem choque', amb => {

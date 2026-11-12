@@ -18,19 +18,26 @@ export const SAIDA_DE_ESQUEMA_NOVO = 'atualize o harness (ah init --sobrescrever
 
 // Esquema 1 (fatia 1) vira 2 na leitura; o novo é gravado na próxima escrita. Esquema maior que o
 // conhecido é de um harness mais novo: recusa em vez de adivinhar.
-export function conferirEsquema(obj, rotulo) {
+// O erro sai marcado com `esquema: true` (o doctor o distingue do JSON quebrado).
+export function conferirEsquema(obj, rotulo, arquivo = null) {
   const esquema = obj?.esquema;
+  const onde = arquivo ? `${rotulo} em ${arquivo}` : rotulo;
+  let erro = null;
   if (typeof esquema === 'number' && esquema > ESQUEMA_DO_ESTADO) {
-    throw new ErroDeEstado(`${rotulo} está no esquema ${esquema}, mais novo que o deste harness (${ESQUEMA_DO_ESTADO})`, null, SAIDA_DE_ESQUEMA_NOVO);
+    erro = new ErroDeEstado(`${onde} está no esquema ${esquema}, mais novo que o deste harness (${ESQUEMA_DO_ESTADO})`, arquivo, SAIDA_DE_ESQUEMA_NOVO);
+  } else if (esquema !== undefined && esquema !== 1 && esquema !== ESQUEMA_DO_ESTADO) {
+    erro = new ErroDeEstado(`${onde} tem um esquema que não reconheço: ${JSON.stringify(esquema)}`, arquivo,
+      `conserte o campo "esquema" do arquivo (1 ou ${ESQUEMA_DO_ESTADO}) ou apague o arquivo${arquivo ? ` ${arquivo}` : ''}`);
   }
-  if (esquema !== undefined && esquema !== 1 && esquema !== ESQUEMA_DO_ESTADO) {
-    throw new ErroDeEstado(`${rotulo} tem um esquema que não reconheço: ${JSON.stringify(esquema)}`);
+  if (erro) {
+    erro.esquema = true;
+    throw erro;
   }
   return esquema === ESQUEMA_DO_ESTADO ? ESQUEMA_DO_ESTADO : 1;
 }
 
-export function migrarSessao(obj) {
-  if (conferirEsquema(obj, 'A sessão') === ESQUEMA_DO_ESTADO) return obj;
+export function migrarSessao(obj, arquivo = null) {
+  if (conferirEsquema(obj, 'A sessão', arquivo) === ESQUEMA_DO_ESTADO) return obj;
   const { sinal, ...resto } = obj;
   return { ...resto, esquema: ESQUEMA_DO_ESTADO, pidInicio: obj.pidInicio ?? null, motivoFim: obj.motivoFim ?? null };
 }
@@ -41,8 +48,9 @@ const arquivoDaSessao = (dirEstado, id) => path.join(pastaDasSessoes(dirEstado),
 const arquivoDoSinal = (dirEstado, id) => path.join(pastaDasSessoes(dirEstado), `${validarNomeSeguro(id, 'Id da sessão')}.sinal`);
 
 export function lerSessao(dirEstado, id) {
-  const obj = lerJson(arquivoDaSessao(dirEstado, id), null);
-  return obj === null ? null : migrarSessao(obj);
+  const arquivo = arquivoDaSessao(dirEstado, id);
+  const obj = lerJson(arquivo, null);
+  return obj === null ? null : migrarSessao(obj, arquivo);
 }
 
 export function gravarSessao(dirEstado, sessao) {

@@ -213,3 +213,30 @@ test('C1: o doctor tem 15 itens, com "Harness no ramo base" antes de "Gancho res
   assert.equal(nomes.indexOf('Harness no ramo base'), nomes.indexOf('Ganchos do Claude Code instalados') + 1);
   assert.equal(nomes.indexOf('Gancho responde'), nomes.indexOf('Harness no ramo base') + 1);
 });
+
+test('esquema desconhecido ou mais novo no estado é falha com o arquivo e o conserto', () => {
+  const p = criarProjeto();
+  try {
+    assert.equal(p.ah(['whoami']).codigo, 0);
+    assert.match(p.ah(['doctor']).saida, /^ok\s+Arquivos de estado legíveis/m);
+    const v0 = path.join(dirDoTeste(p), 'sessoes', 'v0.json');
+    fs.writeFileSync(v0, JSON.stringify({ esquema: 0, id: 'v0' }));
+    const f9 = path.join(dirDoTeste(p), 'frentes', 'futura.json');
+    fs.mkdirSync(path.dirname(f9), { recursive: true });
+    fs.writeFileSync(f9, JSON.stringify({ esquema: 9, nome: 'futura' }));
+    const saida = p.ah(['doctor']).saida;
+    const linha = saida.split('\n').find(l => /Arquivos de estado legíveis/.test(l));
+    assert.match(linha, /^FALHOU/);
+    assert.ok(linha.includes(v0), linha);
+    assert.match(linha, /conserte o campo "esquema"/);
+    assert.ok(linha.includes(f9), linha);
+    assert.match(linha, /atualize o harness/);
+    // e o whoami com a sessão em esquema desconhecido não manda rodar o doctor
+    const r = p.ah(['whoami'], { env: { AH_SESSAO: 'v0' } });
+    assert.equal(r.codigo, 1);
+    assert.match(r.erro, /conserte o campo "esquema"/);
+    assert.doesNotMatch(r.erro, /ah doctor/);
+  } finally {
+    p.limpar();
+  }
+});

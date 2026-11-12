@@ -24,7 +24,7 @@ export function processoExiste(pid) {
 }
 
 // Hora de início do processo, para notar pid reaproveitado. Linux: campo 22 de /proc/<pid>/stat
-// (em tiques desde o boot); macOS e outros: `ps -o lstart=`; Windows não confere.
+// (em tiques desde o boot); macOS e outros: `ps -o lstart=` em UTC e locale C; Windows não confere.
 export function inicioDoProcesso(pid, plataforma = process.platform) {
   try {
     if (!pidValido(pid) || plataforma === 'win32') return null;
@@ -35,7 +35,11 @@ export function inicioDoProcesso(pid, plataforma = process.platform) {
       const valor = campos[22 - 3];
       return /^\d+$/.test(valor ?? '') ? valor : null;
     }
-    const saida = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const saida = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+      encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'],
+      // lstart sai em hora local e no idioma do ambiente: fixa os dois para a leitura ser comparável.
+      env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' },
+    }).trim();
     return saida || null;
   } catch {
     return null;

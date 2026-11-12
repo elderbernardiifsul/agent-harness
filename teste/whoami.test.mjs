@@ -2,10 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, utimesSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, utimesSync, statSync } from 'node:fs';
 import { criarRepo, criarProjeto, escreverConfig, dirDoTeste } from './apoio/repo.mjs';
 import { lerSessao, idadeDoSinalMs } from '../nucleo/lib/sessao.mjs';
 import { despachar } from '../nucleo/bin/ah.mjs';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const p = criarRepo();
 escreverConfig(p, { projeto: 'loja' });
@@ -163,6 +165,51 @@ test('os comandos da sessão tocam o sinal de vida', () => {
     assert.ok(idadeDoSinalMs(d, 'sessao-teste-0001') < 60000, 'nota');
     envelhecer(); p.ah(['close']);
     assert.ok(idadeDoSinalMs(d, 'sessao-teste-0001') < 60000, 'close');
+  } finally {
+    p.limpar();
+  }
+});
+
+test('whoami com AH_PID_AGENTE só regrava a sessão quando o pid muda, e sob a trava das frentes', async () => {
+  const p = criarProjeto();
+  try {
+    const d = dirDoTeste(p);
+    const arq = path.join(d, 'sessoes', 'sessao-teste-0001.json');
+    const comPid = { AH_PID_AGENTE: String(process.pid) };
+    assert.equal(p.ah(['whoami'], { env: comPid }).codigo, 0);
+    // pid igual: o JSON não é regravado (nem o mtime muda)
+    const antes = statSync(arq).mtimeMs;
+    const texto = readFileSync(arq, 'utf8');
+    await new Promise(r => setTimeout(r, 20));
+    assert.equal(p.ah(['whoami'], { env: comPid }).codigo, 0);
+    assert.equal(statSync(arq).mtimeMs, antes);
+    assert.equal(readFileSync(arq, 'utf8'), texto);
+    // pid novo com a trava presa: o whoami espera a trava antes de gravar
+    const trava = path.join(d, 'travas', 'frentes');
+    mkdirSync(trava, { recursive: true });
+    writeFileSync(path.join(trava, 'dono.json'), JSON.stringify({ pid: process.pid, em: new Date().toISOString(), marca: 'teste' }));
+    const ah = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'nucleo', 'bin', 'ah.mjs');
+    const filho = spawn(process.execPath, [ah, 'whoami'], { cwd: p.raiz, env: { ...p.env, AH_PID_AGENTE: '1' }, stdio: 'ignore' });
+    const saiu = new Promise(r => filho.once('exit', c => r(c)));
+    await new Promise(r => setTimeout(r, 400));
+    assert.equal(JSON.parse(readFileSync(arq, 'utf8')).pid, process.pid, 'gravou sem a trava');
+    rmSync(trava, { recursive: true, force: true });
+    assert.equal(await saiu, 0);
+    assert.equal(JSON.parse(readFileSync(arq, 'utf8')).pid, 1);
+  } finally {
+    p.limpar();
+  }
+});
+
+test('whoami com AH_PID_AGENTE não desfaz a frente gravada pelo open', () => {
+  const p = criarProjeto();
+  try {
+    const comPid = { AH_PID_AGENTE: String(process.pid) };
+    assert.equal(p.ah(['whoami'], { env: comPid }).codigo, 0);
+    assert.equal(p.ah(['open', 'carrinho'], { env: comPid }).codigo, 0);
+    assert.equal(p.ah(['whoami'], { env: { AH_PID_AGENTE: '1' } }).codigo, 0);
+    const s = lerSessao(dirDoTeste(p), 'sessao-teste-0001');
+    assert.equal(s.frente, 'carrinho'); assert.equal(s.pid, 1);
   } finally {
     p.limpar();
   }

@@ -37,6 +37,7 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
     GH_FALSO_LOG: join(base, 'gh.log'),
   };
   delete env.CLAUDE_CODE_SESSION_ID;
+  delete env.AH_PID_AGENTE;
   delete env.GH_FALSO_FORA;
   delete env.GH_FALSO_RESPOSTAS;
   const git = (args, { cwd = raiz } = {}) => executar(args, { cwd, env });
