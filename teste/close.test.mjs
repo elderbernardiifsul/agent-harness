@@ -278,3 +278,46 @@ test('sessão com frente sem registro: close solta a sessão, avisa e o open fun
   assert.equal(o.codigo, 0, o.erro);
   p.limpar();
 });
+
+function ignoradosCom(p, wt) {
+  fs.writeFileSync(path.join(wt, '.gitignore'), '*.log\nnode_modules/\ncache/\n');
+  p.git(['add', '.gitignore'], { cwd: wt });
+  p.git(['commit', '-m', 'chore: ignora'], { cwd: wt });
+  mescla(p);
+}
+
+test('pasta com 30 mil arquivos ignorados: close recusa com lista curta e não apaga nada', () => {
+  const { p, wt } = comFrente();
+  ignoradosCom(p, wt);
+  fs.mkdirSync(path.join(wt, 'node_modules', 'pacote'), { recursive: true });
+  for (let i = 0; i < 30000; i++) fs.writeFileSync(path.join(wt, 'node_modules', 'pacote', `arquivo-com-nome-bem-comprido-${i}.js`), '');
+  fs.mkdirSync(path.join(wt, 'cache'));
+  fs.writeFileSync(path.join(wt, 'cache', 'x'), 'x');
+  const r = p.ah(['close']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /node_modules\//);
+  assert.match(r.erro, /cache\//);
+  assert.ok(r.erro.length < 2000);
+  assert.ok(fs.existsSync(path.join(wt, 'node_modules', 'pacote', 'arquivo-com-nome-bem-comprido-29999.js')));
+  p.limpar();
+});
+
+test('conferência que falha ao rodar vira recusa e nada é apagado', { skip: process.platform === 'win32' }, () => {
+  const { p, wt } = comFrente();
+  mescla(p);
+  const real = p.git(['--exec-path']).saida.trim();
+  const dirReal = fs.mkdtempSync(path.join(path.dirname(p.raiz), 'fake-'));
+  const gitReal = ['/usr/bin/git', '/bin/git', '/usr/local/bin/git'].find(c => fs.existsSync(c));
+  assert.ok(gitReal && real);
+  for (const quebrar of ['ls-files', 'status', 'log']) {
+    const script = path.join(dirReal, 'git');
+    fs.writeFileSync(script, `#!/bin/sh\nfor a in "$@"; do if [ "$a" = "${quebrar}" ]; then echo "falha injetada" >&2; exit 3; fi; done\nexec ${gitReal} "$@"\n`, { mode: 0o755 });
+    const r = p.ah(['close'], { env: { PATH: `${dirReal}${path.delimiter}${process.env.PATH}` } });
+    assert.equal(r.codigo, 1, `${quebrar}: ${r.saida}`);
+    assert.match(r.erro, /Não consegui conferir/, quebrar);
+    assert.match(r.erro, /falha injetada/);
+    assert.ok(fs.existsSync(wt), quebrar);
+    assert.ok(fs.existsSync(arquivoDaFrente(p, 'carrinho')), quebrar);
+  }
+  p.limpar();
+});

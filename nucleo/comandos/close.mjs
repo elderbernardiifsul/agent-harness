@@ -110,44 +110,63 @@ export async function executar(args, amb) {
       throw recusa(`O checkout principal tem alterações em ${ARQUIVO_DO_HISTORICO}.`, `commit ou descarte essas alterações (git -C ${raiz} diff ${ARQUIVO_DO_HISTORICO}) e rode ah close de novo`);
     }
 
-    // 2. Nada se perde.
+    // 2. Nada se perde. Conferência que não consegue rodar é recusa, nunca "nada a perder".
     const wt = frente.worktree;
     const temWt = fs.existsSync(wt);
-    const problemas = [];
-    let ignorados = [];
-    if (temWt) {
-      const st = g(['status', '--porcelain'], wt);
-      if (st.codigo !== 0) throw recusa(`Não consegui ler o worktree ${wt}: ${st.erro.trim().split('\n')[0]}`, 'confira com git worktree list; se ele está quebrado, git worktree remove --force e rode ah close de novo');
-      const sujos = st.saida.split('\n').filter(Boolean);
-      if (sujos.length) {
-        problemas.push([`alterações não commitadas no worktree (${sujos.length}); saída: commit no worktree (git -C ${wt} add -A && git -C ${wt} commit)`, listaCortada(sujos, 'arquivos')]);
-      }
-    }
     const refRamo = `refs/heads/${frente.ramo}`;
-    const temRamo = existeRamo(raiz, frente.ramo, { env });
-    const temRamoRemoto = existeRamo(raiz, frente.ramo, { remoto, env });
-    let soNoRemoto = false;
-    if (temRamo) {
-      const excluir = [`refs/heads/${base}`, ...(temRamoRemoto ? [`refs/remotes/${remoto}/${frente.ramo}`] : [])];
-      const r = g(['log', '--format=%h %s', refRamo, '--not', ...excluir]);
-      const perdidos = r.saida.split('\n').filter(Boolean);
-      if (r.codigo !== 0) throw recusa(`Não consegui comparar o ramo ${frente.ramo} com a base: ${r.erro.trim().split('\n')[0]}`, 'rode ah doctor');
-      if (perdidos.length) {
-        problemas.push([`commits do ramo ${frente.ramo} que não estão na ${base} nem no remoto (${perdidos.length}); saída: git merge --no-ff ${frente.ramo} na ${base}, ou git push -u ${remoto} ${frente.ramo}`, listaCortada(perdidos, 'commits')]);
+    const refRemoto = `refs/remotes/${remoto}/${frente.ramo}`;
+    const falhou = (oque, r) => recusa(`Não consegui conferir ${oque}: ${(r.erro || r.saida || `código ${r.codigo}`).trim().split('\n')[0].slice(0, 200)}`, 'resolva o que o git descreve (ou rode ah doctor) e repita ah close; nada foi apagado');
+    const existeRef = (ref, oque) => {
+      const r = g(['show-ref', '--verify', '--quiet', ref]);
+      if (r.codigo === 0) return true;
+      if (r.codigo === 1) return false;
+      throw falhou(oque, r);
+    };
+    const temRamo = existeRef(refRamo, `se o ramo ${frente.ramo} existe`);
+    const temRamoRemoto = existeRef(refRemoto, `se o ramo ${frente.ramo} existe no remoto`);
+
+    // Devolve a lista de problemas; lança recusa se alguma conferência não rodar.
+    const conferir = () => {
+      const problemas = [];
+      if (temWt) {
+        const st = g(['status', '--porcelain'], wt);
+        if (st.codigo !== 0) throw falhou(`as alterações do worktree ${wt}`, st);
+        const sujos = st.saida.split('\n').filter(Boolean);
+        if (sujos.length) {
+          problemas.push([`alterações não commitadas no worktree (${sujos.length}); saída: commit no worktree (git -C ${wt} add -A && git -C ${wt} commit)`, listaCortada(sujos, 'arquivos')]);
+        }
       }
-      soNoRemoto = g(['merge-base', '--is-ancestor', refRamo, `refs/heads/${base}`]).codigo !== 0;
-    }
-    if (temWt && !o.descartarIgnorados) {
-      const ig = g(['ls-files', '-z', '-o', '-i', '--exclude-standard'], wt);
-      ignorados = ig.saida.split('\0').filter(Boolean);
-      if (ignorados.length) {
-        problemas.push([`arquivos ignorados no worktree (${ignorados.length}), que o git não guarda; saída: copie o que importa de ${wt}, ou repita com --descartar-ignorados`, listaCortada(ignorados, 'arquivos')]);
+      if (temRamo) {
+        const excluir = [`refs/heads/${base}`, ...(temRamoRemoto ? [refRemoto] : [])];
+        const r = g(['log', '--format=%h %s', refRamo, '--not', ...excluir]);
+        if (r.codigo !== 0) throw falhou(`os commits do ramo ${frente.ramo}`, r);
+        const perdidos = r.saida.split('\n').filter(Boolean);
+        if (perdidos.length) {
+          problemas.push([`commits do ramo ${frente.ramo} que não estão na ${base} nem no remoto (${perdidos.length}); saída: git merge --no-ff ${frente.ramo} na ${base}, ou git push -u ${remoto} ${frente.ramo}`, listaCortada(perdidos, 'commits')]);
+        }
       }
-    }
-    if (problemas.length) {
+      if (temWt && !o.descartarIgnorados) {
+        const ig = g(['ls-files', '-z', '-o', '-i', '--exclude-standard', '--directory'], wt);
+        if (ig.codigo !== 0) throw falhou(`os arquivos ignorados do worktree ${wt}`, ig);
+        const ignorados = ig.saida.split('\0').filter(Boolean);
+        if (ignorados.length) {
+          problemas.push([`itens ignorados no worktree (${ignorados.length}; pasta inteira conta como um), que o git não guarda; saída: copie o que importa de ${wt}, ou repita com --descartar-ignorados`, listaCortada(ignorados, 'itens')]);
+        }
+      }
+      return problemas;
+    };
+    const recusarProblemas = problemas => {
       const corpo = problemas.map(([t, l]) => [`- ${t}`, ...l].join('\n')).join('\n');
       throw new ErroDeUso(`Fechar a frente ${frente.id} ${frente.nome} perderia trabalho.\nPróximo passo: ${corpo}`);
+    };
+    let soNoRemoto = false;
+    if (temRamo) {
+      const m = g(['merge-base', '--is-ancestor', refRamo, `refs/heads/${base}`]);
+      if (m.codigo > 1) throw falhou(`se o ramo ${frente.ramo} está na ${base}`, m);
+      soNoRemoto = m.codigo === 1;
     }
+    const primeiros = conferir();
+    if (primeiros.length) recusarProblemas(primeiros);
 
     // Resumo: o que o usuário deu, ou o título do último commit do ramo.
     let resumo = o.resumo;
@@ -170,17 +189,24 @@ export async function executar(args, amb) {
       gravarFrente(dirEstado, frente);
     }
 
-    // 4. Remove o worktree: a partir daqui o que falhar vira aviso.
+    // 4. Reconfere (os comentários demoram) e remove o worktree: depois daqui o que falhar vira aviso.
+    const novos = conferir();
+    if (novos.length) recusarProblemas(novos);
     if (temWt) {
-      let r = g(['worktree', 'remove', wt]);
-      if (r.codigo !== 0 && o.descartarIgnorados) r = g(['worktree', 'remove', '--force', wt]);
+      // A reconferência acabou de passar: só agora o --force (para ignorados) é seguro.
+      let r = g(['worktree', 'remove', '--', wt]);
+      if (r.codigo !== 0 && o.descartarIgnorados) r = g(['worktree', 'remove', '--force', '--', wt]);
       if (r.codigo !== 0) {
         throw recusa(`O git não removeu o worktree ${wt}: ${r.erro.trim().split('\n')[0]}`, `resolva o que o git descreve e rode ah close de novo`);
       }
     } else {
       g(['worktree', 'prune']);
     }
-    if (temRamo) {
+    // O -D só vale se o topo do ramo continua no ref remoto.
+    const salvoNoRemoto = !soNoRemoto || (temRamoRemoto && g(['merge-base', '--is-ancestor', refRamo, refRemoto]).codigo === 0);
+    if (temRamo && !salvoNoRemoto) {
+      amb.avisar(`Aviso: não apaguei o ramo ${frente.ramo}: o topo dele não está mais no remoto. Confira e apague à mão se quiser: git branch -D ${frente.ramo}\n`);
+    } else if (temRamo) {
       const r = g(['branch', soNoRemoto ? '-D' : '-d', '--', frente.ramo]);
       if (r.codigo !== 0) amb.avisar(`Aviso: não apaguei o ramo ${frente.ramo} (${r.erro.trim().split('\n')[0]}). Apague à mão: git branch -D ${frente.ramo}\n`);
     }
