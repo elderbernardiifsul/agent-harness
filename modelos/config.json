@@ -1,0 +1,12 @@
+{
+  "versaoDoEsquema": 1,
+  "harnessMinimo": "0.1.0",
+  "projeto": "",
+  "git": { "base": "dev", "prefixo": "feat/", "protegidos": ["stage", "main"], "remoto": "origin" },
+  "github": { "repo": null, "rotuloDeReserva": "em-andamento" },
+  "worktrees": { "dir": null },
+  "ci": { "comandoDeTeste": null },
+  "agentes": ["claude-code"],
+  "extensoes": {},
+  "fuso": "America/Sao_Paulo"
+}
