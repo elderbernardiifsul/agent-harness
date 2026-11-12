@@ -30,6 +30,8 @@ import { gh } from '../lib/github.mjs';
 
 const LIMITE_COMANDO_NO_EVENTO = 500;
 const LIMITE_MOTIVO = 300;
+// O `antes` roda a cada ferramenta: não espera a trava das frentes mais que isto para descartar um pid morto.
+const ESPERA_DA_TRAVA_NO_ANTES_MS = 200;
 // O gancho do agente tem tempo-limite próprio; se o processo morresse antes, a ação passaria.
 const TEMPO_DO_GH_MS = 5000;
 
@@ -130,11 +132,13 @@ async function inicio(evento, amb) {
 
 // Toca o sinal de vida e, se o pid gravado morreu enquanto os ganchos chegam, descarta-o.
 // Nunca derruba o evento: um arquivo de sessão ilegível não pode travar as ferramentas do agente.
-async function manterVivo(evento, amb) {
+// `esperaMs`: quanto esperar pela trava para descartar o pid; o `antes` usa espera curta e, sem a trava, segue.
+async function manterVivo(evento, amb, { esperaMs } = {}) {
   try {
     const s = tocarSinal(amb.dirEstado, evento.sessao);
     if (s && s.pid != null && !existeDe(amb)(s.pid)) {
-      await comTrava(amb.dirEstado, 'frentes', async () => descartarPidMorto(amb.dirEstado, evento.sessao, existeDe(amb)));
+      await comTrava(amb.dirEstado, 'frentes', async () => descartarPidMorto(amb.dirEstado, evento.sessao, existeDe(amb)),
+        esperaMs === undefined ? {} : { esperaMs });
     }
     return s;
   } catch (e) {
@@ -165,7 +169,7 @@ async function fim(evento, amb) {
 
 async function antes(evento, amb) {
   // O sinal de vida não decide nada aqui: falha ao tocá-lo não pode virar recusa da ferramenta.
-  try { await manterVivo(evento, amb); } catch { /* segue para as travas */ }
+  try { await manterVivo(evento, amb, { esperaMs: ESPERA_DA_TRAVA_NO_ANTES_MS }); } catch { /* segue para as travas */ }
   const { acao } = evento;
   if (acao?.tipo === 'outra') return { decisao: 'permite' };
   const r = avaliar({ ...acao, cwd: evento.cwd ?? null }, contextoDasTravas(amb));

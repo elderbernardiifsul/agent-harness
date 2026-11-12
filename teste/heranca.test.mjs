@@ -17,6 +17,8 @@ const dir = dirDoTeste(p);
 after(async () => { await proc.matar(); p.limpar(); });
 beforeEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
+// Hora de início fixa e conhecida: a herança não depende da plataforma (no Windows ela é sempre nula).
+const comHora = { inicioDoProcesso: () => '100' };
 const inicio = (id, origem) => ({ tipo: 'inicio', sessao: id, agente: 'claude-code', cwd: p.raiz, origem });
 const frenteDe = (dona, nome = 'carrinho', id = 'as-1') => ({
   esquema: 2, id, nome, ramo: `feat/${nome}`, worktree: path.join(path.dirname(p.raiz), 'wt', nome), tickets: [], plano: null, caminhos: [],
@@ -32,9 +34,9 @@ test('compact na mesma sessão mantém a frente', async () => {
 });
 
 test('/clear no mesmo processo herda a frente e o papel', async () => {
-  await tratar(inicio('s-a', 'novo'), { ...amb(p), pid: proc.pid });
+  await tratar(inicio('s-a', 'novo'), { ...amb(p), pid: proc.pid, ...comHora });
   gravarFrente(dir, frenteDe('s-a')); gravarSessao(dir, { ...lerSessao(dir, 's-a'), frente: 'carrinho', papel: 'orquestrador' });
-  const r = await tratar(inicio('s-b', 'continuacao'), { ...amb(p), pid: proc.pid });
+  const r = await tratar(inicio('s-b', 'continuacao'), { ...amb(p), pid: proc.pid, ...comHora });
   assert.equal(lerFrente(dir, 'carrinho').dona, 's-b');
   assert.deepEqual([lerSessao(dir, 's-b').papel, lerSessao(dir, 's-b').frente], ['orquestrador', 'carrinho']);
   assert.equal(lerSessao(dir, 's-a').motivoFim, 'substituida');
@@ -45,15 +47,26 @@ test('/clear no mesmo processo herda a frente e o papel', async () => {
   assert.deepEqual([sub.de, sub.por], ['s-a', 's-b']);
 });
 
-test('continuação sem hora de início conhecida não herda: a frente fica passada e o resumo manda ah open', async () => {
-  const a = { ...amb(p), pid: proc.pid, inicioDoProcesso: () => null };
-  await tratar(inicio('s-a', 'novo'), a); gravarFrente(dir, frenteDe('s-a'));
-  const r = await tratar(inicio('s-b', 'continuacao'), a);
-  assert.deepEqual([lerFrente(dir, 'carrinho').estado, lerFrente(dir, 'carrinho').dona], ['passada', null]);
-  assert.equal(lerFrente(dir, 'carrinho').passadaPor, 'continuacao-sem-vinculo');
-  assert.match(r.contexto, /Sem dona: as-1 carrinho \(ah open carrinho\)/);
-  assert.ok(lerEventos(dir).some(e => e.tipo === 'frente-solta'));
-  assert.equal(lerSessao(dir, 's-a').motivoFim, 'substituida');
+for (const origem of ['novo', 'continuacao']) {
+  test(`hora de início desconhecida: começo ${origem} com o mesmo pid não substitui nem solta a frente`, async () => {
+    const a = { ...amb(p), pid: proc.pid, inicioDoProcesso: () => null };
+    await tratar(inicio('s-a', 'novo'), a); gravarFrente(dir, frenteDe('s-a'));
+    gravarSessao(dir, { ...lerSessao(dir, 's-a'), frente: 'carrinho' });
+    await tratar(inicio('s-b', origem), a);
+    assert.equal(lerSessao(dir, 's-a').fim, null);
+    assert.equal(lerSessao(dir, 's-a').frente, 'carrinho');
+    assert.deepEqual([lerFrente(dir, 'carrinho').estado, lerFrente(dir, 'carrinho').dona], ['ativa', 's-a']);
+    assert.equal(lerSessao(dir, 's-b').frente, null);
+    assert.ok(!lerEventos(dir).some(e => ['substituida', 'heranca', 'frente-solta'].includes(e.tipo)));
+  });
+}
+
+test('hora de início conhecida só de um lado não substitui', async () => {
+  await tratar(inicio('s-a', 'novo'), { ...amb(p), pid: proc.pid, inicioDoProcesso: () => null });
+  gravarFrente(dir, frenteDe('s-a'));
+  await tratar(inicio('s-b', 'continuacao'), { ...amb(p), pid: proc.pid, ...comHora });
+  assert.equal(lerSessao(dir, 's-a').fim, null);
+  assert.equal(lerFrente(dir, 'carrinho').dona, 's-a');
 });
 
 test('continuação com hora de início diferente nos dois lados não herda', async () => {
@@ -65,12 +78,29 @@ test('continuação com hora de início diferente nos dois lados não herda', as
   assert.equal(lerSessao(dir, 's-a').fim, null);
 });
 
-test('começo novo no mesmo processo substitui a anterior e solta a frente', async () => {
-  await tratar(inicio('s-a', 'novo'), { ...amb(p), pid: proc.pid });
+test('começo novo no mesmo processo substitui a anterior, solta a frente e o resumo manda ah open', async () => {
+  await tratar(inicio('s-a', 'novo'), { ...amb(p), pid: proc.pid, ...comHora });
   gravarFrente(dir, frenteDe('s-a'));
-  await tratar(inicio('s-b', 'novo'), { ...amb(p), pid: proc.pid });
+  const r = await tratar(inicio('s-b', 'novo'), { ...amb(p), pid: proc.pid, ...comHora });
   assert.deepEqual([lerFrente(dir, 'carrinho').estado, lerFrente(dir, 'carrinho').dona], ['passada', null]);
+  assert.equal(lerFrente(dir, 'carrinho').passadaPor, 'continuacao-sem-vinculo');
+  assert.equal(lerSessao(dir, 's-a').motivoFim, 'substituida');
   assert.equal(lerSessao(dir, 's-b').frente, null);
+  assert.ok(lerEventos(dir).some(e => e.tipo === 'frente-solta'));
+  assert.match(r.contexto, /Sem dona: as-1 carrinho \(ah open carrinho\)/);
+});
+
+test('antes com pid morto e a trava das frentes presa permite logo, sem descartar', async () => {
+  const q = processoVivo(); await tratar(inicio('s1', 'novo'), { ...amb(p), pid: q.pid }); await q.matar();
+  const trava = path.join(dir, 'travas', 'frentes');
+  fs.mkdirSync(trava, { recursive: true });
+  fs.writeFileSync(path.join(trava, 'dono.json'), JSON.stringify({ pid: process.pid, em: new Date().toISOString(), marca: 'outra' }));
+  const t0 = Date.now();
+  const r = await tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'comando', comando: 'git status' } }, amb(p));
+  assert.ok(Date.now() - t0 < 1000, String(Date.now() - t0));
+  assert.deepEqual(r, { decisao: 'permite' });
+  assert.equal(lerSessao(dir, 's1').pid, q.pid);
+  assert.ok(idadeDoSinalMs(dir, 's1') < 5000);
 });
 
 test('começo em outro processo não mexe na frente de outra sessão viva', async () => {
