@@ -76,3 +76,42 @@ test('registrarEvento acrescenta linha com data', t => {
   assert.equal(e.tipo, 'abertura'); assert.ok(Date.parse(e.em));
   assert.equal(f.tipo, 'fechamento');
 });
+
+test('dois esperadores sobre a mesma trava vencida nunca entram juntos', async t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  fs.mkdirSync(pasta, { recursive: true });
+  const antiga = new Date(Date.now() - 60000);
+  fs.utimesSync(pasta, antiga, antiga);
+  let dentro = 0, max = 0;
+  const entrar = async () => { dentro++; max = Math.max(max, dentro); await espera(60); dentro--; };
+  await Promise.all([
+    comTrava(d, 'x', entrar, { venceMs: 1000, esperaMs: 3000 }),
+    comTrava(d, 'x', entrar, { venceMs: 1000, esperaMs: 3000 }),
+    comTrava(d, 'x', entrar, { venceMs: 1000, esperaMs: 3000 }),
+  ]);
+  assert.equal(max, 1);
+});
+
+test('a liberação não apaga a trava tomada por outro depois do vencimento', async t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  let outro;
+  await comTrava(d, 'x', async () => {
+    await espera(60);
+    // simula outra chamada que tomou a trava vencida
+    fs.rmSync(pasta, { recursive: true, force: true });
+    fs.mkdirSync(pasta);
+    fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ pid: 2, em: new Date().toISOString(), marca: 'outro' }));
+    outro = true;
+  }, { venceMs: 30 });
+  assert.ok(outro);
+  assert.equal(fs.existsSync(pasta), true);
+});
+
+test('nome de trava com caminho é recusado', async t => {
+  const d = temp(t);
+  for (const n of ['../x', 'a/b', '.', '..', '']) {
+    await assert.rejects(comTrava(d, n, () => 1), e => e.name === 'ErroDeEstado' && /Próximo passo/.test(e.saida));
+  }
+});

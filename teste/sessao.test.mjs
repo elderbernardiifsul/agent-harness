@@ -54,3 +54,11 @@ test('tocarSinal atualiza o sinal e encerrarSessao preenche o fim', async t => {
   tocarSinal(d, 'nao-existe');
   encerrarSessao(d, 'nao-existe');
 });
+
+test('id de sessão com caminho é recusado', t => {
+  const d = temp(t);
+  for (const id of ['../x', 'a/b', '..']) {
+    assert.throws(() => registrarSessao(d, { id, agente: 'claude-code', pid: 1 }), e => e.name === 'ErroDeEstado');
+    assert.throws(() => lerSessao(d, id), e => e.name === 'ErroDeEstado');
+  }
+});
