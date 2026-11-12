@@ -1,11 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { criarRepo } from './apoio/repo.mjs';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { varrer, FalhaDoGit } from '../ferramentas/varre-termos.mjs';
 
@@ -66,4 +65,19 @@ test('repositório sem commits não lança', () => {
   } finally {
     rmSync(pasta, { recursive: true, force: true });
   }
+});
+
+test('HEAD em ramo órfão vazio ainda varre o histórico dos outros ramos', () => {
+  const r = criarRepo({ remoto: false });
+  writeFileSync(join(r.raiz, 'c.txt'), 'quem: Fulano\n');
+  r.git(['add', 'c.txt']);
+  r.git(['commit', '-m', 'cria c']);
+  r.git(['rm', 'c.txt']);
+  r.git(['commit', '-m', 'apaga c']);
+  r.git(['checkout', '--orphan', 'vazio']);
+  r.git(['rm', '-rf', '.']);
+  assert.notEqual(r.git(['rev-parse', '--verify', 'HEAD']).codigo, 0);
+  const achados = varrer({ raiz: r.raiz, termos: ['fulano'] });
+  assert.deepEqual(achados.map((a) => a.onde), ['historico']);
+  r.limpar();
 });

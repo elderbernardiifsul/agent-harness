@@ -30,15 +30,6 @@ function git(raiz, args) {
   }
 }
 
-function temCommits(raiz) {
-  try {
-    execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: raiz, stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function achar(texto, termos, onde, achados) {
   const linhas = texto.split(/\r?\n/);
   linhas.forEach((conteudo, i) => {
@@ -60,8 +51,9 @@ export function varrer({ raiz, termos }) {
     if (bruto.includes(0)) continue;
     achar(bruto.toString('utf8'), termos, arquivo, achados);
   }
-  // Repositório sem commits não tem histórico; qualquer outra falha do git propaga.
-  const log = temCommits(raiz) ? git(raiz, ['log', '-p', '--all']) : '';
+  // Sem nenhum ref não há histórico (git log falharia); qualquer falha do git propaga.
+  const temRefs = git(raiz, ['for-each-ref', '--count=1', 'refs/']).trim() !== '';
+  const log = temRefs ? git(raiz, ['log', '-p', '--all']) : '';
   // Um termo já achado num arquivo atual não é repetido pelo histórico.
   const noHistorico = [];
   achar(log, termos, 'historico', noHistorico);
