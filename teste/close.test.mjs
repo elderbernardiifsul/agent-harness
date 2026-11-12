@@ -364,7 +364,9 @@ test('I1: com a dona ainda aberta, a recusa mostra o id inteiro e as duas saída
   const r = p.ah(['close', 'carrinho'], { env: { AH_SESSAO: 'sessao-b' } });
   assert.equal(r.codigo, 1);
   assert.ok(r.erro.includes(`é da sessão ${id}, que ainda está aberta`), r.erro);
-  assert.ok(r.erro.includes(`peça à sessão dona que rode ah close; se ela morreu sem encerrar, rode AH_SESSAO=${id} tools/ah close carrinho`), r.erro);
+  assert.ok(r.erro.includes('peça à sessão dona que rode ah close; se ela parou, espere o sinal de vida dela vencer (sessoes.prazoDoSinalMin, hoje 120 min), confira em ah board que a frente aparece órfã e repita ah close carrinho'), r.erro);
+  // Revisão: nunca sugerir fechar a frente de uma sessão viva fingindo ser a dona.
+  assert.ok(!r.erro.includes('AH_SESSAO='), r.erro);
   p.limpar();
 });
 

@@ -132,8 +132,9 @@ export async function executar(args, amb) {
     if (sessao.papel !== 'orquestrador') {
       const minhas = frentesDa(listarFrentes(dirEstado), amb.sessaoId);
       if (minhas.length) {
-        throw recusa(`Esta sessão já tem a frente ${minhas.map(f => f.nome).join(', ').slice(0, 60)}.`,
-          'continue nela ou encerre com ah close antes de abrir outra (o orquestrador abre várias: ah papel orquestrador)');
+        const nomes = minhas.map(f => f.nome);
+        throw recusa(`Esta sessão já tem a frente ${nomes.join(', ').slice(0, 60)}.`,
+          `continue nela ou, antes de abrir outra, encerre com ${nomes.map(n => `ah close ${n}`).join('; ')} (o orquestrador abre várias: ah papel orquestrador)`);
       }
     }
     const repetido = lerFrente(dirEstado, o.nome) ? 'frente'

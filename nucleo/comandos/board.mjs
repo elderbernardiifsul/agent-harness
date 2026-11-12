@@ -16,9 +16,9 @@ function linhaUnica(texto, limite) {
   return t.length > limite ? `${t.slice(0, limite - 1)}…` : t;
 }
 
-// Ativa com dona que não está viva é órfã (alguém pode tomá-la); sem dona, mostra o estado gravado.
+// Ativa sem dona viva (dona morta, ilegível ou nenhuma) é órfã: alguém pode tomá-la.
 function estadoNoQuadro(f, donaViva) {
-  if (f.estado === 'ativa' && f.dona && !donaViva) return 'órfã';
+  if (f.estado === 'ativa' && !donaViva) return 'órfã';
   return f.estado ?? '—';
 }
 
@@ -31,21 +31,43 @@ export async function executar(args, amb) {
   }
   const dirEstado = amb.dirEstado;
   const frentes = listarFrentes(dirEstado);
+  // Estado de vida por sessão: 'viva', 'morta' (qualquer outro estado) ou 'ilegivel' (arquivo que não se lê).
   const vidas = new Map();
-  const viva = id => {
-    if (!vidas.has(id)) vidas.set(id, vidaDaSessao(dirEstado, id, { config: amb.config }).estado === 'viva');
+  const vida = id => {
+    if (!vidas.has(id)) {
+      let v;
+      try {
+        v = vidaDaSessao(dirEstado, id, { config: amb.config }).estado === 'viva' ? 'viva' : 'morta';
+      } catch (e) {
+        if (e.name !== 'ErroDeEstado') throw e;
+        v = 'ilegivel';
+      }
+      vidas.set(id, v);
+    }
     return vidas.get(id);
   };
-  const donaViva = f => Boolean(f.dona) && viva(f.dona);
-  const sessoes = listarSessoes(dirEstado).sessoes.filter(s => viva(s.id))
+  const donaViva = f => Boolean(f.dona) && vida(f.dona) === 'viva';
+  const donaIlegivel = f => Boolean(f.dona) && vida(f.dona) === 'ilegivel';
+  const lidas = listarSessoes(dirEstado);
+  const sessoes = lidas.sessoes.filter(s => vida(s.id) === 'viva')
     .map(s => ({ id: s.id, curto: idCurto(s.id), papel: s.papel, frente: s.frente ? (s.frente.nome ?? s.frente) : null }));
+  const sessoesIlegiveis = lidas.ilegiveis;
   if (json) {
-    amb.escrever(`${JSON.stringify({ frentes: frentes.map(f => ({ ...f, donaViva: donaViva(f) })), sessoes })}\n`);
+    const lista = frentes.map(f => ({ ...f, donaViva: donaViva(f), donaIlegivel: donaIlegivel(f) }));
+    amb.escrever(`${JSON.stringify({ frentes: lista, sessoes, sessoesIlegiveis })}\n`);
     return 0;
   }
   const linhaDasSessoes = () => {
     const lista = sessoes.map(s => `${s.curto} (${linhaUnica(s.papel, 20)}, ${s.frente ? linhaUnica(s.frente, 49) : '—'})`);
     amb.escrever(`Sessões vivas: ${lista.length ? lista.join('; ') : 'nenhuma'}\n`);
+    if (sessoesIlegiveis.length) {
+      amb.escrever(`Sessões ilegíveis: ${sessoesIlegiveis.map(id => linhaUnica(idCurto(id), 8)).join('; ')} (rode ah doctor)\n`);
+    }
+  };
+  const rotuloDaDona = f => {
+    if (!f.dona) return '—';
+    const v = vida(f.dona);
+    return `${linhaUnica(idCurto(f.dona), 8)}${v === 'viva' ? '' : v === 'ilegivel' ? ' (ilegível)' : ' (morta)'}`;
   };
   if (frentes.length === 0) {
     amb.escrever('Nenhuma frente aberta.\n');
@@ -58,7 +80,7 @@ export async function executar(args, amb) {
     linhas.push([
       linhaUnica(f.id, 20),
       linhaUnica(f.nome, 49),
-      f.dona ? `${linhaUnica(idCurto(f.dona), 8)}${donaViva(f) ? '' : ' (morta)'}` : '—',
+      rotuloDaDona(f),
       linhaUnica(estadoNoQuadro(f, donaViva(f)), 20),
       f.tickets?.length ? f.tickets.map(n => `#${n}`).join(',') : '—',
       f.plano ? linhaUnica(f.plano, LIMITE_PLANO) : '—',

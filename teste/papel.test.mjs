@@ -44,7 +44,7 @@ test('executor com uma frente não abre outra; a regra olha a dona, não o foco'
   assert.equal(p.ah(['open', 'carrinho']).codigo, 0);
   const r = p.ah(['open', 'frete']);
   assert.equal(r.codigo, 1);
-  assert.match(r.erro, /carrinho/);
+  assert.match(r.erro, /Faça: .*ah close carrinho/);
   // Foco apagado à mão: a frente continua da sessão, e a recusa continua.
   const arq = path.join(dirDoTeste(p), 'sessoes', 'sessao-teste-0001.json');
   const s = JSON.parse(fs.readFileSync(arq, 'utf8'));

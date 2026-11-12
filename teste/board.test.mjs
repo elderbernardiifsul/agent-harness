@@ -12,7 +12,7 @@ const SEM_SESSAO = { env: { AH_SESSAO: '' } };
 test('board lista a frente; vazio diz que não há', () => {
   const vazio = criarProjeto();
   assert.match(vazio.ah(['board']).saida, /Nenhuma frente aberta\./);
-  assert.deepEqual(JSON.parse(vazio.ah(['board', '--json']).saida), { frentes: [], sessoes: [] });
+  assert.deepEqual(JSON.parse(vazio.ah(['board', '--json']).saida), { frentes: [], sessoes: [], sessoesIlegiveis: [] });
   vazio.limpar();
 
   const p = criarProjeto();
@@ -47,7 +47,7 @@ test('board ordena por abertaEm e mostra frente sem dona com traço', () => {
   gravarFrenteDoTeste(p, alfa);
   const linhas = p.ah(['board']).saida.split('\n');
   assert.ok(linhas.findIndex(l => l.includes('alfa')) < linhas.findIndex(l => l.includes('zeta')));
-  assert.match(linhas.find(l => l.includes('zeta')), /zeta\s+—\s+ativa/);
+  assert.match(linhas.find(l => l.includes('zeta')), /zeta\s+—\s+órfã/); // ativa sem dona viva é órfã (revisão da tarefa 3)
   assert.deepEqual(JSON.parse(p.ah(['board', '--json']).saida).frentes.map(f => f.nome), ['alfa', 'zeta']);
   p.limpar();
 });
@@ -75,5 +75,42 @@ test('board recusa opção desconhecida e argumento a mais', () => {
   assert.equal(r.codigo, 1);
   assert.match(r.erro, /Opção desconhecida/);
   assert.equal(p.ah(['board', 'x']).codigo, 1);
+  p.limpar();
+});
+
+// ---- revisão da tarefa 3: sessão ilegível não derruba o quadro
+const arquivoDaSessao = (p, id) => path.join(p.estado, 'loja', 'sessoes', `${id}.json`);
+
+test('board com a dona ilegível: (ilegível), órfã e a linha das sessões ilegíveis, em texto e em JSON', () => {
+  const p = criarProjeto();
+  p.ah(['open', 'carrinho']);
+  fs.writeFileSync(arquivoDaSessao(p, 'sessao-teste-0001'), '{ quebrado');
+  const r = p.ah(['board']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /as-1\s+carrinho\s+sessao-t \(ilegível\)\s+órfã/);
+  assert.match(r.saida, /^Sessões ilegíveis: sessao-t \(rode ah doctor\)$/m);
+  const j = p.ah(['board', '--json']);
+  assert.equal(j.codigo, 0, j.erro);
+  const d = JSON.parse(j.saida);
+  assert.equal(d.frentes[0].donaViva, false);
+  assert.equal(d.frentes[0].donaIlegivel, true);
+  assert.deepEqual(d.sessoesIlegiveis, ['sessao-teste-0001']);
+  p.limpar();
+});
+
+test('board com sessão ilegível que não é dona: o quadro segue e acusa a sessão', () => {
+  const p = criarProjeto();
+  p.ah(['open', 'carrinho']);
+  fs.writeFileSync(arquivoDaSessao(p, 'sessao-c-0003'), '{ quebrado');
+  const r = p.ah(['board']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /as-1\s+carrinho\s+sessao-t\s+ativa/);
+  assert.match(r.saida, /Sessões vivas: sessao-t \(executor, carrinho\)/);
+  assert.match(r.saida, /^Sessões ilegíveis: sessao-c \(rode ah doctor\)$/m);
+  const d = JSON.parse(p.ah(['board', '--json']).saida);
+  assert.equal(d.frentes[0].donaViva, true);
+  assert.equal(d.frentes[0].donaIlegivel, false);
+  assert.deepEqual(d.sessoesIlegiveis, ['sessao-c-0003']);
+  assert.deepEqual(d.sessoes.map(s => s.id), ['sessao-teste-0001']);
   p.limpar();
 });

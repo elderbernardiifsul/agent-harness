@@ -6,7 +6,7 @@ import { frentesDa, gravarFrente, lerFrente, linhaDoHistorico, listarFrentesTole
 import { existeRamo, ramoAtual, git } from '../lib/git.mjs';
 import { comentarOuEnfileirar, reenviarComAviso } from '../lib/pendentes.mjs';
 import { gravarSessao, idCurto, lerSessao, tocarSinal } from '../lib/sessao.mjs';
-import { vidaDaSessao } from '../lib/vida.mjs';
+import { prazoMs, vidaDaSessao } from '../lib/vida.mjs';
 
 export const descricao = 'fecha a frente da sessão sem perder trabalho';
 export const uso = 'ah close [<nome>] [--resumo "<texto>"] [--descartar-ignorados]';
@@ -109,7 +109,7 @@ export async function executar(args, amb) {
       vidaDaDona = frente.dona ? vidaDaSessao(dirEstado, frente.dona, { config: cfg }) : null;
       if (vidaDaDona?.estado === 'viva') {
         throw recusa(`A frente ${frente.id} ${frente.nome} é da sessão ${frente.dona}, que ainda está aberta, não desta.`,
-          `peça à sessão dona que rode ah close; se ela morreu sem encerrar, rode AH_SESSAO=${frente.dona} tools/ah close ${frente.nome}`);
+          `peça à sessão dona que rode ah close; se ela parou, espere o sinal de vida dela vencer (sessoes.prazoDoSinalMin, hoje ${Math.round(prazoMs(cfg) / 60000)} min), confira em ah board que a frente aparece órfã e repita ah close ${frente.nome}`);
       }
       daEncerrada = true;
     }
