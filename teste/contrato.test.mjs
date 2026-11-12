@@ -133,6 +133,22 @@ test('antes: gh que demora vira recusa do T5, não liberação', () => {
   }
 });
 
+test('antes: gh que ignora SIGTERM é morto no prazo e o T5 recusa', { skip: process.platform === 'win32' }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ah-gh-teimoso-'));
+  try {
+    const teimoso = path.join(dir, 'gh-teimoso.mjs');
+    fs.writeFileSync(teimoso, 'process.on("SIGTERM", () => {});\nsetTimeout(() => process.stdout.write("dev\\n"), 6000);\n');
+    const inicio = Date.now();
+    const r = tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'comando', comando: 'gh pr merge 7' } },
+      { ...amb(p), env: { ...p.env, AH_GH: teimoso }, tempoDoGhMs: 500 });
+    assert.equal(r.decisao, 'recusa');
+    assert.match(r.mensagem, /^Recusado \(T5\): não consegui descobrir/);
+    assert.ok(Date.now() - inicio < 3000, String(Date.now() - inicio));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('antes: gh pr merge pergunta ao gh o ramo de destino do PR', () => {
   p.ghResponder([{ prefixo: ['pr', 'view', '7'], saida: 'dev\n' }, { prefixo: ['pr', 'view', '8'], saida: 'main\n' }, { prefixo: ['pr', 'view'], codigo: 1 }]);
   assert.deepEqual(antes('gh pr merge 7 --squash'), { decisao: 'permite' });

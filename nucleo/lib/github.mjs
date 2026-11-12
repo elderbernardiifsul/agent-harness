@@ -4,11 +4,11 @@ const TEMPO_LIMITE_MS = 15000;
 
 // Executa o gh; se env.AH_GH termina em .mjs, executa esse arquivo com o Node
 // (é como os testes trocam o gh). Nunca lança; gh ausente ou que passa de `timeoutMs`
-// (padrão de 15 s) devolve código 127.
+// (padrão de 15 s) devolve código 127; no prazo o processo é morto com SIGKILL, que não se ignora.
 export function gh(args, { cwd, env = process.env, entrada, timeoutMs = TEMPO_LIMITE_MS } = {}) {
   const alvo = env.AH_GH;
   const [cmd, lista] = alvo && alvo.endsWith('.mjs') ? [process.execPath, [alvo, ...args]] : [alvo || 'gh', args];
-  const r = spawnSync(cmd, lista, { cwd, env, encoding: 'utf8', input: entrada, timeout: timeoutMs });
+  const r = spawnSync(cmd, lista, { cwd, env, encoding: 'utf8', input: entrada, timeout: timeoutMs, killSignal: 'SIGKILL' });
   if (r.error) return { codigo: 127, saida: '', erro: String(r.error.message ?? r.error) };
   return { codigo: r.status ?? 1, saida: r.stdout ?? '', erro: r.stderr ?? '' };
 }
