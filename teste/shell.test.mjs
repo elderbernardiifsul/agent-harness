@@ -233,7 +233,7 @@ test('printf para shell: só %s simples, %b, %q e %%', () => {
     `printf '%*s push' 3 git | sh`,
   ]) assert.throws(() => comandosSimples(t, '/r'), erro, t);
   const git = t => comandosSimples(t, '/r').filter(c => c.argv[0] === 'git').map(c => c.argv.join(' '));
-  assert.deepEqual(git(`printf '%-5s push origin main%%' git | sh`), ['git push origin main%']);
+  assert.deepEqual(git(`printf '%s push origin main%%' git | sh`), ['git push origin main%']);
   assert.deepEqual(git(`printf '%q push origin main' git | sh`), ['git push origin main']);
   assert.deepEqual(so(`printf '%.3s %c %d' a b 1`), ['printf %.3s %c %d a b 1']);
 });
@@ -260,6 +260,37 @@ test('caminho do Windows entre aspas preserva as barras', () => {
   const [c] = comandosSimples(`"C:\\Git\\git.exe" -C x push`, '/r');
   assert.deepEqual(c.argv, ['C:\\Git\\git.exe', 'push']);
   assert.equal(c.cwd, path.resolve('/r', 'x'));
+});
+
+// Rodada de consertos 3.
+test('printf para shell: largura e flags lançam ErroDeShell', () => {
+  for (const t of [
+    `printf 'git%1spush origin main' '' | sh`,
+    `printf 'git%-1spush origin main' '' | sh`,
+    `printf '%05s push origin main' git | sh`,
+    `printf 'git%1bpush origin main' '' | sh`,
+    `printf '%-5s push origin main' git | sh`,
+  ]) assert.throws(() => comandosSimples(t, '/r'), erro, t);
+});
+test('printf para shell: %q só com argumento que não muda ao citar', () => {
+  assert.throws(() => comandosSimples(`printf 'x%q; git push origin main\\n' ' #' | sh`, '/r'), erro);
+  assert.throws(() => comandosSimples(`printf 'x%q; git push\\n' '' | sh`, '/r'), erro);
+  const git = t => comandosSimples(t, '/r').filter(c => c.argv[0] === 'git').map(c => c.argv.join(' '));
+  assert.deepEqual(git(`printf '%q push origin main' git | sh`), ['git push origin main']);
+  assert.deepEqual(git(`printf 'git push %q' origin/main_1.x=a:bc+d@e%f-g | sh`), ['git push origin/main_1.x=a:bc+d@e%f-g']);
+  // O bash cita a vírgula (`a\,b`): não dá para montar.
+  assert.throws(() => comandosSimples(`printf 'git push %q' a,b | sh`, '/r'), erro);
+});
+test('printf para shell: %b monta # , nova linha e \\c como o bash', () => {
+  const git = t => comandosSimples(t, '/r').filter(c => c.argv[0] === 'git').map(c => c.argv.join(' '));
+  assert.deepEqual(git(`printf '%b' 'x #y\\ngit push origin main' | sh`), ['git push origin main']);
+  assert.deepEqual(git(`printf '%bgit push origin main' 'echo a\\c' | sh`), []);
+  assert.deepEqual(git(`printf '%b%s\\n' 'git push ' 'origin main' | sh`), ['git push origin main']);
+});
+test('printf fora de shell não muda; os comuns seguem lidos', () => {
+  assert.deepEqual(so(`printf '%-10s|\\n' a`), ['printf %-10s|\\n a']);
+  assert.deepEqual(so(`printf '%5s' x > arq`), ['printf %5s x']);
+  assert.deepEqual(so(`printf '%s\\n' a b c | sh`), ['printf %s\\n a b c', 'sh', 'a', 'b', 'c']);
 });
 
 // Envoltórios.

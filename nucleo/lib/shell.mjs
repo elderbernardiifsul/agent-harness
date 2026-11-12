@@ -1179,23 +1179,36 @@ function saidaDoPrintf(itens, orcamento) {
       }
       if (c !== '%') { por(c); i++; continue; }
       if (formato[i + 1] === '%') { por('%'); i += 2; continue; }
-      let f = i + 1;
-      while (f < formato.length && "-+ #0'".includes(formato[f])) f++;
-      if (formato[f] === '*') throw new ErroDeShell('printf entregue a um shell com largura "*"', null);
-      while (ehDigito(formato[f])) f++;
-      if (formato[f] === '.') throw new ErroDeShell('printf entregue a um shell com precisão', null);
+      // Só %s, %b e %q puros: flag, largura ou precisão mudam o texto
+      // (preenchimento, corte) e não são montados.
+      const f = i + 1;
       const conv = formato[f];
       if (conv === undefined) { por(formato.slice(i)); break; }
-      if (conv !== 's' && conv !== 'b' && conv !== 'q') throw new ErroDeShell(`printf entregue a um shell com a conversão %${conv}`, null);
+      if (conv !== 's' && conv !== 'b' && conv !== 'q') {
+        throw new ErroDeShell(`printf entregue a um shell com %${conv} (flag, largura, precisão ou conversão que não é montada)`, null);
+      }
       if (conv === 'b') {
         const r = decodificar(proximo(), 'echo');
         por(r.texto);
         if (r.parou) return saida;
+      } else if (conv === 'q') {
+        // %q cita o argumento; só o que sai igual ao citar dá para montar.
+        const arg = proximo();
+        if (!ehInalteradoPeloQ(arg)) throw new ErroDeShell('printf entregue a um shell com %q de argumento que muda ao citar', null);
+        por(arg);
       } else por(proximo());
       i = f + 1;
     }
     if (a === antes || a >= args.length) return saida;
   }
+}
+
+// O %q do bash devolve o argumento igual só se ele for não vazio e tiver só
+// estes caracteres (conferido no bash 5: a vírgula sai como `\,`).
+function ehInalteradoPeloQ(s) {
+  if (!s) return false;
+  for (const c of s) if (!ehDeNome(c) && !'./=:+@%-'.includes(c)) return false;
+  return true;
 }
 
 function atribuicaoDeTexto(s) {
