@@ -7,7 +7,7 @@ import { PADROES, validarConfig } from '../lib/config.mjs';
 import { gravarJson, lerJson } from '../lib/estado.mjs';
 import { siglaValida, siglaDeLogin } from '../lib/frente.mjs';
 import { git, existeRamo, ramoAtual } from '../lib/git.mjs';
-import { loginAtual, protegerRamo, repoAtual } from '../lib/github.mjs';
+import { consultarProtecao, loginAtual, protegerRamo, repoAtual } from '../lib/github.mjs';
 import { VERSAO } from '../versao.mjs';
 
 export const descricao = 'instala o harness neste projeto, a partir do clone do agent-harness';
@@ -25,6 +25,7 @@ const FIM_DO_COMANDO_DO_HARNESS = 'tools/ah gancho claude-code';
 const ARQUIVO_CI = '.github/workflows/ah-ci.yml';
 const MARCA_DA_CI = '# Gerado pelo agent-harness (ah init)';
 const COMANDO_DA_CI_DESLIGADA = 'echo "defina ci.comandoDeTeste em .harness/config.json"';
+const semPonto = t => String(t).replace(/[.\s]+$/, '');
 const eObjeto = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 // Lista os arquivos do núcleo a copiar. Links simbólicos nunca são seguidos (ficam em `ignorados`),
@@ -90,23 +91,28 @@ function montarConfig(modeloJson, o, raiz) {
   return cfg;
 }
 
-// Texto de um escalar YAML numa linha: simples quando for seguro, senão entre aspas simples.
-// Quebra de linha e caracteres de controle não cabem numa linha e são recusados.
+// Texto de um escalar YAML numa linha, sempre entre aspas simples (o `'` dobra). Recusa o que não cabe
+// numa linha (quebra de linha e outros caracteres de controle; o tab vale) e as expressões `${{ }}` do Actions.
 export function textoDeYaml(texto, campo) {
-  if (/[\u0000-\u001f\u007f\u0085\u2028\u2029]/.test(texto)) {
+  if (/[\u0000-\u0008\u000a-\u001f\u007f\u0085\u2028\u2029]/.test(texto)) {
     throw new ErroDeUso(`Valor inválido para ${campo}: não pode ter quebra de linha nem caractere de controle\nPróximo passo: escreva o comando numa linha só (use um script do projeto se precisar de vários passos)`);
   }
-  const simples = /^[A-Za-z0-9_./][^:#'"`@&*!|>%{}\[\],?]*$/.test(texto) && !/\s$/.test(texto) && !/:(\s|$)/.test(texto);
-  return simples ? texto : `'${texto.replaceAll("'", "''")}'`;
+  if (texto.includes('${{')) {
+    throw new ErroDeUso(`Valor inválido para ${campo}: expressões do Actions (\${{ }}) não entram pelo comando de teste\nPróximo passo: edite o arquivo da CI (${ARQUIVO_CI}) à mão`);
+  }
+  return `'${texto.replaceAll("'", "''")}'`;
 }
 
 // Texto do workflow a partir do modelo; sem comando, o trabalho nasce desligado.
+// Substituição por função: o texto do usuário nunca é lido como padrão ($$, $&, $').
 function textoDaCi(modelo, base, comando) {
   const ligado = typeof comando === 'string' && comando.length > 0;
+  const base_ = textoDeYaml(base, 'git.base');
+  const cmd = textoDeYaml(ligado ? comando : COMANDO_DA_CI_DESLIGADA, 'ci.comandoDeTeste');
   return modelo
-    .replaceAll('{{BASE}}', textoDeYaml(base, 'git.base'))
-    .replaceAll('{{DESLIGADO}}', ligado ? '' : '    if: false\n')
-    .replaceAll('{{COMANDO}}', textoDeYaml(ligado ? comando : COMANDO_DA_CI_DESLIGADA, 'ci.comandoDeTeste'));
+    .replaceAll('{{BASE}}', () => base_)
+    .replaceAll('{{DESLIGADO}}', () => (ligado ? '' : '    if: false\n'))
+    .replaceAll('{{COMANDO}}', () => cmd);
 }
 
 function resolverSigla(o, amb, arquivoMaquina) {
@@ -302,12 +308,22 @@ export async function executar(args, amb) {
       amb.avisar(`Sem o remoto ${remoto.slice(0, 40)}: não protegi os ramos no servidor. Só a trava local protege.\nFaça: adicione o remoto, dê o primeiro push e rode ah init de novo\n`);
     } else {
       const repo = configFinal.github?.repo ?? repoAtual(opcoes);
+      const envGit = { ...amb.env, GIT_TERMINAL_PROMPT: '0' };
       for (const ramo of configFinal.git.protegidos) {
-        const noRemoto = !ramo.startsWith('-') && git(['ls-remote', '--exit-code', '--heads', remoto, `refs/heads/${ramo}`], opcoes).codigo === 0;
-        if (!noRemoto) { amb.avisar(`${ramo.slice(0, 60)} ainda não está no remoto; rode ah init de novo depois do primeiro push\n`); continue; }
-        const r = repo ? protegerRamo(ramo, { ...opcoes, repo }) : { ok: false, motivo: 'não consegui descobrir o repositório do GitHub (o gh está instalado e logado?)' };
+        const nome = ramo.slice(0, 60);
+        const ls = git(['ls-remote', '--exit-code', '--heads', remoto, `refs/heads/${ramo}`], { cwd: raiz, env: envGit });
+        if (ls.codigo === 2) { amb.avisar(`${nome} ainda não está no remoto; rode ah init de novo depois do primeiro push\n`); continue; }
+        if (ls.codigo !== 0) {
+          amb.avisar(`Não consegui consultar o remoto (${(ls.erro.trim().split('\n')[0] || `código ${ls.codigo}`).slice(0, 200)}); proteção não conferida. Rode ah init de novo quando o remoto responder.\n`);
+          break;
+        }
+        // O PUT substitui as regras existentes: só se chama quando o ramo está sem proteção.
+        const atual = consultarProtecao(ramo, { ...opcoes, repo });
+        if (atual.estado === 'protegido') { amb.escrever(`${nome} já está protegido no servidor; não alterei\n`); continue; }
+        if (atual.estado === 'desconhecido') { amb.avisar(`Sem proteção no servidor para ${nome}: ${semPonto(atual.motivo)}. Só a trava local protege.\n`); continue; }
+        const r = protegerRamo(ramo, { ...opcoes, repo });
         if (r.ok) protegidos.push(ramo);
-        else amb.avisar(`Sem proteção no servidor para ${ramo.slice(0, 60)}: ${r.motivo}. Só a trava local protege.\n`);
+        else amb.avisar(`Sem proteção no servidor para ${nome}: ${semPonto(r.motivo)}. Só a trava local protege.\n`);
       }
     }
   }

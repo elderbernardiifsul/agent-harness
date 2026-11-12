@@ -9,11 +9,17 @@ const ler = (p, rel) => fs.readFileSync(path.join(p.raiz, rel), 'utf8');
 const existe = (p, rel) => fs.existsSync(path.join(p.raiz, rel));
 const ARQ = '.github/workflows/ah-ci.yml';
 const puts = p => p.ghChamadas().filter(c => c.argv.includes('PUT'));
+// O gh falso responde 404 "Branch not protected" ao GET da proteção (senão o init vê o ramo como já protegido).
+const semProtecao = (p, extra = [], ramos = ['main', 'stage']) => p.ghResponder([
+  ...extra,
+  ...ramos.map(r => ({ prefixo: ['api', `repos/exemplo/loja/branches/${r}/protection`], codigo: 1, saida: '{"message":"Branch not protected","status":"404"}' })),
+]);
 const o = p => ({ cwd: p.raiz, env: p.env });
 
 test('init protege os ramos que estão no remoto, com enforce_admins', () => {
   const p = criarRepo();
   p.git(['push', 'origin', 'main', 'stage']);
+  semProtecao(p);
   const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as']);
   assert.equal(r.codigo, 0, r.erro);
   const chamadas = puts(p);
@@ -30,6 +36,7 @@ test('init protege os ramos que estão no remoto, com enforce_admins', () => {
 test('ramo que não está no remoto: aviso, sem PUT para ele', () => {
   const p = criarRepo();
   p.git(['push', 'origin', 'main']);
+  semProtecao(p);
   const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as']);
   assert.equal(r.codigo, 0, r.erro);
   assert.match(r.erro, /stage ainda não está no remoto; rode ah init de novo depois do primeiro push/);
@@ -47,7 +54,7 @@ test('sem remoto: init segue e avisa, sem chamar a API de proteção', () => {
 test('conta sem direito a proteção: init segue e avisa', () => {
   const p = criarRepo();
   p.git(['push', 'origin', 'main', 'stage']);
-  p.ghResponder([{ prefixo: ['api', '-X', 'PUT'], codigo: 1, saida: 'HTTP 403' }]);
+  semProtecao(p, [{ prefixo: ['api', '-X', 'PUT'], codigo: 1, saida: 'HTTP 403' }]);
   const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as']);
   assert.equal(r.codigo, 0, r.erro);
   assert.match(r.erro, /Sem proteção no servidor para main: HTTP 403\. Só a trava local protege\./);
@@ -67,6 +74,7 @@ test('os ramos protegidos vêm da configuração', () => {
   const p = criarRepo({ ramos: ['main', 'dev', 'release'] });
   escreverConfig(p, { git: { protegidos: ['release'] } });
   p.git(['push', 'origin', 'main', 'release']);
+  semProtecao(p, [], ['release']);
   const r = p.ah(['init', '--sigla', 'as']);
   assert.equal(r.codigo, 0, r.erro);
   assert.deepEqual(puts(p).map(c => c.argv.find(a => a.includes('/branches/'))), ['repos/exemplo/loja/branches/release/protection']);
@@ -75,12 +83,18 @@ test('os ramos protegidos vêm da configuração', () => {
 test('rodar o init duas vezes é idempotente (CI e proteção)', () => {
   const p = criarRepo();
   p.git(['push', 'origin', 'main', 'stage']);
+  semProtecao(p);
   assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--teste', 'npm test']).codigo, 0);
   const antes = ler(p, ARQ);
   const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--teste', 'npm test']);
   assert.equal(r.codigo, 0, r.erro);
   assert.equal(ler(p, ARQ), antes);
   assert.doesNotMatch(r.saida, /ah-ci\.yml/);
+  assert.equal(puts(p).length, 4);
+  // com o servidor já protegido, o segundo init não altera nada
+  p.ghResponder([]);
+  const r3 = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--teste', 'npm test']);
+  assert.match(r3.saida, /main já está protegido no servidor; não alterei/);
   assert.equal(puts(p).length, 4);
 });
 
@@ -89,9 +103,9 @@ test('CI com comando de teste', () => {
   const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--teste', 'npm test', '--sem-protecao']);
   assert.equal(r.codigo, 0, r.erro);
   const y = ler(p, ARQ);
-  assert.match(y, /run: npm test/);
+  assert.match(y, /run: 'npm test'/);
   assert.doesNotMatch(y, /if: false/);
-  assert.match(y, /branches: \[ ?dev ?\]/);
+  assert.match(y, /branches: \[ ?'dev' ?\]/);
   assert.match(y, /pull_request/);
   assert.match(y, /permissions:\n  contents: read/);
   assert.match(y, /runs-on: ubuntu-latest/);
@@ -114,7 +128,7 @@ test('definir o comando na configuração e rodar o init de novo liga a CI', () 
   fs.writeFileSync(path.join(p.raiz, '.harness/config.json'), JSON.stringify(cfg));
   const r = p.ah(['init', '--sigla', 'as', '--sem-protecao']);
   assert.equal(r.codigo, 0, r.erro);
-  assert.match(ler(p, ARQ), /run: make check/);
+  assert.match(ler(p, ARQ), /run: 'make check'/);
   assert.doesNotMatch(ler(p, ARQ), /if: false/);
 });
 
@@ -137,6 +151,70 @@ test('comando de teste com dois pontos ou aspas vira YAML válido', () => {
   assert.match(ler(p, ARQ), /run: 'echo ''a: b'' # x'/);
 });
 
+test('o comando de teste vai ao run: exatamente como veio', () => {
+  for (const cmd of ['echo $$', "grep -c 'x$' f", 'echo $&', 'echo $`', "echo $'a'", 'make\tcheck', 'echo "oi" && ls']) {
+    const p = criarRepo();
+    const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao', '--teste', cmd]);
+    assert.equal(r.codigo, 0, r.erro);
+    const y = ler(p, ARQ);
+    assert.ok(y.includes(`      - run: '${cmd.replaceAll("'", "''")}'\n`), `${cmd}\n${y}`);
+    assert.equal(y.split('\n').length, 18);
+  }
+});
+
+test('expressão do Actions no comando de teste é recusada', () => {
+  const p = criarRepo();
+  const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao', '--teste', 'echo ${{ secrets.X }}']);
+  assert.notEqual(r.codigo, 0);
+  assert.match(r.erro, /expressões do Actions/);
+  assert.equal(existe(p, ARQ), false);
+});
+
+test('ramo já protegido no servidor: init não faz PUT e diz que não alterou', () => {
+  const p = criarRepo();
+  p.git(['push', 'origin', 'main', 'stage']);
+  semProtecao(p, [{ prefixo: ['api', 'repos/exemplo/loja/branches/main/protection'], codigo: 0, saida: '{"required_status_checks":{}}' }]);
+  const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /main já está protegido no servidor; não alterei/);
+  assert.deepEqual(puts(p).map(c => c.argv.find(a => a.includes('/branches/'))), ['repos/exemplo/loja/branches/stage/protection']);
+});
+
+test('GET da proteção negado (403, plano gratuito): aviso e nenhum PUT', () => {
+  const p = criarRepo();
+  p.git(['push', 'origin', 'main', 'stage']);
+  p.ghResponder(['main', 'stage'].map(r => ({ prefixo: ['api', `repos/exemplo/loja/branches/${r}/protection`], codigo: 1, saida: '{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","status":"403"}' })));
+  const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.equal(puts(p).length, 0);
+  assert.match(r.erro, /Sem proteção no servidor para main: Upgrade to GitHub Pro or make this repository public to enable this feature\. Só a trava local protege\./);
+});
+
+test('remoto inacessível: um aviso só, diferente de "ainda não está no remoto"', () => {
+  const p = criarRepo();
+  p.git(['remote', 'set-url', 'origin', path.join(p.raiz, 'nao-existe.git')]);
+  const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.equal(r.erro.match(/Não consegui consultar o remoto/g).length, 1);
+  assert.match(r.erro, /proteção não conferida\. Rode ah init de novo quando o remoto responder\./);
+  assert.doesNotMatch(r.erro, /ainda não está no remoto/);
+  assert.equal(puts(p).length, 0);
+});
+
+test('gh ausente: init sai com 0 e avisa', () => {
+  const p = criarRepo();
+  p.git(['push', 'origin', 'main', 'stage']);
+  const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as'], { env: { AH_GH: path.join(p.raiz, 'nao-existe-gh') } });
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.erro, /Sem proteção no servidor para main: .*Só a trava local protege\./);
+});
+
+test('ramo com barra vai codificado por segmento no caminho da API', () => {
+  const p = criarRepo();
+  protegerRamo('rel/1.0 x', o(p));
+  assert.ok(p.ghChamadas().at(-1).argv.includes('repos/exemplo/loja/branches/rel/1.0%20x/protection'));
+});
+
 test('comando de teste com nova linha é recusado antes de gravar', () => {
   const p = criarRepo();
   const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao', '--teste', 'npm test\nrm -rf x']);
@@ -144,6 +222,12 @@ test('comando de teste com nova linha é recusado antes de gravar', () => {
   assert.match(r.erro, /Faça: escreva o comando numa linha só/);
   assert.equal(existe(p, ARQ), false);
   assert.equal(existe(p, '.harness/config.json'), false);
+});
+
+test('motivo vem da message do JSON da API', () => {
+  const p = criarRepo();
+  p.ghResponder([{ prefixo: ['api', '-X', 'PUT'], codigo: 1, saida: '{"message":"Resource not accessible","status":"403"}' }]);
+  assert.deepEqual(protegerRamo('main', o(p)), { ok: false, motivo: 'Resource not accessible' });
 });
 
 test('protegerRamo e protecaoDoRamo', () => {
