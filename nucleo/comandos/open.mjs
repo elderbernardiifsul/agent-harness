@@ -6,11 +6,12 @@ import { comTrava, lerJson, registrarEvento } from '../lib/estado.mjs';
 import { frentesDa, gravarFrente, lerFrente, listarFrentes, nomeValido, novaFrente, proximoId, siglaValida } from '../lib/frente.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
-import { comentarOuEnfileirar, reenviarComAviso } from '../lib/pendentes.mjs';
+import { reenviarComAviso } from '../lib/pendentes.mjs';
+import { desfazerReserva, reservar } from '../lib/reserva.mjs';
 import { gravarSessao, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
 import { inicioDoProcesso, pidDeComando } from '../lib/vida.mjs';
 
-export const descricao = 'abre uma frente de trabalho: ramo, worktree, registro e comentário nos tickets';
+export const descricao = 'abre uma frente de trabalho: ramo, worktree, registro e reserva dos tickets';
 export const uso = 'ah open <nome> [--tickets 1,2] [--plano <arquivo>] [--caminhos <globs>]';
 export const requisitos = { config: true, sessao: true };
 
@@ -165,9 +166,25 @@ export async function executar(args, amb) {
     const dirWt = dirWorktrees(cfg, amb.env, process.platform, os.homedir());
     const frente = novaFrente({ id, nome: o.nome, config: cfg, dirWorktrees: dirWt, tickets, plano, caminhos, dona: amb.sessaoId, login, agora: new Date() });
 
+    // Reserva dos tickets no servidor: depois das recusas locais e antes de criar qualquer coisa no disco.
+    const rotulo = cfg.github.rotuloDeReserva;
+    const oGh = { cwd: amb.raiz, env: amb.env };
+    let reserva = null;
+    if (tickets.length) {
+      const r = reservar({ tickets, frente, login, sessao: amb.sessaoId, rotulo, dirEstado }, oGh);
+      if (!r.ok) {
+        if (r.desistiu) registrarEvento(dirEstado, { tipo: 'reserva-desistida', sessao: amb.sessaoId, frente: frente.nome, id, tickets, vencedor: r.id });
+        throw recusa(`Não reservei os tickets: ${r.motivo}`, r.saida);
+      }
+      frente.reserva = { logins: [login], tickets: r.reservados };
+      reserva = r;
+      for (const n of r.fechados) amb.avisar(`Aviso: o ticket #${n} está fechado; não o reservei (a frente o guarda na lista).\n`);
+    }
+
     const g = git(['worktree', 'add', '-b', frente.ramo, frente.worktree, partida.ponto], { cwd: amb.raiz, env: amb.env });
     if (g.codigo !== 0) {
       if (existeRamo(amb.raiz, frente.ramo, { env: amb.env })) git(['branch', '-D', frente.ramo], { cwd: amb.raiz, env: amb.env });
+      if (frente.reserva) desfazerReserva({ frente, login, sessao: amb.sessaoId, rotulo, dirEstado, motivo: 'o git não criou o worktree' }, oGh);
       throw recusa(`O git não criou o worktree: ${(g.erro.trim() || 'sem mensagem').slice(0, 300)}`, 'resolva o que o git descreve (ou escolha outro nome) e rode ah open de novo');
     }
 
@@ -175,13 +192,7 @@ export async function executar(args, amb) {
     sessao.frente = frente.nome;
     gravarSessao(dirEstado, sessao);
     registrarEvento(dirEstado, { tipo: 'abertura', sessao: amb.sessaoId, frente: frente.nome, id, tickets });
-
-    for (const ticket of tickets) {
-      const corpo = `Frente ${id} (${frente.nome}) aberta por @${login}.\n\n<!-- ah:frente id=${id} nome=${frente.nome} ramo=${frente.ramo} -->\n`;
-      if (!comentarOuEnfileirar(dirEstado, ticket, corpo, { cwd: amb.raiz, env: amb.env, evento: { sessao: amb.sessaoId, frente: frente.nome } })) {
-        amb.avisar(`Aviso: não consegui comentar no ticket #${ticket}; o comentário ficou na fila; sai no próximo comando com rede.\n`);
-      }
-    }
+    if (reserva) registrarEvento(dirEstado, { tipo: 'reserva', sessao: amb.sessaoId, frente: frente.nome, id, tickets: reserva.reservados, fechados: reserva.fechados });
 
     const sujos = git(['status', '--porcelain'], { cwd: amb.raiz, env: amb.env }).saida.split('\n').filter(Boolean);
     if (sujos.length) {

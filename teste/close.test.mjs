@@ -480,3 +480,14 @@ test('orquestrador fecha uma das frentes e o foco passa para a que sobrou', () =
   assert.equal(JSON.parse(p.ah(['whoami', '--json']).saida).frente, null);
   p.limpar();
 });
+
+test('close libera: tira responsável e rótulo e comenta o fechamento como livre', () => {
+  const { p } = comFrente();
+  assert.deepEqual(p.ghTicket(1).assignees, ['ana-souza']);
+  p.git(['merge', '--no-ff', 'feat/carrinho', '-m', 'm']);
+  assert.equal(p.ah(['close', '--resumo', 'soma']).codigo, 0);
+  const t = p.ghTicket(1);
+  assert.deepEqual([t.assignees, t.labels], [[], []]);
+  assert.match(t.comments.at(-1).body, /fechada\.[\s\S]*soma[\s\S]*ah:fechamento id=as-1 .*estado=livre/);
+  p.limpar();
+});

@@ -4,7 +4,9 @@ import { ErroDeUso } from '../lib/caminhos.mjs';
 import { comTrava, registrarEvento } from '../lib/estado.mjs';
 import { frentesDa, gravarFrente, lerFrente, linhaDoHistorico, listarFrentesTolerante, nomeValido, removerFrente } from '../lib/frente.mjs';
 import { existeRamo, ramoAtual, git } from '../lib/git.mjs';
-import { comentarOuEnfileirar, reenviarComAviso } from '../lib/pendentes.mjs';
+import { loginAtual } from '../lib/github.mjs';
+import { reenviarComAviso } from '../lib/pendentes.mjs';
+import { liberarTickets } from '../lib/reserva.mjs';
 import { gravarSessao, idCurto, lerSessao, tocarSinal } from '../lib/sessao.mjs';
 import { prazoMs, vidaDaSessao } from '../lib/vida.mjs';
 
@@ -200,12 +202,18 @@ export async function executar(args, amb) {
     resumo = resumo.replace(/\r\n?/g, '\n').trim();
     const primeira = resumo.split('\n').map(l => l.trim()).find(Boolean) ?? 'sem resumo';
 
-    // 3. Tickets (só aviso; não fecha ticket). Uma vez só, mesmo se o close for repetido.
+    // 3. Tickets: comentário de fechamento (livre) e, com reserva, sai responsável e rótulo. Não fecha ticket.
+    // Uma vez só, mesmo se o close for repetido.
     if (!frente.fechamentoComentado) {
-      for (const ticket of frente.tickets ?? []) {
-        const corpo = `Frente ${frente.id} (${frente.nome}) fechada.\n\n${resumo}\n`;
-        if (!comentarOuEnfileirar(dirEstado, ticket, corpo, { cwd: raiz, env, evento: { sessao: amb.sessaoId, frente: frente.nome } })) {
+      if ((frente.tickets ?? []).length) {
+        const oGh = { cwd: raiz, env };
+        const login = loginAtual(oGh) ?? frente.abertaPor ?? 'local';
+        const r = liberarTickets({ frente, resumo, login, rotulo: cfg.github.rotuloDeReserva, dirEstado, sessao: amb.sessaoId }, oGh);
+        for (const ticket of r.comentariosNaFila) {
           amb.avisar(`Aviso: não consegui comentar no ticket #${ticket}; o comentário ficou na fila; sai no próximo comando com rede.\n`);
+        }
+        for (const ticket of r.edicoesNaFila) {
+          amb.avisar(`Aviso: não consegui tirar responsável e rótulo do ticket #${ticket}; a edição ficou na fila; sai no próximo comando com rede.\n`);
         }
       }
       frente.fechamentoComentado = true;

@@ -138,25 +138,27 @@ test('close sem rede deixa o comentário na fila; o próximo comando com rede en
   assert.match(r.erro, /fila/);
   assert.match(r.erro, /próximo comando com rede/);
   const dir = dirDoTeste(p);
-  assert.equal(contarPendentes(dir), 1);
+  // comentário de fechamento e a edição que tira responsável e rótulo (tarefa 5)
+  assert.equal(contarPendentes(dir), 2);
   assert.equal(p.ah(['whoami']).codigo, 0);
   assert.equal(p.ah(['board']).codigo, 0);
-  assert.equal(contarPendentes(dir), 1);
+  assert.equal(contarPendentes(dir), 2);
   assert.doesNotMatch(p.ghTicket(1).comments.at(-1).body, /fechada/);
   // O reenvio vem antes de tudo: mesmo um open recusado (nome curto demais) envia a fila.
   const o = p.ah(['open', 'x']);
   assert.match(o.erro, /Nome de frente inválido/);
   assert.equal(contarPendentes(dir), 0);
   assert.match(p.ghTicket(1).comments.at(-1).body, /fechada/);
+  assert.deepEqual([p.ghTicket(1).assignees, p.ghTicket(1).labels], [[], []]);
   p.limpar();
 });
 
-test('open sem rede deixa o comentário na fila e o close com rede o envia antes do dele', () => {
+// Desde a tarefa 5 o open com tickets e sem rede recusa (reserva); a fila é semeada à mão.
+test('comentário na fila sai antes do fechamento do close', () => {
   const p = criarProjeto();
-  const r = p.ah(['open', 'carrinho', '--tickets', '1'], { env: { GH_FALSO_FORA: '1' } });
+  const r = p.ah(['open', 'carrinho', '--tickets', '1']);
   assert.equal(r.codigo, 0, r.erro);
-  assert.match(r.erro, /ficou na fila; sai no próximo comando com rede/);
-  assert.deepEqual(p.ghTicket(1).comments, []);
+  enfileirar(dirDoTeste(p), { tipo: 'comentario', ticket: 1, corpo: 'Nota pendente.\n' });
   const f = JSON.parse(fs.readFileSync(path.join(dirDoTeste(p), 'frentes', 'carrinho.json'), 'utf8'));
   fs.writeFileSync(path.join(f.worktree, 'a.txt'), 'a');
   p.git(['add', 'a.txt'], { cwd: f.worktree });
@@ -164,7 +166,7 @@ test('open sem rede deixa o comentário na fila e o close com rede o envia antes
   assert.equal(p.git(['merge', '--no-ff', 'feat/carrinho', '-m', 'merge']).codigo, 0);
   const c = p.ah(['close']);
   assert.equal(c.codigo, 0, c.erro);
-  assert.deepEqual(p.ghTicket(1).comments.map(x => x.body.split('\n')[0]), [`Frente ${f.id} (carrinho) aberta por @ana-souza.`, `Frente ${f.id} (carrinho) fechada.`]);
+  assert.deepEqual(p.ghTicket(1).comments.map(x => x.body.split('\n')[0]), [`Frente ${f.id} (carrinho) aberta por @ana-souza.`, 'Nota pendente.', `Frente ${f.id} (carrinho) fechada.`]);
   p.limpar();
 });
 

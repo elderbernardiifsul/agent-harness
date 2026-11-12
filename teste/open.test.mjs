@@ -32,7 +32,7 @@ test('open cria ramo, worktree, estado e comenta nos tickets', () => {
   const com = comentarios(p);
   assert.equal(com.length, 2);
   assert.match(com[0].entrada, /Frente as-1 \(carrinho\) aberta por @ana-souza\./);
-  assert.match(com[0].entrada, /<!-- ah:frente id=as-1 nome=carrinho ramo=feat\/carrinho -->/);
+  assert.match(com[0].entrada, /<!-- ah:frente id=as-1 nome=carrinho ramo=feat\/carrinho estado=ativa login=ana-souza/);
   assert.equal(JSON.parse(p.ah(['whoami', '--json']).saida).frente, 'carrinho');
   assert.match(p.ah(['whoami']).saida, /frente: as-1 carrinho/);
   const ab = eventos(p).find(e => e.tipo === 'abertura');
@@ -162,12 +162,14 @@ test('se o worktree falha nada fica gravado', () => {
   p.limpar();
 });
 
-test('sem rede o open segue com aviso', () => {
+test('open com tickets e sem rede recusa sem criar nada', () => {
   const p = criarProjeto();
   const r = p.ah(['open', 'carrinho', '--tickets', '1'], { env: { GH_FALSO_FORA: '1' } });
-  assert.equal(r.codigo, 0, r.erro);
-  assert.match(r.erro, /aviso/i);
-  assert.ok(eventos(p).some(e => e.tipo === 'comentario-falhou' && e.ticket === 1));
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /Faça: /);
+  assert.equal(fs.existsSync(path.join(p.env.AH_WORKTREES, 'carrinho')), false);
+  assert.equal(p.git(['branch', '--list', 'feat/carrinho']).saida.trim(), '');
+  assert.equal(fs.existsSync(path.join(p.estado, 'loja', 'frentes', 'carrinho.json')), false);
   p.limpar();
 });
 
