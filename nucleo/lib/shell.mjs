@@ -551,6 +551,10 @@ const PREFIXOS = new Set(['!', 'if', 'then', 'elif', 'else', 'while', 'until', '
 const SEPARADORES = new Set([';', '&', '\n']);
 const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'ash']);
 const nunca = () => false;
+// Simulação do cwd numa lista && / ||: nenhum estado, ou mais de um cwd possível.
+const NENHUM = Symbol('nenhum');
+const VARIOS = Symbol('vários');
+const juntar = (a, b) => (a === NENHUM ? b : b === NENHUM ? a : a === b ? a : VARIOS);
 const ehOp = (t, ...valores) => t?.tipo === 'op' && valores.includes(t.valor);
 
 function definir(obj, k, v) {
@@ -613,6 +617,7 @@ class Leitor {
     this.entradasDeAmbiente = 0;
     this.orcamentoDeChaves = { resta: LIMITE_CARACTERES_EXPANDIDOS };
     this.orcamentoDeTexto = LIMITE_TEXTO_RELIDO_MINIMO;
+    this.orcamentoDeSaida = { resta: LIMITE_TEXTO_RELIDO_MINIMO };
   }
 
   entrar(pos) {
@@ -673,25 +678,41 @@ class Leitor {
     }
   }
 
-  // a && b || c: um cd depois do primeiro pode não ter rodado, e o cwd fica
-  // desconhecido depois da lista; com `&` no fim, nada vaza.
+  // a && b || c. O cwd de cada operando sai de uma simulação: para o status
+  // "deu certo" e para o "falhou" guarda-se o cwd possível (ou VARIOS). O
+  // operando roda nos estados que o operador deixa passar (&& no certo, || no
+  // falhou); se ali houver mais de um cwd possível, o cwd dele é null. Um cd
+  // que dá certo muda o cwd, e falhando não muda; outro operando que mudou o
+  // cwd (eval, chaves) e o negado com `!` deixam os dois status em aberto.
   //
-  // No lado direito de `||`, se o lado esquerdo mudou o cwd, o cwd é o de antes
-  // quando o lado esquerdo é só um cd, e null nos demais casos (decisão R11).
-  // Depois da lista vale o cwd sequencial (o do último cd), ou null se condicional.
+  // Depois da lista vale o cwd sequencial (o do último cd), ou null se algum cd
+  // depois do primeiro operando mudou o cwd; com `&` no fim, nada vaza.
   lerAndOr(cur, ctx) {
     const m = this.marcar(ctx);
-    const inicio = ctx.cwd;
-    let sequencial = inicio;
+    let sequencial = ctx.cwd;
     let condicional = false;
-    let soUmCd = false;
+    let certo = ctx.cwd;
+    let falhou = NENHUM;
+    let operador = '&&';
     for (let n = 0; ; n++) {
+      const roda = operador === '&&' ? certo : falhou;
+      ctx.cwd = roda === VARIOS || roda === NENHUM ? null : roda;
       const antes = ctx.cwd;
-      const info = this.lerPipeline(cur, ctx);
-      if (n === 0) soUmCd = Boolean(info?.ehCd);
-      if (ctx.cwd !== antes) { sequencial = ctx.cwd; if (n > 0) condicional = true; }
+      const info = this.lerPipeline(cur, ctx) ?? {};
+      const depois = ctx.cwd;
+      let rCerto = antes;
+      let rFalhou = antes;
+      if (depois !== antes) {
+        sequencial = depois;
+        if (n > 0) condicional = true;
+        if (info.ehCd && !info.negado) rCerto = depois;
+        else rCerto = rFalhou = juntar(antes, depois);
+      }
+      if (info.negado) rCerto = rFalhou = juntar(rCerto, rFalhou);
+      if (operador === '&&') { certo = rCerto; falhou = juntar(falhou, rFalhou); }
+      else { falhou = rFalhou; certo = juntar(certo, rCerto); }
       if (!ehOp(cur.tokens[cur.i], '&&', '||')) break;
-      if (cur.tokens[cur.i].valor === '||' && ctx.cwd !== inicio) ctx.cwd = n === 0 && soUmCd ? inicio : null;
+      operador = cur.tokens[cur.i].valor;
       cur.i++;
       while (ehOp(cur.tokens[cur.i], '\n')) cur.i++;
     }
@@ -728,13 +749,22 @@ class Leitor {
     return {};
   }
 
+  // Devolve o que o comando informa ao pipeline e à lista (ehCd, saidaTexto…),
+  // com `negado` quando vem depois de `!`.
   lerComando(cur, ctx) {
+    const negacao = { negado: false };
+    const info = this.lerComandoSemNegacao(cur, ctx, negacao);
+    return negacao.negado ? { ...(info ?? {}), negado: true } : info;
+  }
+
+  lerComandoSemNegacao(cur, ctx, negacao) {
     let pulou = false;
     for (;;) {
       const t = cur.tokens[cur.i];
       if (!livre(t) || !PREFIXOS.has(t.texto)) break;
       cur.i++;
       pulou = true;
+      if (t.texto === '!') negacao.negado = true;
       if (t.texto === 'time') while (livre(cur.tokens[cur.i], '-p') || livre(cur.tokens[cur.i], '--')) cur.i++;
     }
     const t = cur.tokens[cur.i];
@@ -1039,7 +1069,7 @@ class Leitor {
       let k = 1;
       if (argv[k] === '-v') k += 2;
       if (argv[k] === '--') k++;
-      if (k < itens.length) saidaTexto.push(() => saidaDoPrintf(itens.slice(k)));
+      if (k < itens.length) saidaTexto.push(() => saidaDoPrintf(itens.slice(k), this.orcamentoDeSaida));
     }
     return { saidaTexto, ehCd };
   }
@@ -1104,18 +1134,26 @@ function decodificar(s, modo) {
 function saidaDoEcho(itens) {
   let k = 1;
   let comE = false;
-  while (k < itens.length && /^-[neE]+$/.test(itens[k].s)) { if (itens[k].s.includes('e')) comE = true; k++; }
+  let comEMaiusculo = false;
+  while (k < itens.length && /^-[neE]+$/.test(itens[k].s)) {
+    if (itens[k].s.includes('e')) comE = true;
+    if (itens[k].s.includes('E')) comEMaiusculo = true;
+    k++;
+  }
   if (k >= itens.length) return [];
   const cru = itens.slice(k).map(x => x.s).join(' ');
   const decodificado = decodificar(cru, 'echo').texto;
-  if (comE) return [decodificado];
+  // Com -e e -E juntos vale a última no bash; aqui saem as duas leituras.
+  if (comE && !comEMaiusculo) return [decodificado];
   return decodificado === cru ? [cru] : [cru, decodificado];
 }
 
-// O que o printf escreve: escapes do formato, %% e as conversões trocadas pelos
-// argumentos (%b com os escapes do echo). Formato ou argumento com variável não
-// dá para montar.
-function saidaDoPrintf(itens) {
+// O que o printf escreve: escapes do formato, %% e as conversões %s, %b e %q
+// trocadas pelos argumentos (%b com os escapes do echo, %q com o argumento cru).
+// Não dá para montar, e lança ErroDeShell: formato ou argumento com variável,
+// outra conversão (%c, %d, %x …), precisão ou `*`. Cada pedaço desconta de
+// `orcamento.resta`: o formato reaproveitado multiplica o tamanho da saída.
+function saidaDoPrintf(itens, orcamento) {
   const naoDa = () => new ErroDeShell('printf entregue a um shell com formato ou argumento variável', null);
   if (itens[0].exp) throw naoDa();
   const formato = itens[0].s;
@@ -1124,32 +1162,36 @@ function saidaDoPrintf(itens) {
   let a = 0;
   let saida = '';
   const proximo = () => (a < args.length ? args[a++].s : '');
+  const por = t => {
+    orcamento.resta -= t.length;
+    if (orcamento.resta < 0) throw new ErroDeShell('saída do printf grande demais para ler', null);
+    saida += t;
+  };
   for (;;) {
     const antes = a;
     for (let i = 0; i < formato.length;) {
       const c = formato[i];
       if (c === '\\') {
         const e = umEscape(formato, i, 'printf');
-        saida += e.texto;
+        por(e.texto);
         i = e.fim;
         continue;
       }
-      if (c !== '%') { saida += c; i++; continue; }
-      if (formato[i + 1] === '%') { saida += '%'; i += 2; continue; }
+      if (c !== '%') { por(c); i++; continue; }
+      if (formato[i + 1] === '%') { por('%'); i += 2; continue; }
       let f = i + 1;
       while (f < formato.length && "-+ #0'".includes(formato[f])) f++;
-      if (formato[f] === '*') { proximo(); f++; } else while (ehDigito(formato[f])) f++;
-      if (formato[f] === '.') {
-        f++;
-        if (formato[f] === '*') { proximo(); f++; } else while (ehDigito(formato[f])) f++;
-      }
+      if (formato[f] === '*') throw new ErroDeShell('printf entregue a um shell com largura "*"', null);
+      while (ehDigito(formato[f])) f++;
+      if (formato[f] === '.') throw new ErroDeShell('printf entregue a um shell com precisão', null);
       const conv = formato[f];
-      if (conv === undefined) { saida += formato.slice(i); break; }
+      if (conv === undefined) { por(formato.slice(i)); break; }
+      if (conv !== 's' && conv !== 'b' && conv !== 'q') throw new ErroDeShell(`printf entregue a um shell com a conversão %${conv}`, null);
       if (conv === 'b') {
         const r = decodificar(proximo(), 'echo');
-        saida += r.texto;
+        por(r.texto);
         if (r.parou) return saida;
-      } else saida += proximo();
+      } else por(proximo());
       i = f + 1;
     }
     if (a === antes || a >= args.length) return saida;
@@ -1221,6 +1263,7 @@ export function comandosSimples(texto, cwd) {
   if (typeof texto !== 'string') throw new TypeError('comandosSimples: o texto precisa ser string');
   const leitor = new Leitor();
   leitor.orcamentoDeTexto = Math.max(4 * texto.length, LIMITE_TEXTO_RELIDO_MINIMO);
+  leitor.orcamentoDeSaida.resta = leitor.orcamentoDeTexto;
   const { tokens } = tokenizar(texto, 0, 'topo', 0);
   leitor.lerTudo(tokens, { cwd: cwd ?? null, herdado: {} });
   return leitor.saida;

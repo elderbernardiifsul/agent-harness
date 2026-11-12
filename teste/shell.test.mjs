@@ -208,6 +208,60 @@ test('invólucro e git -C pelo nome-base, argv[0] fiel', () => {
   assert.deepEqual(b.argv, ['~/bin/git', 'push']); assert.equal(b.cwd, path.resolve('/r', 'x'));
 });
 
+// Rodada de consertos 2.
+test('printf que multiplica o formato estoura o orçamento, não a memória', () => {
+  const casos = [
+    "printf '" + 'x'.repeat(20000) + "%s' " + 'a '.repeat(20000) + '| sh',
+    'echo ' + '{a,b}'.repeat(20) + ' | sh',
+    ('echo ' + 'x'.repeat(1000) + ' | sh; ').repeat(90),
+    "echo $'" + '\\x41'.repeat(20000) + "' | sh",
+  ];
+  for (const t of casos) {
+    const inicio = Date.now();
+    try { comandosSimples(t, '/r'); } catch (e) { assert.ok(erro(e), String(e)); }
+    assert.ok(Date.now() - inicio < 2000, `lento: ${t.slice(0, 20)}`);
+  }
+  assert.throws(() => comandosSimples(casos[0], '/r'), erro);
+  assert.throws(() => comandosSimples(casos[1], '/r'), erro);
+});
+test('printf para shell: só %s simples, %b, %q e %%', () => {
+  for (const t of [
+    `printf '%.3s push origin main' gitzzz | sh`,
+    `printf '%c%c%c push origin main' gx ix tx | sh`,
+    `printf 'git push origin m%xin' 10 | sh`,
+    `printf 'git push %d' '' | sh`,
+    `printf '%*s push' 3 git | sh`,
+  ]) assert.throws(() => comandosSimples(t, '/r'), erro, t);
+  const git = t => comandosSimples(t, '/r').filter(c => c.argv[0] === 'git').map(c => c.argv.join(' '));
+  assert.deepEqual(git(`printf '%-5s push origin main%%' git | sh`), ['git push origin main%']);
+  assert.deepEqual(git(`printf '%q push origin main' git | sh`), ['git push origin main']);
+  assert.deepEqual(so(`printf '%.3s %c %d' a b 1`), ['printf %.3s %c %d a b 1']);
+});
+test('cd em lista com || e &&: só o operando logo depois do || herda o cwd de antes', () => {
+  const cwds = t => comandosSimples(t, '/r').map(c => c.cwd);
+  assert.deepEqual(cwds('cd /w || echo falhou && git add -A'), ['/r', '/r', null]);
+  assert.deepEqual(cwds('x || cd /w && y'), ['/r', '/r', null]);
+  assert.deepEqual(cwds('! cd /w || cmd'), ['/r', null]);
+  assert.deepEqual(cwds('cd /w || git add -A'), ['/r', '/r']);
+  assert.deepEqual(cwds('cd /w && cmd'), ['/r', path.resolve('/w')]);
+  assert.deepEqual(cwds('cd /w; cmd'), ['/r', path.resolve('/w')]);
+  assert.deepEqual(cwds('cd sub && npm test || echo falhou'), ['/r', path.resolve('/r', 'sub'), null]);
+});
+test('echo com -e e -E: as duas leituras', () => {
+  const git = t => comandosSimples(t, '/r').filter(c => c.argv[0] === 'git').map(c => c.argv.join(' '));
+  for (const t of [`echo -eE 'git push origin main\\n' | sh`, `echo -e -E 'git push origin main\\n' | sh`, `echo -E -e 'git push origin main\\n' | sh`]) {
+    assert.ok(git(t).includes('git push origin main'), t);
+  }
+  assert.deepEqual(git(`echo -eE 'git push origin main\\n' | sh`).length, 2);
+});
+test('caminho do Windows entre aspas preserva as barras', () => {
+  assert.deepEqual(comandosSimples(`"C:\\Git\\git.exe" push origin main`, '/r')[0].argv, ['C:\\Git\\git.exe', 'push', 'origin', 'main']);
+  assert.deepEqual(comandosSimples(`'C:\\Git\\git.exe' push origin main`, '/r')[0].argv, ['C:\\Git\\git.exe', 'push', 'origin', 'main']);
+  const [c] = comandosSimples(`"C:\\Git\\git.exe" -C x push`, '/r');
+  assert.deepEqual(c.argv, ['C:\\Git\\git.exe', 'push']);
+  assert.equal(c.cwd, path.resolve('/r', 'x'));
+});
+
 // Envoltórios.
 test('envoltórios com opções', () => {
   assert.deepEqual(so('env -i -u HOME -- A=1 git push'), ['git push']);
