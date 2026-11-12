@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { criarProjeto } from './apoio/repo.mjs';
 
 const HISTORICO = 'docs/agents/historico-das-frentes.md';
@@ -318,6 +319,113 @@ test('conferência que falha ao rodar vira recusa e nada é apagado', { skip: pr
     assert.match(r.erro, /falha injetada/);
     assert.ok(fs.existsSync(wt), quebrar);
     assert.ok(fs.existsSync(arquivoDaFrente(p, 'carrinho')), quebrar);
+  }
+  p.limpar();
+});
+
+// ---- onda final: I1 (sessão nova fecha a frente de uma sessão encerrada)
+const arquivoDaSessao = (p, id) => path.join(p.estado, 'loja', 'sessoes', `${id}.json`);
+const encerrar = (p, id) => {
+  const s = JSON.parse(fs.readFileSync(arquivoDaSessao(p, id), 'utf8'));
+  s.fim = new Date().toISOString();
+  fs.writeFileSync(arquivoDaSessao(p, id), JSON.stringify(s));
+};
+
+test('I1: frente de sessão encerrada é fechada por outra sessão, com as mesmas conferências', () => {
+  const { p, wt } = comFrente();
+  encerrar(p, 'sessao-teste-0001');
+  const antes = p.ah(['close', 'carrinho'], OUTRA);
+  assert.equal(antes.codigo, 1);
+  assert.match(antes.erro, /perderia trabalho/);
+  assert.ok(fs.existsSync(wt));
+  mescla(p);
+  const r = p.ah(['close', 'carrinho'], OUTRA);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Frente as-1 carrinho fechada\.\nA frente era da sessão sessao-teste-0001, já encerrada; esta sessão a fechou\./);
+  assert.ok(!fs.existsSync(wt));
+  assert.equal(JSON.parse(fs.readFileSync(arquivoDaSessao(p, 'sessao-teste-0001'), 'utf8')).frente, null);
+  p.limpar();
+});
+
+test('I1: frente cuja sessão dona não tem arquivo também é fechada por outra sessão', () => {
+  const { p } = comFrente();
+  mescla(p);
+  fs.rmSync(arquivoDaSessao(p, 'sessao-teste-0001'));
+  const r = p.ah(['close', 'carrinho'], OUTRA);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /já encerrada/);
+  p.limpar();
+});
+
+test('I1: com a dona ainda aberta, a recusa mostra o id inteiro e as duas saídas', () => {
+  const p = criarProjeto();
+  const id = 'sessao-a-com-id-bem-comprido-0001';
+  assert.equal(p.ah(['open', 'carrinho'], { env: { AH_SESSAO: id } }).codigo, 0);
+  const r = p.ah(['close', 'carrinho'], { env: { AH_SESSAO: 'sessao-b' } });
+  assert.equal(r.codigo, 1);
+  assert.ok(r.erro.includes(`é da sessão ${id}, que ainda está aberta`), r.erro);
+  assert.ok(r.erro.includes(`peça à sessão dona que rode ah close; se ela morreu sem encerrar, rode AH_SESSAO=${id} tools/ah close carrinho`), r.erro);
+  p.limpar();
+});
+
+// ---- onda final: M7 (receitas da revisão da tarefa 11)
+const GH_CRIA = path.join(path.dirname(fileURLToPath(import.meta.url)), 'apoio', 'gh-cria.mjs');
+for (const modo of ['sujo', 'commit']) {
+  test(`M7: o que aparece no worktree durante o comentário no ticket (${modo}) é pego na reconferência`, () => {
+    const { p, wt } = comFrente();
+    mescla(p);
+    const r = p.ah(['close'], { env: { AH_GH: GH_CRIA, GH_CRIA: wt, GH_MODO: modo } });
+    assert.equal(r.codigo, 1, r.saida);
+    assert.match(r.erro, modo === 'sujo' ? /alterações não commitadas no worktree/ : /commits do ramo feat\/carrinho que não estão na dev/);
+    assert.ok(fs.existsSync(wt));
+    assert.ok(fs.existsSync(arquivoDaFrente(p, 'carrinho')));
+    p.limpar();
+  });
+}
+
+test('M7: arquivo ignorado que aparece durante o comentário é pego na reconferência', () => {
+  const { p, wt } = comFrente();
+  fs.writeFileSync(path.join(wt, '.gitignore'), 'novo.txt\n');
+  p.git(['add', '.gitignore'], { cwd: wt });
+  p.git(['commit', '-m', 'ignora'], { cwd: wt });
+  mescla(p);
+  const r = p.ah(['close'], { env: { AH_GH: GH_CRIA, GH_CRIA: wt, GH_MODO: 'ign' } });
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /itens ignorados no worktree/);
+  assert.ok(fs.existsSync(path.join(wt, 'novo.txt')));
+  p.limpar();
+});
+
+test('M7: remoto que some entre a remoção do worktree e o -D deixa o ramo e avisa', { skip: process.platform === 'win32' }, () => {
+  const p = criarProjeto();
+  assert.equal(p.ah(['open', 'carrinho']).codigo, 0);
+  const wt = lerFrenteDoTeste(p, 'carrinho').worktree;
+  fs.writeFileSync(path.join(wt, 'a.txt'), 'a');
+  p.git(['add', 'a.txt'], { cwd: wt });
+  p.git(['commit', '-m', 'feat: a'], { cwd: wt });
+  assert.equal(p.git(['push', '-u', 'origin', 'feat/carrinho'], { cwd: wt }).codigo, 0);
+  const gitReal = ['/usr/bin/git', '/bin/git', '/usr/local/bin/git'].find(c => fs.existsSync(c));
+  assert.ok(gitReal);
+  const dir = fs.mkdtempSync(path.join(path.dirname(p.raiz), 'fake-'));
+  fs.writeFileSync(path.join(dir, 'git'), `#!/bin/sh\n${gitReal} "$@"; c=$?\nif [ "$1" = worktree ] && [ "$2" = remove ]; then ${gitReal} update-ref -d refs/remotes/origin/feat/carrinho; fi\nexit $c\n`, { mode: 0o755 });
+  const r = p.ah(['close'], { env: { PATH: `${dir}${path.delimiter}${process.env.PATH}` } });
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.erro, /não apaguei o ramo feat\/carrinho/);
+  assert.match(p.git(['branch', '--list']).saida, /feat\/carrinho/);
+  p.limpar();
+});
+
+test('M5: git que morre nas conferências do início do close vira recusa', { skip: process.platform === 'win32' }, () => {
+  const { p, wt } = comFrente();
+  mescla(p);
+  const gitReal = ['/usr/bin/git', '/bin/git', '/usr/local/bin/git'].find(c => fs.existsSync(c));
+  const dir = fs.mkdtempSync(path.join(path.dirname(p.raiz), 'fake-'));
+  for (const [quebrar, oque] of [['--show-toplevel', /em que checkout estou/], ['status', /Não consegui conferir docs\/agents\/historico-das-frentes\.md/]]) {
+    fs.writeFileSync(path.join(dir, 'git'), `#!/bin/sh\nfor a in "$@"; do if [ "$a" = "${quebrar}" ]; then kill -9 $$; fi; done\nexec ${gitReal} "$@"\n`, { mode: 0o755 });
+    const r = p.ah(['close'], { env: { PATH: `${dir}${path.delimiter}${process.env.PATH}` } });
+    assert.equal(r.codigo, 1, quebrar);
+    assert.match(r.erro, oque);
+    assert.ok(fs.existsSync(wt));
   }
   p.limpar();
 });

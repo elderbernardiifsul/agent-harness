@@ -1,10 +1,12 @@
 import { spawnSync } from 'node:child_process';
 
-// Executa o git com lista de argumentos (sem shell). Nunca lança.
+// Executa o git com lista de argumentos (sem shell). Nunca lança. Processo que não rodou
+// ou que morreu por sinal (status nulo) sai com código 127.
 export function git(args, { cwd, env } = {}) {
   const r = spawnSync('git', args, { cwd, env: env ?? process.env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (r.error) return { codigo: 127, saida: '', erro: String(r.error.message ?? r.error) };
-  return { codigo: r.status ?? 1, saida: r.stdout ?? '', erro: r.stderr ?? '' };
+  if (r.status == null) return { codigo: 127, saida: r.stdout ?? '', erro: r.stderr || `o git morreu (${r.signal ?? 'sem código'})` };
+  return { codigo: r.status, saida: r.stdout ?? '', erro: r.stderr ?? '' };
 }
 
 export function ramoAtual(cwd, env) {

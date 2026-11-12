@@ -3,7 +3,7 @@ import path from 'node:path';
 import { ErroDeUso } from '../lib/caminhos.mjs';
 import { comTrava, registrarEvento } from '../lib/estado.mjs';
 import { gravarFrente, lerFrente, linhaDoHistorico, nomeValido, removerFrente } from '../lib/frente.mjs';
-import { existeRamo, ramoAtual, git, topoDe } from '../lib/git.mjs';
+import { existeRamo, ramoAtual, git } from '../lib/git.mjs';
 import { comentar } from '../lib/github.mjs';
 import { gravarSessao, idCurto, lerSessao } from '../lib/sessao.mjs';
 
@@ -60,7 +60,11 @@ export async function executar(args, amb) {
   const remoto = cfg.git.remoto;
 
   // 1. Recusas que não dependem do estado.
-  const topo = topoDe(amb.cwd, env);
+  const t = git(['rev-parse', '--show-toplevel'], { cwd: amb.cwd, env });
+  if (t.codigo !== 0) {
+    throw recusa(`Não consegui conferir em que checkout estou: ${(t.erro || `código ${t.codigo}`).trim().split('\n')[0].slice(0, 200)}`, 'resolva o que o git descreve (ou rode ah doctor) e repita ah close; nada foi apagado');
+  }
+  const topo = t.saida.trim();
   if (topo && !mesmoCaminho(topo, raiz)) {
     throw recusa('O ah close não roda de dentro de um worktree de frente.', `rode no checkout principal: cd ${raiz}`);
   }
@@ -91,8 +95,17 @@ export async function executar(args, amb) {
       amb.escrever(`Sessão ${idCurto(amb.sessaoId)} sem frente.\n`);
       return 0;
     }
+    // Frente de outra sessão: se a dona já encerrou (ou não tem registro), esta sessão fecha,
+    // com as mesmas conferências; se a dona ainda está aberta, recusa com o id inteiro.
+    let sessaoDona = null;
+    let daEncerrada = false;
     if (frente.dona !== amb.sessaoId) {
-      throw recusa(`A frente ${frente.id} ${frente.nome} é da sessão ${frente.dona ? idCurto(frente.dona) : '(sem dona)'}, não desta.`, 'peça à dona que rode ah close (esta versão não tem tomada de frente)');
+      sessaoDona = frente.dona ? lerSessao(dirEstado, frente.dona) : null;
+      if (sessaoDona && !sessaoDona.fim) {
+        throw recusa(`A frente ${frente.id} ${frente.nome} é da sessão ${frente.dona}, que ainda está aberta, não desta.`,
+          `peça à sessão dona que rode ah close; se ela morreu sem encerrar, rode AH_SESSAO=${frente.dona} tools/ah close ${frente.nome}`);
+      }
+      daEncerrada = true;
     }
 
     if (ramoAtual(raiz, env) !== base) {
@@ -104,7 +117,11 @@ export async function executar(args, amb) {
           .some(l => l.startsWith('- ') && l.includes(` · ${frente.id} · ${frente.nome} · `));
       } catch { return false; }
     };
-    const arqSujo = g(['status', '--porcelain', '--', ARQUIVO_DO_HISTORICO]).saida.trim() !== '';
+    const stHist = g(['status', '--porcelain', '--', ARQUIVO_DO_HISTORICO]);
+    if (stHist.codigo !== 0) {
+      throw recusa(`Não consegui conferir ${ARQUIVO_DO_HISTORICO}: ${(stHist.erro || `código ${stHist.codigo}`).trim().split('\n')[0].slice(0, 200)}`, 'resolva o que o git descreve (ou rode ah doctor) e repita ah close; nada foi apagado');
+    }
+    const arqSujo = stHist.saida.trim() !== '';
     // Sujo só pela linha desta frente (de um close anterior que parou no meio): segue e termina.
     if (arqSujo && !linhaJaGravada()) {
       throw recusa(`O checkout principal tem alterações em ${ARQUIVO_DO_HISTORICO}.`, `commit ou descarte essas alterações (git -C ${raiz} diff ${ARQUIVO_DO_HISTORICO}) e rode ah close de novo`);
@@ -231,14 +248,19 @@ export async function executar(args, amb) {
 
     // 6. Estado.
     removerFrente(dirEstado, frente.nome);
-    if (sessao) {
+    if (sessao && !daEncerrada) {
       sessao.frente = null;
       gravarSessao(dirEstado, sessao);
+    }
+    if (sessaoDona && (sessaoDona.frente?.nome ?? sessaoDona.frente) === frente.nome) {
+      sessaoDona.frente = null;
+      gravarSessao(dirEstado, sessaoDona);
     }
     registrarEvento(dirEstado, { tipo: 'fechamento', sessao: amb.sessaoId, id: frente.id, nome: frente.nome, aberta: frente.abertaEm, fechada: new Date().toISOString() });
 
     // 7. Saída.
     amb.escrever(`Frente ${frente.id} ${frente.nome} fechada.\n`);
+    if (daEncerrada) amb.escrever(`A frente era da sessão ${frente.dona ?? '(sem dona)'}, já encerrada; esta sessão a fechou.\n`);
     if (g(['remote']).saida.split('\n').includes(remoto)) amb.escrever(`Falta: git push ${remoto} ${base}\n`);
     return 0;
   }, { venceMs: 120000 });
