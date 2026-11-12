@@ -144,3 +144,50 @@ test('AH_GUARD exportado ou solto em comando anterior não vale para o seguinte'
   assert.equal(av('export AH_GUARD=off; git push origin main').trava, 'T5');
   assert.equal(av('AH_GUARD=off; git push origin main').trava, 'T5');
 });
+
+// ---- onda final: C2 (troca de ramo na mesma linha)
+test('C2. checkout/switch para ramo protegido antes do push, na mesma linha', () => {
+  for (const c of ['git checkout main && git push', 'git switch main && git merge dev && git push', 'git checkout stage && git merge dev && git push origin HEAD',
+    'git checkout main; git push', 'git switch main && git push origin', 'git checkout $RAMO && git push', 'git checkout - && git push',
+    'git switch --detach && git push', '(git checkout main) && git push', 'git switch -C main && git push', 'git checkout -B stage && git push',
+    'git switch --track origin/main && git push'])
+    assert.equal(av(c).trava, 'T5', c);
+});
+test('C2. o que não troca para ramo protegido continua passando', () => {
+  for (const c of ['git checkout -b x && git push -u origin x', 'git switch dev && git merge --no-ff feat/x && git push origin dev',
+    'git switch -c nova && git push', 'git checkout main -- arquivo.txt && git push', 'git checkout -- arquivo.txt && git push',
+    'git -C /w checkout main && git push', 'git checkout main && git -C /w push', 'git checkout main && git merge dev'])
+    assert.ok(av(c).permite, c);
+});
+test('C2. troca não afrouxa o ramo protegido que já estava em uso', () => {
+  assert.equal(avaliar({ tipo: 'comando', comando: 'git switch dev && git push', cwd: '/r' }, comRamo('main')).trava, 'T5');
+  assert.equal(avaliar({ tipo: 'comando', comando: 'git checkout src/a.js && git push', cwd: '/r' }, comRamo('main')).trava, 'T5');
+});
+
+// ---- onda final: I4 (formas de "tudo" no checkout principal)
+test('I4. pathspec que cobre a raiz, * solto e caminho que não dá para ler', () => {
+  for (const [c, cwd] of [['git add *', '/r'], ['cd src && git add ..', '/r'], ['git add /r', '/r'], ['git add /r/', '/r'], ['git add "$(pwd)"', '/r'],
+    ['git commit . -m x', '/r'], ['git commit -m x -- .', '/r'], ['git add $(git ls-files -m)', '/r'], ['git add ./*', '/r'], ['git add ../*', '/r/src'],
+    ['git add /', '/r'], ['git add ../..', '/r/a/b'], ['git commit -m x $ARQ', '/r'], ['git add -- "$X"', '/r']]) {
+    const r = avaliar({ tipo: 'comando', comando: c, cwd }, ctx);
+    assert.equal(r.trava, 'T2', c);
+  }
+  assert.match(av('git add $(git ls-files -m)').motivo, /não consegui ler os caminhos/);
+});
+test('I4. caminhos literais e opções seguem passando', () => {
+  for (const c of ['git add src/a.js docs/', 'git add -- arquivo', 'git commit -m x', 'git add -p', 'git commit -m "$(cat msg.txt)"',
+    'git commit --message="$X"', 'git commit -m x -- src/a.js', 'git add src/*.js', 'cd src && git add a.js', 'git add ..x'])
+    assert.ok(av(c).permite, c);
+  assert.ok(av('git add $(git ls-files -m)', '/w').permite);
+  assert.ok(av('git add .', '/w').permite);
+});
+
+// ---- onda final: M6 (cd que pode falhar seguido de ;)
+test('M6. cd seguido de ; avalia também na pasta de antes', () => {
+  assert.equal(av('cd nao-existe; git add -A').trava, 'T2');
+  assert.equal(av('cd /w; git add -A').trava, 'T2');
+  assert.ok(av('cd /w && git add -A').permite);
+  assert.ok(av('cd /w || exit 1; git add -A').permite);
+  assert.equal(av('cd /w; git push').trava, undefined); // dev no checkout principal: passa nos dois
+  assert.equal(avaliar({ tipo: 'comando', comando: 'cd /w; git push', cwd: '/r' }, { ...ctx, ramoAtual: c => (c?.startsWith('/w') ? 'feat/x' : 'main') }).trava, 'T5');
+});

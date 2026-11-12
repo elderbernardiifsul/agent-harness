@@ -7,7 +7,9 @@
 //
 // Limites conhecidos (a trava enxerga a mais, não a tudo): apelidos do git
 // (`-c alias.x=push`), `gh api` direto, `push.default` e `remote.*.push` da
-// configuração, e `git add` com glob do shell que cobre tudo.
+// configuração, `git add` com glob do shell que cobre tudo sem ser `*` solto
+// (`*.*`, `[a-z]*`) e caminhos que chegam por `xargs` ou `--pathspec-from-file`.
+import path from 'node:path';
 import { comandosSimples, ErroDeShell } from './shell.mjs';
 import { recusa } from './recusa.mjs';
 
@@ -38,59 +40,98 @@ const ehLongoAll = a => a.length >= 4 && '--all'.startsWith(a);
 // ---------------------------------------------------------------- T2
 
 const ADD_TUDO = new Set(['.', './', ':/', ':(top)']);
+const naoLiteral = a => /[$`]/.test(a);
 
-function addPegaTudo(args) {
+// O caminho `p` é a raiz do repositório ou uma pasta acima dela.
+function cobreARaiz(p, raiz) {
+  const r = path.relative(path.resolve(p), path.resolve(raiz));
+  return r === '' || (!r.startsWith('..') && !path.isAbsolute(r));
+}
+
+// Um pathspec pega tudo quando é uma das formas de "tudo", `*` solto (ou `<pasta>/*`) numa pasta
+// que cobre a raiz, ou um caminho que resolve para a raiz ou acima dela. Com cwd desconhecido,
+// um caminho relativo com `..` pode ser a raiz.
+function pathspecPegaTudo(a, cwd, raiz) {
+  if (ADD_TUDO.has(a) || a.startsWith(':(top')) return true;
+  if (a.startsWith(':')) return false;
+  const partes = a.split(/[\\/]/);
+  const pasta = partes.at(-1) === '*' ? (partes.length === 1 ? '.' : partes.slice(0, -1).join('/') || '/') : a;
+  if (path.isAbsolute(pasta)) return cobreARaiz(pasta, raiz);
+  if (cwd == null) return pasta === '.' || pasta.split(/[\\/]/).includes('..');
+  return cobreARaiz(path.resolve(cwd, pasta), raiz);
+}
+
+// Classifica os pathspecs: 'tudo', 'ilegivel' (variável ou substituição) ou null.
+function classificarPathspecs(pathspecs, cwd, raiz) {
+  let ilegivel = false;
+  for (const a of pathspecs) {
+    if (naoLiteral(a)) { ilegivel = true; continue; }
+    if (pathspecPegaTudo(a, cwd, raiz)) return 'tudo';
+  }
+  return ilegivel ? 'ilegivel' : null;
+}
+
+function addPegaTudo(args, cwd, raiz) {
   let fimDasOpcoes = false;
+  const pathspecs = [];
   for (const a of args) {
     if (!fimDasOpcoes && a === '--') { fimDasOpcoes = true; continue; }
     if (!fimDasOpcoes && a.startsWith('--')) {
-      if (ehLongoAll(a) || '--update'.startsWith(a) && a.length >= 4) return true;
+      if (ehLongoAll(a) || '--update'.startsWith(a) && a.length >= 4) return 'tudo';
       continue;
     }
     if (!fimDasOpcoes && a.startsWith('-') && a.length > 1) {
-      if (/[Au]/.test(a.slice(1))) return true;
+      if (/[Au]/.test(a.slice(1))) return 'tudo';
       continue;
     }
-    if (ADD_TUDO.has(a) || a.startsWith(':(top')) return true;
+    pathspecs.push(a);
   }
-  return false;
+  return classificarPathspecs(pathspecs, cwd, raiz);
 }
 
 // Letras de `git commit` cujo valor vem junto ou no argumento seguinte.
 const COMMIT_COM_VALOR = new Set(['m', 'F', 'C', 'c', 't']);
 const COMMIT_LONGAS_COM_VALOR = new Set(['--message', '--file', '--reuse-message', '--reedit-message', '--template', '--author', '--date', '--cleanup', '--fixup', '--squash', '--trailer', '--pathspec-from-file']);
 
-function commitPegaTudo(args) {
+function commitPegaTudo(args, cwd, raiz) {
+  const pathspecs = [];
   for (let k = 0; k < args.length; k++) {
     const a = args[k];
-    if (a === '--') return false;
+    if (a === '--') { pathspecs.push(...args.slice(k + 1)); break; }
     if (a.startsWith('--')) {
-      if (ehLongoAll(a)) return true;
+      if (ehLongoAll(a)) return 'tudo';
       if (COMMIT_LONGAS_COM_VALOR.has(a)) k++;
       continue;
     }
     if (a.startsWith('-') && a.length > 1) {
       for (let i = 1; i < a.length; i++) {
         const c = a[i];
-        if (c === 'a') return true;
+        if (c === 'a') return 'tudo';
         if (COMMIT_COM_VALOR.has(c)) { if (i === a.length - 1) k++; break; }
         if (c === 'u' || c === 'S') break; // valor opcional, sempre junto
       }
+      continue;
     }
+    pathspecs.push(a);
   }
-  return false;
+  return classificarPathspecs(pathspecs, cwd, raiz);
 }
 
 function travaT2(cmd, ctx) {
   if (nomeDe(cmd.argv[0]) !== 'git') return null;
   const g = subcomandoGit(cmd.argv, cmd.env);
   if (!g || (g.sub !== 'add' && g.sub !== 'stage' && g.sub !== 'commit')) return null;
-  const pega = g.sub === 'commit' ? commitPegaTudo(g.args) : addPegaTudo(g.args);
-  if (!pega) return null;
   const cwd = g.incerto ? null : cmd.cwd;
+  const pega = (g.sub === 'commit' ? commitPegaTudo : addPegaTudo)(g.args, cwd, ctx.raiz);
+  if (!pega) return null;
   if (cwd != null && ctx.topoDe(cwd) !== ctx.raiz) return null;
   const onde = cwd == null ? 'em uma pasta que não consegui determinar' : 'no checkout principal';
-  const forma = g.sub !== 'commit' ? 'git add com tudo (-A, ., -u)' : 'git commit -a';
+  const sub = g.sub === 'commit' ? 'git commit' : 'git add';
+  if (pega === 'ilegivel') {
+    return recusa('T2', `não consegui ler os caminhos do ${sub} ${onde} (variável ou substituição de comando); ele pode levar junto o trabalho de outras frentes`,
+      `escreva os caminhos por extenso (${sub} -- <caminhos>), ou trabalhe no worktree da frente`);
+  }
+  const forma = g.sub !== 'commit' ? 'git add com tudo (-A, ., -u, *, a raiz)' : 'git commit -a (ou com a raiz como caminho)';
   return recusa('T2', `${forma} ${onde} leva junto o trabalho de outras frentes`,
     'git add <caminhos> com só os arquivos que você mudou (e git commit sem -a), ou trabalhe no worktree da frente');
 }
@@ -230,6 +271,71 @@ function nomeIlegivel(argv) {
   return ['eval', 'source', '.'].includes(nomeDe(argv[0])) && argv.slice(1).some(a => /[$`]/.test(a));
 }
 
+// ---------------------------------------------------------------- troca de ramo na mesma linha
+
+// `git checkout`/`git switch` antes de um push na mesma linha muda o ramo atual em que o push
+// roda. Devolve os ramos que podem ficar em uso (null = não sei), ou null se o comando não troca
+// de ramo. O ramo de antes sempre fica entre os possíveis: a troca pode falhar (`;`), e uma
+// palavra solta no checkout pode ser um arquivo.
+const TROCA_COM_VALOR = new Set(['-b', '-B', '-c', '-C', '--create', '--force-create', '--orphan', '--conflict', '--pathspec-from-file']);
+const TROCA_CRIA = new Set(['-b', '-B', '-c', '-C', '--create', '--force-create', '--orphan']);
+
+function destinoDaTroca(sub, args) {
+  const posicionais = [];
+  let novo;
+  let comTrack = false;
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    if (a === '--') { if (novo === undefined && sub === 'checkout') return null; break; }
+    if (a === '--detach' || (sub === 'switch' && a === '-d')) return [null];
+    if (a === '-p' || a === '--patch' || a.startsWith('--pathspec-from-file')) return null;
+    if (a === '-t' || a === '--track' || a.startsWith('--track=')) { comTrack = true; continue; }
+    const igual = a.startsWith('--') ? a.indexOf('=') : -1;
+    const opcao = igual > 0 ? a.slice(0, igual) : a;
+    if (TROCA_CRIA.has(opcao)) { novo = igual > 0 ? a.slice(igual + 1) : args[++k]; continue; }
+    if (/^-[bBcC].+/.test(a)) { novo = a.slice(2); continue; }
+    if (TROCA_COM_VALOR.has(opcao)) { if (igual < 0) k++; continue; }
+    if (a.startsWith('-') && a !== '-') continue;
+    posicionais.push(a);
+  }
+  const ler = r => (r == null || naoLiteral(r) || r === '-' || r.startsWith('@{') ? null : r);
+  if (novo !== undefined) return [ler(novo)];
+  if (sub === 'checkout' && posicionais.length !== 1) return null; // nada, ou <árvore> <caminhos>
+  if (posicionais.length === 0) return [null];
+  const alvo = ler(posicionais[0]);
+  // --track origin/main cria `main`; sem saber o remoto, os dois nomes contam.
+  return comTrack && alvo?.includes('/') ? [alvo, alvo.slice(alvo.indexOf('/') + 1)] : [alvo];
+}
+
+const ANTES = Symbol('ramo de antes');
+
+// Acompanha as trocas de ramo feitas pelos comandos já lidos; `ramoAtual(cwd)` responde com elas.
+function novasTrocas(ctx) {
+  const porTopo = new Map();
+  let tudoIncerto = false;
+  return {
+    registrar(cmd) {
+      if (nomeDe(cmd.argv[0]) !== 'git') return;
+      const g = subcomandoGit(cmd.argv, cmd.env);
+      if (!g || (g.sub !== 'checkout' && g.sub !== 'switch')) return;
+      const destinos = destinoDaTroca(g.sub, g.args);
+      if (!destinos) return;
+      const topo = cmd.cwd == null || g.incerto ? null : ctx.topoDe(cmd.cwd);
+      if (topo == null) { tudoIncerto = true; return; }
+      porTopo.set(topo, [...(porTopo.get(topo) ?? [ANTES]), ...destinos]);
+    },
+    get vazio() { return !tudoIncerto && porTopo.size === 0; },
+    ramoAtual(cwd) {
+      if (tudoIncerto) return null;
+      const lista = porTopo.get(ctx.topoDe(cwd));
+      if (!lista) return ctx.ramoAtual(cwd);
+      const ramos = lista.map(r => (r === ANTES ? ctx.ramoAtual(cwd) : r));
+      if (ramos.includes(null)) return null;
+      return ramos.find(r => ctx.config.git.protegidos.includes(r)) ?? ramos[0];
+    },
+  };
+}
+
 // ---------------------------------------------------------------- entrada
 
 const TRAVAS = [travaT2, travaT5];
@@ -245,14 +351,22 @@ export function avaliar(acao, ctx) {
     return PALAVRA_GIT.test(acao.comando) ? recusaT0(`não consegui ler o comando (${e.message}) e ele menciona git ou gh`) : { permite: true };
   }
   let liberada;
+  const trocas = novasTrocas(ctx);
   for (const cmd of comandos) {
     if (cmd.argv.length === 0) continue;
     let r = null;
     if (nomeIlegivel(cmd.argv)) {
       if (PALAVRA_GIT.test(acao.comando)) r = recusaT0('o nome do comando vem de uma variável e o texto menciona git ou gh');
     } else {
-      for (const trava of TRAVAS) { r = trava(cmd, ctx); if (r) break; }
+      const ctxDoComando = trocas.vazio ? ctx : { ...ctx, ramoAtual: c => trocas.ramoAtual(c) };
+      // Um cd que pode ter falhado antes de `;` deixa outros cwds possíveis: vale a recusa de qualquer um.
+      for (const cwd of [cmd.cwd, ...(cmd.cwdsAlternativos ?? [])]) {
+        const umCmd = cwd === cmd.cwd ? cmd : { ...cmd, cwd };
+        for (const trava of TRAVAS) { r = trava(umCmd, ctxDoComando); if (r) break; }
+        if (r) break;
+      }
     }
+    trocas.registrar(cmd);
     if (!r) continue;
     if (r.trava !== 'T0' && cmd.env?.AH_GUARD === 'off') { liberada ??= r.trava; continue; }
     return r;

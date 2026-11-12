@@ -291,3 +291,12 @@ test('tools/ah gancho claude-code roda pela cópia instalada', { skip: process.p
   assert.equal(r.status, 2, r.stderr);
   assert.match(r.stderr, /Recusado \(T5\)/);
 });
+
+test('onda final: o gancho recusa a troca para ramo protegido seguida de push e os pega-tudo de I4', () => {
+  for (const c of ['git checkout main && git push', 'git switch main && git merge dev && git push', 'git checkout stage && git merge dev && git push origin HEAD'])
+    assert.equal(ganchoPre(p, { command: c }).codigo, 2, c);
+  for (const c of ['git add *', 'cd .harness && git add ..', `git add ${p.raiz}`, 'git add "$(pwd)"', 'git commit . -m x', 'git add $(git ls-files -m)', 'cd nao-existe; git add -A'])
+    assert.equal(ganchoPre(p, { command: c }).codigo, 2, c);
+  for (const c of ['git checkout -b x && git push -u origin x', 'git switch dev && git merge --no-ff feat/x && git push origin dev', 'git add README.md', 'git commit -m x'])
+    assert.equal(ganchoPre(p, { command: c }).codigo, 0, c);
+});

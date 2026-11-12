@@ -628,10 +628,15 @@ class Leitor {
   // Estado do shell: o cwd e o ambiente herdado do prefixo de um `eval`,
   // `bash -c` ou `su -c` de fora. Subshell, pipeline e segundo plano desfazem.
   // Atribuição solta e `export` não entram no `env` (decisão R10).
-  marcar(ctx) { return { cwd: ctx.cwd, herdado: ctx.herdado }; }
+  //
+  // `alternativos` são os outros cwds possíveis de um `cd` que pode ter falhado
+  // antes de `;` (cd nao-existe; git add -A roda na pasta de antes): os comandos
+  // seguintes saem com `cwdsAlternativos` e as travas os avaliam em cada um.
+  marcar(ctx) { return { cwd: ctx.cwd, herdado: ctx.herdado, alternativos: ctx.alternativos }; }
   desfazer(ctx, marca) {
     ctx.cwd = marca.cwd;
     ctx.herdado = marca.herdado;
+    ctx.alternativos = marca.alternativos;
   }
   herdar(ctx, env) {
     if (Object.keys(env).length) ctx.herdado = { ...ctx.herdado, ...env };
@@ -709,6 +714,7 @@ class Leitor {
         else rCerto = rFalhou = juntar(antes, depois);
       }
       if (info.negado) rCerto = rFalhou = juntar(rCerto, rFalhou);
+      if (info.termina) rCerto = rFalhou = NENHUM; // exit/return: nada roda depois dele
       if (operador === '&&') { certo = rCerto; falhou = juntar(falhou, rFalhou); }
       else { falhou = rFalhou; certo = juntar(certo, rCerto); }
       if (!ehOp(cur.tokens[cur.i], '&&', '||')) break;
@@ -717,7 +723,12 @@ class Leitor {
       while (ehOp(cur.tokens[cur.i], '\n')) cur.i++;
     }
     if (ehOp(cur.tokens[cur.i], '&')) this.desfazer(ctx, m);
-    else ctx.cwd = condicional ? null : sequencial;
+    else {
+      ctx.cwd = condicional ? null : sequencial;
+      // A lista pode ter falhado num cwd diferente (cd que não achou a pasta): esse cwd
+      // vira alternativo para o que vem depois do `;`.
+      if (!condicional && typeof falhou === 'string') acrescentarAlternativos(ctx, [falhou]);
+    }
   }
 
   // Cada parte de um pipeline roda num subshell. O texto que uma parte entrega
@@ -1004,6 +1015,7 @@ class Leitor {
       const filho = (t) => {
         const m = this.marcar(ctx);
         this.herdar(ctx, env);
+        if (cwd !== ctx.cwd) ctx.alternativos = [];
         ctx.cwd = cwd;
         this.lerTexto(t, ctx, null);
         this.desfazer(ctx, m);
@@ -1060,7 +1072,11 @@ class Leitor {
     this.emitir(argv, cwd, ctx, env);
 
     const ehCd = nome === 'cd' || nome === 'pushd' || nome === 'popd';
-    if (ehCd) ctx.cwd = novoCwd(nome, itens, ctx.cwd);
+    if (ehCd) {
+      const alternativos = ctx.alternativos.map(a => novoCwd(nome, itens, a));
+      ctx.cwd = novoCwd(nome, itens, ctx.cwd);
+      acrescentarAlternativos(ctx, alternativos);
+    }
     // Texto que este comando escreve na saída, caso vá para um shell. Montado
     // só se for mesmo para um shell (printf sem como montar lança erro).
     const saidaTexto = [...entradas];
@@ -1071,7 +1087,7 @@ class Leitor {
       if (argv[k] === '--') k++;
       if (k < itens.length) saidaTexto.push(() => saidaDoPrintf(itens.slice(k), this.orcamentoDeSaida));
     }
-    return { saidaTexto, ehCd };
+    return { saidaTexto, ehCd, termina: nome === 'exit' || nome === 'return' };
   }
 
   // Cada comando leva a cópia do ambiente conhecido; o teto evita que milhares
@@ -1080,7 +1096,10 @@ class Leitor {
     const completo = { ...ctx.herdado, ...env };
     this.entradasDeAmbiente += Object.keys(completo).length + 1;
     if (this.entradasDeAmbiente > LIMITE_ENTRADAS_DE_AMBIENTE) throw new ErroDeShell('texto grande demais para ler (ambiente × comandos)', null);
-    this.saida.push({ argv, cwd, env: completo });
+    const saida = { argv, cwd, env: completo };
+    // Os alternativos valem para o cwd da lista; com git -C ou env -C o cwd é outro.
+    if (ctx.alternativos.length && cwd === ctx.cwd) saida.cwdsAlternativos = [...ctx.alternativos];
+    this.saida.push(saida);
   }
 }
 
@@ -1255,6 +1274,14 @@ function tirarDashC(itens, cwd) {
   return { argv, cwd };
 }
 
+// Junta cwds alternativos sem repetir o atual; passado o teto, um null (desconhecido) fica no lugar.
+const MAX_ALTERNATIVOS = 8;
+function acrescentarAlternativos(ctx, novos) {
+  const lista = [...ctx.alternativos];
+  for (const a of novos) if (a !== ctx.cwd && !lista.includes(a)) lista.push(a);
+  ctx.alternativos = lista.length > MAX_ALTERNATIVOS ? [null] : lista;
+}
+
 function novoCwd(nome, itens, cwd) {
   if (nome === 'popd') return null;
   let k = 1;
@@ -1278,6 +1305,6 @@ export function comandosSimples(texto, cwd) {
   leitor.orcamentoDeTexto = Math.max(4 * texto.length, LIMITE_TEXTO_RELIDO_MINIMO);
   leitor.orcamentoDeSaida.resta = leitor.orcamentoDeTexto;
   const { tokens } = tokenizar(texto, 0, 'topo', 0);
-  leitor.lerTudo(tokens, { cwd: cwd ?? null, herdado: {} });
+  leitor.lerTudo(tokens, { cwd: cwd ?? null, herdado: {}, alternativos: [] });
   return leitor.saida;
 }
