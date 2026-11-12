@@ -3,11 +3,11 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 export class ErroDeEstado extends Error {
-  constructor(mensagem, arquivo = null) {
+  constructor(mensagem, arquivo = null, proximo = 'rode ah doctor') {
     super(mensagem);
     this.name = 'ErroDeEstado';
     this.arquivo = arquivo;
-    this.saida = `${mensagem}\nPróximo passo: rode ah doctor`;
+    this.saida = `${mensagem}\nPróximo passo: ${proximo}`;
   }
 }
 
@@ -95,7 +95,8 @@ export async function comTrava(dir, nome, fn, { esperaMs = 5000, venceMs = 30000
       continue;
     }
     if (Date.now() >= limite) {
-      throw new ErroDeEstado(`Esperei ${esperaMs} ms pela trava "${nome}" e ela não foi solta`, pasta);
+      throw new ErroDeEstado(`Esperei ${esperaMs} ms pela trava "${nome}" e ela não foi solta`, pasta,
+        `se outro ah está rodando, espere ele terminar e repita; uma trava esquecida vence sozinha em até ${Math.ceil(venceMs / 1000)} s (a trava é a pasta ${pasta})`);
     }
     await dormir(20);
   }

@@ -63,7 +63,7 @@ test('comTrava desiste depois de esperaMs com ErroDeEstado', async t => {
   fs.mkdirSync(path.join(d, 'travas', 'x'), { recursive: true });
   await assert.rejects(
     comTrava(d, 'x', () => 1, { esperaMs: 80, venceMs: 60000 }),
-    e => e.name === 'ErroDeEstado' && /ah doctor/.test(e.saida),
+    e => e.name === 'ErroDeEstado' && /vence sozinha em até 60 s/.test(e.saida),
   );
 });
 
@@ -114,4 +114,15 @@ test('nome de trava com caminho é recusado', async t => {
   for (const n of ['../x', 'a/b', '.', '..', '']) {
     await assert.rejects(comTrava(d, n, () => 1), e => e.name === 'ErroDeEstado' && /Próximo passo/.test(e.saida));
   }
+});
+
+test('M1: esperar demais pela trava diz em quanto tempo ela vence e onde está', async t => {
+  const d = temp(t);
+  fs.mkdirSync(path.join(d, 'travas', 'frentes'), { recursive: true });
+  await assert.rejects(comTrava(d, 'frentes', () => 'nunca', { esperaMs: 50, venceMs: 120000 }), e => {
+    assert.match(e.saida, /Esperei 50 ms pela trava "frentes"/);
+    assert.match(e.saida, /Próximo passo: .*vence sozinha em até 120 s/);
+    assert.ok(e.saida.includes(path.join(d, 'travas', 'frentes')), e.saida);
+    return true;
+  });
 });
