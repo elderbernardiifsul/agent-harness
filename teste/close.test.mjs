@@ -429,3 +429,12 @@ test('M5: git que morre nas conferências do início do close vira recusa', { sk
   }
   p.limpar();
 });
+
+test('D2: frente sem commits novos fecha com código 0', () => {
+  const p = criarProjeto();
+  assert.equal(p.ah(['open', 'vazia']).codigo, 0);
+  const r = p.ah(['close']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Frente as-1 vazia fechada\./);
+  p.limpar();
+});

@@ -18,10 +18,24 @@ Clone este repositório, abra o agente na pasta do seu projeto e peça: "prepare
 
 ```
 node <clone>/nucleo/bin/ah.mjs init
+```
+
+Sem o `gh` (ou sem login nele), o `init` não sabe propor a sigla: use `node <clone>/nucleo/bin/ah.mjs init --sigla <sigla>`, com 2 a 4 letras minúsculas (por exemplo, `--sigla as` para `ana-souza`).
+
+O `init` não faz commit. Ele termina com os comandos exatos do commit, que vai **no ramo base** (`dev`), porque as frentes partem dele: se o projeto está em outro ramo (por exemplo, `main`), primeiro `git switch dev`, depois o `git add -- …` com os caminhos que ele gravou e o `git commit`. Por fim:
+
+```
 tools/ah doctor
 ```
 
-e faz o commit do resultado. Depois disso, cada sessão abre sua frente com `tools/ah open <nome>`, trabalha no worktree e fecha com `tools/ah close`.
+Depois disso, cada sessão do agente abre sua frente com `tools/ah open <nome>`, trabalha no worktree, integra na `dev` e fecha com `tools/ah close`. Quem roda o `open` e o `close` é o agente: a sessão vem do gancho dele. Para rodar à mão, num terminal, diga qual é a sessão com `AH_SESSAO` (um nome qualquer, o mesmo no `open` e no `close`):
+
+```
+AH_SESSAO=ana-terminal tools/ah open carrinho
+AH_SESSAO=ana-terminal tools/ah close
+```
+
+`tools/ah --help` lista os comandos, e `tools/ah <comando> --help` mostra o uso de cada um.
 
 ## Referência
 

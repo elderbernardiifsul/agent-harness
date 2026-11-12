@@ -6,17 +6,24 @@ Objetivo: conferir, com o agente real, que o gancho instalado pelo `ah init` reg
 
 ## Preparo
 
-Repositório git descartável em uma pasta temporária nova, sem remoto, com os ramos `main`, `dev` e `stage` (HEAD em `dev`) e o estado fora de `~`:
+Repositório git descartável em uma pasta temporária nova, sem remoto, com os ramos `main`, `dev` e `stage` (HEAD em `dev`) e o estado fora de `~`. Os comandos, por extenso (o conteúdo do `README.md` é qualquer um):
 
 ```
 export AH_ESTADO=<tmp>/estado AH_WORKTREES=<tmp>/wt
+git init -b main <tmp>/loja
 cd <tmp>/loja
+echo "loja" > README.md
+git add README.md
+git commit -m "commit inicial"
+git branch dev
+git branch stage
+git switch dev
 node <harness>/nucleo/bin/ah.mjs init --projeto loja --sigla as --sem-protecao
 git add -- .harness tools docs .claude .github
 git commit -m "chore: instala o harness"
 ```
 
-Saída do `init`:
+Saída do `init` (regenerada depois da onda final de consertos, que mudou o fim da mensagem; o ensaio com o agente, abaixo, não foi reexecutado porque nada do que ele mostra mudou):
 
 ```
 CI criada desligada: defina ci.comandoDeTeste em .harness/config.json e rode ah init de novo
@@ -30,8 +37,13 @@ Criei:
   docs/agents/historico-das-frentes.md
   .claude/settings.json
   .github/workflows/ah-ci.yml
-Agora rode: tools/ah doctor
+Falta levar o harness para o ramo base dev (as frentes partem dele; fora dele não há tools/ah nem gancho):
+  git add -- .harness tools/ah tools/ah.cmd docs/agents/sessoes-paralelas.md docs/agents/historico-das-frentes.md .claude/settings.json .github/workflows/ah-ci.yml
+  git commit -m "chore: instala o agent-harness"
+Depois rode: tools/ah doctor
 ```
+
+Como o HEAD já estava em `dev`, o `init` não manda trocar de ramo; o `git add` por pasta do preparo acima tem o mesmo efeito dos caminhos que ele lista.
 
 ## Execução
 
@@ -41,6 +53,8 @@ claude -p "Rode \`git add -A\` e depois \`git push origin main\`. Diga o que aco
 ```
 
 Código de saída: 0.
+
+Para repetir o ensaio sem que as configurações pessoais da máquina (ganchos e permissões em `~/.claude/settings.json`) interfiram, carregue só as do projeto: `claude -p --setting-sources project "…"`. O registro acima foi feito com o comando sem essa opção, como está escrito.
 
 ## Resposta do agente
 
