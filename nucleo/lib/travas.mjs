@@ -19,11 +19,17 @@ const nomeDe = argv0 => (argv0 ?? '').split(/[\\/]/).pop().replace(/\.exe$/i, ''
 const GIT_GLOBAL_COM_VALOR = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env', '--exec-path']);
 
 // Separa `git [opções] sub args...`. Devolve {sub, args} ou null se não há subcomando.
-function subcomandoGit(argv) {
+// `incerto` é verdadeiro quando uma opção global ou variável aponta para outro repositório.
+const ehRepoExplicito = a => /^--(git-dir|work-tree)(=|$)/.test(a);
+function subcomandoGit(argv, env = {}) {
   let k = 1;
-  while (k < argv.length && argv[k].startsWith('-')) k += GIT_GLOBAL_COM_VALOR.has(argv[k]) ? 2 : 1;
+  let incerto = env.GIT_DIR !== undefined || env.GIT_WORK_TREE !== undefined;
+  while (k < argv.length && argv[k].startsWith('-')) {
+    if (ehRepoExplicito(argv[k])) incerto = true;
+    k += GIT_GLOBAL_COM_VALOR.has(argv[k]) ? 2 : 1;
+  }
   if (k >= argv.length) return null;
-  return { sub: argv[k], args: argv.slice(k + 1) };
+  return { sub: argv[k], args: argv.slice(k + 1), incerto };
 }
 
 // `--al` e `--all` valem; o git aceita abreviação única.
@@ -77,13 +83,14 @@ function commitPegaTudo(args) {
 
 function travaT2(cmd, ctx) {
   if (nomeDe(cmd.argv[0]) !== 'git') return null;
-  const g = subcomandoGit(cmd.argv);
-  if (!g || (g.sub !== 'add' && g.sub !== 'commit')) return null;
-  const pega = g.sub === 'add' ? addPegaTudo(g.args) : commitPegaTudo(g.args);
+  const g = subcomandoGit(cmd.argv, cmd.env);
+  if (!g || (g.sub !== 'add' && g.sub !== 'stage' && g.sub !== 'commit')) return null;
+  const pega = g.sub === 'commit' ? commitPegaTudo(g.args) : addPegaTudo(g.args);
   if (!pega) return null;
-  if (cmd.cwd != null && ctx.topoDe(cmd.cwd) !== ctx.raiz) return null;
-  const onde = cmd.cwd == null ? 'em uma pasta que não consegui determinar' : 'no checkout principal';
-  const forma = g.sub === 'add' ? 'git add com tudo (-A, ., -u)' : 'git commit -a';
+  const cwd = g.incerto ? null : cmd.cwd;
+  if (cwd != null && ctx.topoDe(cwd) !== ctx.raiz) return null;
+  const onde = cwd == null ? 'em uma pasta que não consegui determinar' : 'no checkout principal';
+  const forma = g.sub !== 'commit' ? 'git add com tudo (-A, ., -u)' : 'git commit -a';
   return recusa('T2', `${forma} ${onde} leva junto o trabalho de outras frentes`,
     'git add <caminhos> com só os arquivos que você mudou (e git commit sem -a), ou trabalhe no worktree da frente');
 }
@@ -91,39 +98,54 @@ function travaT2(cmd, ctx) {
 // ---------------------------------------------------------------- T5
 
 const PUSH_COM_VALOR = new Set(['-o', '--push-option', '--receive-pack', '--exec', '--repo']);
+const PUSH_LONGAS = ['--all', '--branches', '--mirror', '--delete', '--tags', '--follow-tags', '--force', '--force-with-lease', '--force-if-includes',
+  '--dry-run', '--porcelain', '--prune', '--repo', '--receive-pack', '--exec', '--push-option', '--recurse-submodules', '--set-upstream',
+  '--signed', '--atomic', '--thin', '--no-thin', '--verbose', '--quiet', '--progress', '--verify', '--no-verify', '--ipv4', '--ipv6', '--no-recurse-submodules'];
+const SUBMODULOS = new Set(['on-demand', 'check', 'only', 'no']);
+
+// O git aceita abreviação inequívoca de opção longa (`--mirr`). Devolve o nome inteiro.
+function opcaoLonga(a) {
+  const i = a.indexOf('=');
+  const nome = i < 0 ? a : a.slice(0, i);
+  const resto = i < 0 ? '' : a.slice(i);
+  if (PUSH_LONGAS.includes(nome)) return nome + resto;
+  const achadas = PUSH_LONGAS.filter(o => o.startsWith(nome));
+  return (achadas.length === 1 ? achadas[0] : nome) + resto;
+}
 
 // Destino de um refspec (`+src:dst`, `dst`, `HEAD`); null quando é o ramo atual.
 function destinoDoRefspec(r) {
   let s = r.startsWith('+') ? r.slice(1) : r;
   const i = s.lastIndexOf(':');
   if (i >= 0) s = s.slice(i + 1);
-  if (s === '' ) return { curinga: true };
-  if (s.includes('*')) return { curinga: true };
+  if (s === '' || /[*$`]/.test(s)) return { curinga: true };
   if (i < 0 && (s === 'HEAD' || s === '@')) return { atual: true };
-  return { nome: s.replace(/^refs\/heads\//, '') };
+  return { nome: s.replace(/^refs\//, '').replace(/^heads\//, '') };
 }
 
-function travaT5Push(cmd, args, ctx) {
+function travaT5Push(cmd, args, ctx, incerto) {
   const protegidos = ctx.config.git.protegidos;
   const saida = (nome) => `abra um PR para ${nome} e peça a ordem do executivo; para publicar o seu trabalho, empurre o ramo da frente (git push origin <ramo>)`;
   const posicionais = [];
   let temRepo = false;
   for (let k = 0; k < args.length; k++) {
-    const a = args[k];
-    if (a === '--all' || a === '--mirror') {
+    let a = args[k];
+    if (a.startsWith('--') && a.length > 2) a = opcaoLonga(a);
+    if (a === '--all' || a === '--mirror' || a === '--branches') {
       return recusa('T5', `git push ${a} empurra todos os ramos, inclusive os protegidos`, saida('o ramo protegido'));
     }
     if (a === '--') { posicionais.push(...args.slice(k + 1)); break; }
     if (a.startsWith('-')) {
-      if (a === '--repo') temRepo = true;
+      if (a === '--repo' || a.startsWith('--repo=')) temRepo = true;
       if (PUSH_COM_VALOR.has(a)) k++;
+      else if (a === '--recurse-submodules' && SUBMODULOS.has(args[k + 1])) k++;
       continue;
     }
     posicionais.push(a);
   }
   const refspecs = temRepo ? posicionais : posicionais.slice(1);
   let atual;
-  const ramoAtual = () => (atual === undefined ? (atual = cmd.cwd == null ? null : ctx.ramoAtual(cmd.cwd)) : atual);
+  const ramoAtual = () => (atual === undefined ? (atual = cmd.cwd == null || incerto ? null : ctx.ramoAtual(cmd.cwd)) : atual);
   const atualProtegidoOuNulo = () => { const r = ramoAtual(); return r == null || protegidos.includes(r); };
   for (const r of refspecs) {
     const d = destinoDoRefspec(r);
@@ -146,6 +168,7 @@ function recusaAtual(ramo, saida, protegidos) {
 }
 
 const GH_COM_VALOR = new Set(['-R', '--repo']);
+const GH_MERGE_COM_VALOR = new Set(['-b', '--body', '-F', '--body-file', '-t', '--subject', '--match-head-commit', '-A', '--author-email']);
 
 function travaT5Merge(args, ctx, cmd) {
   const protegidos = ctx.config.git.protegidos;
@@ -155,6 +178,7 @@ function travaT5Merge(args, ctx, cmd) {
     const a = args[k];
     if (GH_COM_VALOR.has(a)) { outroRepo = true; k++; continue; }
     if (a.startsWith('--repo=') || a.startsWith('-R')) { outroRepo = true; continue; }
+    if (GH_MERGE_COM_VALOR.has(a)) { k++; continue; }
     if (a.startsWith('-')) continue;
     pos.push(a);
   }
@@ -178,8 +202,8 @@ function travaT5Merge(args, ctx, cmd) {
 function travaT5(cmd, ctx) {
   const nome = nomeDe(cmd.argv[0]);
   if (nome === 'git') {
-    const g = subcomandoGit(cmd.argv);
-    return g?.sub === 'push' ? travaT5Push(cmd, g.args, ctx) : null;
+    const g = subcomandoGit(cmd.argv, cmd.env);
+    return g?.sub === 'push' ? travaT5Push(cmd, g.args, ctx, g.incerto) : null;
   }
   if (nome === 'gh') {
     let k = 1;
@@ -230,7 +254,7 @@ export function avaliar(acao, ctx) {
       for (const trava of TRAVAS) { r = trava(cmd, ctx); if (r) break; }
     }
     if (!r) continue;
-    if (cmd.env?.AH_GUARD === 'off') { liberada ??= r.trava; continue; }
+    if (r.trava !== 'T0' && cmd.env?.AH_GUARD === 'off') { liberada ??= r.trava; continue; }
     return r;
   }
   return liberada ? { permite: true, liberada } : { permite: true };

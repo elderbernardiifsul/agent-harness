@@ -88,3 +88,57 @@ test('edição de arquivo sempre permite nesta fatia', () => assert.ok(avaliar({
 test('ação de tipo desconhecido é erro de programação', () => assert.throws(() => avaliar({ tipo: 'x' }, ctx), TypeError));
 test('recusa sem saída é erro de programação', () => { assert.throws(() => recusa('T9', 'motivo', '')); assert.throws(() => recusa('T9', 'motivo')); });
 test('textoDaRecusa traz o Faça', () => assert.match(textoDaRecusa(av('git add -A')), /^Recusado \(T2\): .+\nFaça: .+/));
+
+// ---- rodada de consertos 1
+test('1. refspec com $ ou crase é destino desconhecido', () => {
+  for (const c of ['git push origin $(git branch --show-current)', 'git push -u origin "$(git rev-parse --abbrev-ref HEAD)"', 'B=main; git push origin $B', 'git push origin $B', 'git push origin `echo main`'])
+    assert.equal(av(c, '/w').trava, 'T5', c);
+  assert.ok(av('git push $REMOTO feat/x', '/w').permite);
+});
+test('2. --repo=origin não descarta o refspec', () => {
+  assert.equal(av('git push --repo=origin main').trava, 'T5');
+  assert.ok(av('git push --repo=origin feat/x', '/w').permite);
+});
+test('3. --branches e abreviações inequívocas', () => {
+  for (const c of ['git push --branches', 'git push --branches origin', 'git push --al', 'git push --mirr origin', 'git push --branch', 'git push --del origin main'])
+    assert.equal(av(c).trava, 'T5', c);
+  assert.ok(av('git push --dry origin feat/x', '/w').permite);
+});
+test('4. T0 nunca é liberada por AH_GUARD=off', () => {
+  assert.equal(av('AH_GUARD=off eval $X git').trava, 'T0');
+  assert.equal(av('AH_GUARD=off `echo git` push origin main').trava, 'T0');
+  assert.equal(av('AH_GUARD=off git push "origin').trava, 'T0');
+});
+test('5. repositório apontado por opção ou variável', () => {
+  for (const c of ['GIT_DIR=/x/.git git add -A', 'GIT_WORK_TREE=/x git commit -a', 'git --git-dir=/x add -A', 'git --git-dir /x add -A', 'git --work-tree=/x add .', 'git --work-tree /x add .'])
+    assert.equal(av(c, '/w').trava, 'T2', c);
+  for (const c of ['GIT_DIR=/x git push', 'git --git-dir=/x push', 'git --work-tree /x push', 'env GIT_DIR=/x git push'])
+    assert.equal(av(c, '/w').trava, 'T5', c);
+  assert.ok(av('GIT_DIR=/x git push origin feat/x', '/w').permite);
+});
+test('6. nome-base do comando', () => {
+  assert.equal(av('/usr/bin/git push origin main').trava, 'T5');
+  assert.equal(av('/usr/local/bin/gh pr merge 8').trava, 'T5');
+  assert.equal(av('C:/Git/git.exe push origin main').trava, 'T5');
+  assert.equal(av('/usr/bin/git add -A').trava, 'T2');
+});
+test('7. git stage é git add', () => assert.equal(av('git stage -A').trava, 'T2'));
+test('8. heads/x completa para refs/heads/x', () => {
+  assert.equal(av('git push origin dev:heads/main').trava, 'T5');
+  assert.equal(av('git push origin dev:refs/heads/stage').trava, 'T5');
+});
+test('9. --recurse-submodules com valor separado', () => {
+  for (const v of ['on-demand', 'check', 'only', 'no']) {
+    assert.equal(avaliar({ tipo: 'comando', comando: `git push --recurse-submodules ${v} origin`, cwd: '/r' }, comRamo('main')).trava, 'T5', v);
+    assert.ok(avaliar({ tipo: 'comando', comando: `git push --recurse-submodules ${v} origin`, cwd: '/r' }, comRamo('feat/x')).permite, v);
+  }
+  assert.equal(av('git push --recurse-submodules=check origin main').trava, 'T5');
+});
+test('10. gh pr merge com opções de valor antes do número', () => {
+  for (const o of ['--body x', '-b x', '-t titulo', '--subject s', '--body-file f', '-F f', '--match-head-commit sha', '--author-email e', '-A e']) {
+    assert.ok(av(`gh pr merge ${o} 7`).permite, o);
+    assert.equal(av(`gh pr merge ${o} 8`).trava, 'T5', o);
+  }
+});
+// Fora até o conserto do shell.mjs entrar (o env ainda vaza o `export`):
+// test('export AH_GUARD=off não vale para o comando seguinte', () => assert.equal(av('export AH_GUARD=off; git push origin main').trava, 'T5'));
