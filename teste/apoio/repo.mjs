@@ -30,6 +30,7 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
     GIT_COMMITTER_NAME: 'ana-souza',
     GIT_COMMITTER_EMAIL: 'ana@exemplo.test',
     AH_ESTADO: estado,
+    AH_WORKTREES: join(base, 'wt'),
     AH_SESSAO: 'sessao-teste-0001',
     AH_GH: join(RAIZ_HARNESS, 'teste', 'apoio', 'gh-falso.mjs'),
     GH_FALSO_LOG: join(base, 'gh.log'),

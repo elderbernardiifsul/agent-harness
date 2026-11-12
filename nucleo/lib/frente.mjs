@@ -1,4 +1,6 @@
+import fs from 'node:fs';
 import path from 'node:path';
+import { lerJson, gravarJson, validarNomeSeguro } from './estado.mjs';
 
 export const siglaValida = s => typeof s === 'string' && /^[a-z]{2,4}$/.test(s);
 export const nomeValido = n => typeof n === 'string' && /^[a-z0-9][a-z0-9-]{1,48}$/.test(n);
@@ -62,4 +64,34 @@ export function linhaDoHistorico(frente, resumo, agora) {
   const dia = localComDeslocamento(agora, desloc).slice(0, 10);
   const tickets = frente.tickets?.length ? frente.tickets.map(n => `#${n}`).join(', ') : '—';
   return `- ${dia} · ${frente.id} · ${frente.nome} · @${frente.abertaPor} · ${tickets} · ${resumo}`;
+}
+
+const arquivoDaFrente = (dirEstado, nome) => path.join(dirEstado, 'frentes', `${validarNomeSeguro(nome, 'Nome da frente')}.json`);
+
+export function lerFrente(dirEstado, nome) {
+  return lerJson(arquivoDaFrente(dirEstado, nome), null);
+}
+
+export function gravarFrente(dirEstado, frente) {
+  gravarJson(arquivoDaFrente(dirEstado, frente.nome), frente);
+}
+
+export function removerFrente(dirEstado, nome) {
+  fs.rmSync(arquivoDaFrente(dirEstado, nome), { force: true });
+}
+
+// Todas as frentes em disco, da mais antiga para a mais nova.
+export function listarFrentes(dirEstado) {
+  let nomes;
+  try {
+    nomes = fs.readdirSync(path.join(dirEstado, 'frentes'));
+  } catch (e) {
+    if (e.code === 'ENOENT') return [];
+    throw e;
+  }
+  return nomes
+    .filter(n => n.endsWith('.json') && !n.startsWith('.'))
+    .map(n => lerFrente(dirEstado, n.slice(0, -5)))
+    .filter(Boolean)
+    .sort((a, b) => String(a.abertaEm).localeCompare(String(b.abertaEm)) || String(a.nome).localeCompare(String(b.nome)));
 }
