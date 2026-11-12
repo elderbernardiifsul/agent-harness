@@ -21,8 +21,8 @@ const frente = (i, dona = `sessao-${i}`) => ({
 });
 const quarentaFrentes = [{ ...frente(0, 's1'), nome: 'f0', plano: 'docs/plano.md' }, ...Array.from({ length: 39 }, (_, i) => frente(i + 1))];
 
-test('inicio registra a sessão e devolve o resumo', () => {
-  const r = tratar({ tipo: 'inicio', sessao: 's1', agente: 'claude-code', cwd: p.raiz, origem: 'novo', modelo: 'm-x' }, amb(p));
+test('inicio registra a sessão e devolve o resumo', async () => {
+  const r = await tratar({ tipo: 'inicio', sessao: 's1', agente: 'claude-code', cwd: p.raiz, origem: 'novo', modelo: 'm-x' }, amb(p));
   assert.match(r.contexto, /Sessão s1 \(executor\)/);
   assert.match(r.contexto, /nenhuma: `?ah open/);
   assert.ok(r.contexto.length <= 1200);
@@ -33,17 +33,17 @@ test('inicio registra a sessão e devolve o resumo', () => {
   assert.deepEqual([ev.tipo, ev.sessao, ev.origem, ev.modelo], ['sessao-inicio', 's1', 'novo', 'm-x']);
 });
 
-test('inicio sem modelo grava nulo', () => {
-  tratar({ tipo: 'inicio', sessao: 's2', agente: 'claude-code', cwd: p.raiz, origem: 'novo' }, amb(p));
+test('inicio sem modelo grava nulo', async () => {
+  await tratar({ tipo: 'inicio', sessao: 's2', agente: 'claude-code', cwd: p.raiz, origem: 'novo' }, amb(p));
   assert.equal(lerSessao(dirDoTeste(p), 's2').modelo, null);
 });
 
 test('o resumo de uma continuação mostra a frente herdada', async () => {
   const { gravarSessao } = await import('../nucleo/lib/sessao.mjs');
   gravarFrente(dirDoTeste(p), { ...frente(6, 's4'), nome: 'busca', id: 'as-6', plano: 'docs/busca.md' });
-  tratar({ tipo: 'inicio', sessao: 's4', agente: 'claude-code', cwd: p.raiz, origem: 'novo', modelo: 'm-z' }, amb(p));
+  await tratar({ tipo: 'inicio', sessao: 's4', agente: 'claude-code', cwd: p.raiz, origem: 'novo', modelo: 'm-z' }, amb(p));
   gravarSessao(dirDoTeste(p), { ...lerSessao(dirDoTeste(p), 's4'), frente: 'busca' });
-  const r = tratar({ tipo: 'inicio', sessao: 's4', agente: 'claude-code', cwd: p.raiz, origem: 'continuacao' }, amb(p));
+  const r = await tratar({ tipo: 'inicio', sessao: 's4', agente: 'claude-code', cwd: p.raiz, origem: 'continuacao' }, amb(p));
   assert.match(r.contexto, /Sua frente: as-6 busca/);
   assert.match(r.contexto, /plano: docs\/busca\.md/);
   const s = lerSessao(dirDoTeste(p), 's4');
@@ -51,7 +51,7 @@ test('o resumo de uma continuação mostra a frente herdada', async () => {
   assert.equal(s.modelo, 'm-z');
 });
 
-test('o resumo mostra a frente da sessão e corta a lista longa', () => {
+test('o resumo mostra a frente da sessão e corta a lista longa', async () => {
   const t = montarResumo({ sessao: { id: 's1', papel: 'executor', frente: 'f0' }, frentes: quarentaFrentes, config, baseLimpa: true });
   assert.ok(t.length <= 1200, String(t.length));
   assert.match(t, /e mais \d+ frentes/);
@@ -62,7 +62,7 @@ test('o resumo mostra a frente da sessão e corta a lista longa', () => {
   assert.equal(mostradas + fora, 39);
 });
 
-test('o resumo diz o estado da base, as regras e onde ler mais', () => {
+test('o resumo diz o estado da base, as regras e onde ler mais', async () => {
   const s = { id: 'abcdef0123456789', papel: 'executor', frente: null };
   const limpo = montarResumo({ sessao: s, frentes: [], config, baseLimpa: true });
   assert.match(limpo, /Sessão abcdef01 \(executor\)/);
@@ -76,54 +76,69 @@ test('o resumo diz o estado da base, as regras e onde ler mais', () => {
   assert.match(semDona, /as-1 frente-1 \(sem dona\)/);
 });
 
-test('o resumo não passa do limite nem com nomes e caminhos enormes', () => {
+test('o resumo não passa do limite nem com nomes e caminhos enormes', async () => {
   const enorme = { ...frente(0, 's1'), nome: 'f0', worktree: 'x'.repeat(5000), plano: 'y\n'.repeat(3000) };
   const t = montarResumo({ sessao: { id: 's1', papel: 'executor', frente: 'f0' }, frentes: [enorme, ...quarentaFrentes.slice(1)], config, baseLimpa: true });
   assert.ok(t.length <= 1200, String(t.length));
   assert.match(t, /Mais: docs\/agents\/sessoes-paralelas\.md · tools\/ah board$/);
 });
 
-test('antes: push em ramo protegido é recusado e registrado', () => {
-  const r = antes('git push origin main');
+test('o resumo mostra avisos e frentes sem dona antes das outras, cada linha com no máximo 200 caracteres', async () => {
+  const semDona = Array.from({ length: 30 }, (_, i) => ({ id: `as-${i + 1}`, nome: `frente-${i + 1}`, saida: i % 2 ? `ah takeover frente-${i + 1}` : `ah open frente-${i + 1}` }));
+  const t = montarResumo({ sessao: { id: 's1', papel: 'executor', frente: 'f0' }, frentes: quarentaFrentes, config, baseLimpa: true,
+    situacao: { semDona, avisos: ['Sua frente as-9 x está com a sessão s-y.'], sobreposicoes: [] } });
+  assert.ok(t.length <= 1200, String(t.length));
+  const linhas = t.split('\n');
+  const iAvisos = linhas.findIndex(l => l.startsWith('Avisos: Sua frente as-9 x está com a sessão s-y.'));
+  const iSem = linhas.findIndex(l => l.startsWith('Sem dona: as-1 frente-1 (ah open frente-1); as-2 frente-2 (ah takeover frente-2)'));
+  const iOutras = linhas.findIndex(l => l.startsWith('Outras frentes:'));
+  assert.ok(iAvisos > 0 && iAvisos < iSem && iSem < iOutras, t);
+  assert.ok(linhas[iSem].length <= 200, String(linhas[iSem].length));
+  // A frente listada sem dona não se repete nas outras.
+  assert.doesNotMatch(linhas[iOutras], /as-1 frente-1 \(/);
+});
+
+test('antes: push em ramo protegido é recusado e registrado', async () => {
+  const r = await antes('git push origin main');
   assert.equal(r.decisao, 'recusa');
   assert.match(r.mensagem, /^Recusado \(T5\)/);
   const ev = lerEventos(dirDoTeste(p)).at(-1);
   assert.deepEqual([ev.tipo, ev.trava, ev.sessao, ev.comando], ['recusa', 'T5', 's1', 'git push origin main']);
 });
 
-test('antes: AH_GUARD=off permite e registra a liberação', () => {
-  const r = antes('AH_GUARD=off git push origin main');
+test('antes: AH_GUARD=off permite e registra a liberação', async () => {
+  const r = await antes('AH_GUARD=off git push origin main');
   assert.deepEqual(r, { decisao: 'permite' });
   const ev = lerEventos(dirDoTeste(p)).at(-1);
   assert.deepEqual([ev.tipo, ev.trava, ev.comando], ['liberacao', 'T5', 'AH_GUARD=off git push origin main']);
 });
 
-test('antes: comando comum permite sem registrar evento', () => {
+test('antes: comando comum permite sem registrar evento', async () => {
   const n = lerEventos(dirDoTeste(p)).length;
-  assert.deepEqual(antes('git status'), { decisao: 'permite' });
+  assert.deepEqual(await antes('git status'), { decisao: 'permite' });
   assert.equal(lerEventos(dirDoTeste(p)).length, n);
 });
 
-test('antes: o evento guarda o comando cortado', () => {
-  antes(`git push origin main # ${'a'.repeat(10000)}`);
+test('antes: o evento guarda o comando cortado', async () => {
+  await antes(`git push origin main # ${'a'.repeat(10000)}`);
   const ev = lerEventos(dirDoTeste(p)).at(-1);
   assert.equal(ev.tipo, 'recusa');
   assert.ok(ev.comando.length <= 500, String(ev.comando.length));
   assert.match(ev.comando, /^git push origin main/);
 });
 
-test('antes: outra ferramenta e edição permitem', () => {
-  assert.deepEqual(tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'outra' } }, amb(p)), { decisao: 'permite' });
-  assert.deepEqual(tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'edicao', arquivo: path.join(p.raiz, 'README.md') } }, amb(p)), { decisao: 'permite' });
+test('antes: outra ferramenta e edição permitem', async () => {
+  assert.deepEqual(await tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'outra' } }, amb(p)), { decisao: 'permite' });
+  assert.deepEqual(await tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'edicao', arquivo: path.join(p.raiz, 'README.md') } }, amb(p)), { decisao: 'permite' });
 });
 
-test('antes: gh que demora vira recusa do T5, não liberação', () => {
+test('antes: gh que demora vira recusa do T5, não liberação', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ah-gh-lento-'));
   try {
     const lento = path.join(dir, 'gh-lento.mjs');
     fs.writeFileSync(lento, 'setTimeout(() => process.stdout.write("dev\\n"), 5000);\n');
     const inicio = Date.now();
-    const r = tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'comando', comando: 'gh pr merge 7' } },
+    const r = await tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'comando', comando: 'gh pr merge 7' } },
       { ...amb(p), env: { ...p.env, AH_GH: lento }, tempoDoGhMs: 300 });
     assert.equal(r.decisao, 'recusa');
     assert.match(r.mensagem, /^Recusado \(T5\): não consegui descobrir/);
@@ -133,13 +148,13 @@ test('antes: gh que demora vira recusa do T5, não liberação', () => {
   }
 });
 
-test('antes: gh que ignora SIGTERM é morto no prazo e o T5 recusa', { skip: process.platform === 'win32' }, () => {
+test('antes: gh que ignora SIGTERM é morto no prazo e o T5 recusa', { skip: process.platform === 'win32' }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ah-gh-teimoso-'));
   try {
     const teimoso = path.join(dir, 'gh-teimoso.mjs');
     fs.writeFileSync(teimoso, 'process.on("SIGTERM", () => {});\nsetTimeout(() => process.stdout.write("dev\\n"), 6000);\n');
     const inicio = Date.now();
-    const r = tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'comando', comando: 'gh pr merge 7' } },
+    const r = await tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'comando', comando: 'gh pr merge 7' } },
       { ...amb(p), env: { ...p.env, AH_GH: teimoso }, tempoDoGhMs: 500 });
     assert.equal(r.decisao, 'recusa');
     assert.match(r.mensagem, /^Recusado \(T5\): não consegui descobrir/);
@@ -149,41 +164,41 @@ test('antes: gh que ignora SIGTERM é morto no prazo e o T5 recusa', { skip: pro
   }
 });
 
-test('antes: gh pr merge pergunta ao gh o ramo de destino do PR', () => {
+test('antes: gh pr merge pergunta ao gh o ramo de destino do PR', async () => {
   p.ghResponder([{ prefixo: ['pr', 'view', '7'], saida: 'dev\n' }, { prefixo: ['pr', 'view', '8'], saida: 'main\n' }, { prefixo: ['pr', 'view'], codigo: 1 }]);
-  assert.deepEqual(antes('gh pr merge 7 --squash'), { decisao: 'permite' });
-  assert.match(antes('gh pr merge 8').mensagem, /^Recusado \(T5\): gh pr merge mescla em main/);
-  assert.match(antes('gh pr merge').mensagem, /^Recusado \(T5\): não consegui descobrir/);
+  assert.deepEqual(await antes('gh pr merge 7 --squash'), { decisao: 'permite' });
+  assert.match((await antes('gh pr merge 8')).mensagem, /^Recusado \(T5\): gh pr merge mescla em main/);
+  assert.match((await antes('gh pr merge')).mensagem, /^Recusado \(T5\): não consegui descobrir/);
   assert.ok(p.ghChamadas().some(c => c.argv.join(' ') === 'pr view 7 --json baseRefName --jq .baseRefName'));
 });
 
-test('antes: o T2 usa o cwd do evento, não o do processo', () => {
+test('antes: o T2 usa o cwd do evento, não o do processo', async () => {
   const wt = path.join(path.dirname(p.raiz), 'wt-contrato');
   assert.equal(p.git(['worktree', 'add', wt, '-b', 'feat/contrato']).codigo, 0);
   const evento = cwd => ({ tipo: 'antes', sessao: 's1', cwd, acao: { tipo: 'comando', comando: 'git add -A' } });
-  assert.equal(tratar(evento(wt), { ...amb(p), cwd: p.raiz }).decisao, 'permite');
-  assert.equal(tratar(evento(p.raiz), { ...amb(p), cwd: wt }).decisao, 'recusa');
+  assert.equal((await tratar(evento(wt), { ...amb(p), cwd: p.raiz })).decisao, 'permite');
+  assert.equal((await tratar(evento(p.raiz), { ...amb(p), cwd: wt })).decisao, 'recusa');
 });
 
 test('sinal toca o sinal de vida e fim encerra a sessão', async () => {
-  tratar({ tipo: 'inicio', sessao: 's5', agente: 'claude-code', cwd: p.raiz, origem: 'novo' }, amb(p));
+  await tratar({ tipo: 'inicio', sessao: 's5', agente: 'claude-code', cwd: p.raiz, origem: 'novo' }, amb(p));
   const arqSinal = path.join(dirDoTeste(p), 'sessoes', 's5.sinal');
   const velho = new Date(Date.now() - 3600000);
   fs.utimesSync(arqSinal, velho, velho);
-  assert.deepEqual(tratar({ tipo: 'sinal', sessao: 's5' }, amb(p)), {});
+  assert.deepEqual(await tratar({ tipo: 'sinal', sessao: 's5' }, amb(p)), {});
   assert.ok(idadeDoSinalMs(dirDoTeste(p), 's5') < 60000);
-  assert.deepEqual(tratar({ tipo: 'fim', sessao: 's5' }, amb(p)), {});
+  assert.deepEqual(await tratar({ tipo: 'fim', sessao: 's5' }, amb(p)), {});
   assert.ok(lerSessao(dirDoTeste(p), 's5').fim);
   assert.equal(lerEventos(dirDoTeste(p)).at(-1).tipo, 'sessao-fim');
 });
 
-test('sinal de uma sessão desconhecida a registra', () => {
-  tratar({ tipo: 'sinal', sessao: 's6', agente: 'claude-code' }, amb(p));
+test('sinal de uma sessão desconhecida a registra', async () => {
+  await tratar({ tipo: 'sinal', sessao: 's6', agente: 'claude-code' }, amb(p));
   assert.equal(lerSessao(dirDoTeste(p), 's6').agente, 'claude-code');
 });
 
-test('tipo de evento desconhecido lança', () => {
-  assert.throws(() => tratar({ tipo: 'outro', sessao: 's1' }, amb(p)));
+test('tipo de evento desconhecido lança', async () => {
+  await assert.rejects(() => tratar({ tipo: 'outro', sessao: 's1' }, amb(p)));
 });
 
 // ---- quando o gancho quebra
@@ -198,7 +213,7 @@ for (const c of ['AH_SESSAO=x tools/ah whoami', 'tools/ah doctor > f', 'tools/ah
   'cd tools && ./ah doctor', 'node tools/ah doctor', 'tools/ah "doctor', 'outro/tools/ah doctor', '`tools/ah`', 'tools/ahx', ''])
   test(`na quebra não passa: ${JSON.stringify(c)}`, () => assert.ok(!passaNaQuebra(cmd(c), { raiz: R, cwd: R })));
 
-test('na quebra passa a edição de .harness/config.json pelo caminho resolvido', () => {
+test('na quebra passa a edição de .harness/config.json pelo caminho resolvido', async () => {
   const ctx = { raiz: R, cwd: R };
   assert.ok(passaNaQuebra(ed(path.join(R, '.harness', 'config.json')), ctx));
   assert.ok(passaNaQuebra(ed(path.join('.harness', 'config.json')), ctx));
@@ -212,12 +227,12 @@ test('na quebra passa a edição de .harness/config.json pelo caminho resolvido'
   assert.ok(!passaNaQuebra({ tipo: 'outra' }, ctx));
 });
 
-test('na quebra a exceção do ah vale só para o shell do Bash', () => {
+test('na quebra a exceção do ah vale só para o shell do Bash', async () => {
   assert.ok(!passaNaQuebra({ tipo: 'comando', comando: 'tools/ah doctor' }, { raiz: R, cwd: R }));
   assert.ok(!passaNaQuebra({ tipo: 'comando', comando: 'tools/ah doctor', shell: 'powershell' }, { raiz: R, cwd: R }));
 });
 
-test('resposta na quebra: recusa T0 no antes, aviso nos outros', () => {
+test('resposta na quebra: recusa T0 no antes, aviso nos outros', async () => {
   const r = respostaNaQuebra({ tipo: 'antes', acao: cmd('git status') }, 'config.json quebrado\nsegunda linha', { raiz: R, cwd: R });
   assert.deepEqual(r, { decisao: 'recusa', mensagem: 'Recusado (T0): o harness não conseguiu avaliar (config.json quebrado segunda linha).\nFaça: rode tools/ah doctor' });
   assert.deepEqual(respostaNaQuebra({ tipo: 'antes', acao: cmd('tools/ah doctor') }, 'x', { raiz: R, cwd: R }), { decisao: 'permite' });

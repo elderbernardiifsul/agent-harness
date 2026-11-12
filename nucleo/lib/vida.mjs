@@ -2,7 +2,8 @@
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { PADROES } from './config.mjs';
-import { lerSessao, idadeDoSinalMs } from './sessao.mjs';
+import { lerSessao, gravarSessao, idadeDoSinalMs } from './sessao.mjs';
+import { registrarEvento } from './estado.mjs';
 
 const pidValido = pid => Number.isInteger(pid) && pid > 0;
 
@@ -72,6 +73,17 @@ export function estadoDaSessao(sessao, { idadeDoSinalMs: idade, prazoMs: prazo, 
     }
   }
   return { estado: 'viva', motivo: 'viva' };
+}
+
+// O pid gravado morreu mas os ganchos da sessão continuam chegando: era o de um processo de
+// vida curta (decisão 3). Descarta pid e hora de início; a vida passa a depender só do sinal.
+// Grava a sessão: chamar sob comTrava(dirEstado, 'frentes').
+export function descartarPidMorto(dirEstado, id, existe = processoExiste) {
+  const s = lerSessao(dirEstado, id);
+  if (!s || s.pid == null || existe(s.pid)) return false;
+  gravarSessao(dirEstado, { ...s, pid: null, pidInicio: null });
+  registrarEvento(dirEstado, { tipo: 'pid-instavel', sessao: id, pid: s.pid });
+  return true;
 }
 
 export function vidaDaSessao(dirEstado, id, { config, agora = Date.now(), existe, inicio } = {}) {

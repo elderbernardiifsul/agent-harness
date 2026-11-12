@@ -98,7 +98,7 @@ export async function executar(args, amb) {
     ctx = { raiz, cwd: evento.cwd };
     const config = carregarConfig(raiz);
     const dirEstado = caminhoDoEstado(config.projeto, amb.env, process.platform, os.homedir());
-    const resposta = tratar(evento, { ...amb, raiz, config, dirEstado, cwd: evento.cwd });
+    const resposta = await tratar(evento, { ...amb, raiz, config, dirEstado, cwd: evento.cwd });
     return escreverSaida(amb, adaptador.traduzirSaida(evento, resposta));
   } catch (e) {
     let tipo = 'desconhecido';

@@ -8,16 +8,22 @@
 //
 // `acao` é {tipo: 'comando', comando} | {tipo: 'edicao', arquivo} | {tipo: 'outra'}.
 // `amb` é o do despacho (raiz, config, dirEstado, env), mais, opcionais, `topoDe`,
-// `ramoAtual`, `baseDoPr`, `tempoDoGhMs` (para as travas) e `pid`.
+// `ramoAtual`, `baseDoPr`, `tempoDoGhMs` (para as travas), `pid` (padrão: o pid do agente,
+// `AH_PID_AGENTE` ou o processo pai do gancho), `inicioDoProcesso`, `existe` e `agora`.
+// `tratar` é assíncrono: a herança e as gravações de sessão rodam sob a trava das frentes.
 // Um comando pode trazer `shell: 'posix'` quando o agente o roda num shell POSIX (Bash).
 import fs from 'node:fs';
 import path from 'node:path';
 import { avaliar } from '../lib/travas.mjs';
 import { textoDaRecusa } from '../lib/recusa.mjs';
 import { comandosSimples } from '../lib/shell.mjs';
-import { registrarEvento } from '../lib/estado.mjs';
-import { registrarSessao, tocarSinal, encerrarSessao, lerSessao } from '../lib/sessao.mjs';
-import { listarFrentes } from '../lib/frente.mjs';
+import { registrarEvento, comTrava } from '../lib/estado.mjs';
+import { registrarSessao, tocarSinal, encerrarSessao, lerSessao, gravarSessao, idCurto } from '../lib/sessao.mjs';
+import { listarFrentesTolerante } from '../lib/frente.mjs';
+import { continuarSessao } from '../lib/heranca.mjs';
+import {
+  pidDoAgente, processoExiste, inicioDoProcesso as inicioPadrao, descartarPidMorto, vidaDaSessao,
+} from '../lib/vida.mjs';
 import { montarResumo } from '../lib/resumo.mjs';
 import { topoDe, ramoAtual, limpo } from '../lib/git.mjs';
 import { gh } from '../lib/github.mjs';
@@ -55,34 +61,114 @@ function baseLimpa(amb) {
   return limpo(amb.raiz, amb.env);
 }
 
-function inicio(evento, amb) {
-  const sessao = registrarSessao(amb.dirEstado, {
-    id: evento.sessao, agente: evento.agente, pid: amb.pid ?? process.ppid, modelo: evento.modelo ?? null,
+const existeDe = amb => amb.existe ?? processoExiste;
+const inicioDe = amb => amb.inicioDoProcesso ?? inicioPadrao;
+const pidDe = amb => (amb.pid !== undefined ? amb.pid : pidDoAgente(amb.env, process.ppid));
+
+// Saída de cada frente sem dona viva: passada -> `ah open`; ativa de dona que não está viva -> `ah takeover`.
+function frentesSemDona(frentes, minha, amb) {
+  const vidas = new Map();
+  const viva = dona => {
+    if (!vidas.has(dona)) {
+      const opcoes = { config: amb.config, existe: existeDe(amb), inicio: inicioDe(amb) };
+      if (amb.agora !== undefined) opcoes.agora = amb.agora;
+      let estado = 'desconhecida';
+      try { estado = vidaDaSessao(amb.dirEstado, dona, opcoes).estado; } catch { /* sessão ilegível: não está viva */ }
+      vidas.set(dona, estado === 'viva');
+    }
+    return vidas.get(dona);
+  };
+  const lista = [];
+  for (const f of frentes) {
+    if (f.nome === minha) continue;
+    if (f.estado === 'passada') lista.push({ id: f.id, nome: f.nome, saida: `ah open ${f.nome}` });
+    else if (f.estado === 'ativa' && (f.dona == null || !viva(f.dona))) lista.push({ id: f.id, nome: f.nome, saida: `ah takeover ${f.nome}` });
+  }
+  return lista;
+}
+
+async function inicio(evento, amb) {
+  const id = evento.sessao;
+  const declarado = amb.pid !== undefined || pidDoAgente(amb.env, null) !== null;
+  let pid = pidDe(amb);
+  let pidInicio = pid == null ? null : inicioDe(amb)(pid);
+  await comTrava(amb.dirEstado, 'frentes', async () => {
+    const antiga = lerSessao(amb.dirEstado, id);
+    // pid só do processo pai do gancho não troca o pid vivo (e da mesma hora de início) que a sessão já tem,
+    // como o declarado por AH_PID_AGENTE num comando anterior.
+    if (!declarado && antiga && !antiga.fim && antiga.pid != null && antiga.pid !== pid && existeDe(amb)(antiga.pid)) {
+      const atual = inicioDe(amb)(antiga.pid);
+      if (antiga.pidInicio == null || atual == null || atual === antiga.pidInicio) {
+        pid = antiga.pid;
+        pidInicio = antiga.pidInicio;
+      }
+    }
+    registrarSessao(amb.dirEstado, { id, agente: evento.agente, pid, pidInicio, modelo: evento.modelo ?? null });
   });
   registrarEvento(amb.dirEstado, {
-    tipo: 'sessao-inicio', sessao: evento.sessao, agente: evento.agente, origem: evento.origem, modelo: evento.modelo ?? null,
+    tipo: 'sessao-inicio', sessao: id, agente: evento.agente, origem: evento.origem, modelo: evento.modelo ?? null,
   });
-  const contexto = montarResumo({ sessao, frentes: listarFrentes(amb.dirEstado), config: amb.config, baseLimpa: baseLimpa(amb) });
+  await continuarSessao(amb.dirEstado, { sessao: id, pid, pidInicio, origem: evento.origem });
+
+  const { frentes } = listarFrentesTolerante(amb.dirEstado);
+  const avisos = [];
+  let sessao = lerSessao(amb.dirEstado, id);
+  const foco = typeof sessao.frente === 'string' ? frentes.find(f => f.nome === sessao.frente) : null;
+  if (foco && foco.dona != null && foco.dona !== id) {
+    // A frente em foco tem outra dona (tomada ou herdada por outra sessão): não a recupera.
+    sessao = await comTrava(amb.dirEstado, 'frentes', async () => {
+      const atual = lerSessao(amb.dirEstado, id);
+      if (atual.frente === foco.nome) gravarSessao(amb.dirEstado, { ...atual, frente: null });
+      return { ...atual, frente: null };
+    });
+    avisos.push(`Sua frente ${foco.id} ${foco.nome} está com a sessão ${idCurto(foco.dona)}.`);
+  }
+  const situacao = { semDona: frentesSemDona(frentes, sessao.frente, amb), sobreposicoes: [], avisos };
+  const contexto = montarResumo({ sessao, frentes, config: amb.config, baseLimpa: baseLimpa(amb), situacao });
   return { contexto };
 }
 
-function sinal(evento, amb) {
-  if (!tocarSinal(amb.dirEstado, evento.sessao) && evento.agente) {
-    registrarSessao(amb.dirEstado, { id: evento.sessao, agente: evento.agente, pid: amb.pid ?? process.ppid });
+// Toca o sinal de vida e, se o pid gravado morreu enquanto os ganchos chegam, descarta-o.
+// Nunca derruba o evento: um arquivo de sessão ilegível não pode travar as ferramentas do agente.
+async function manterVivo(evento, amb) {
+  try {
+    const s = tocarSinal(amb.dirEstado, evento.sessao);
+    if (s && s.pid != null && !existeDe(amb)(s.pid)) {
+      await comTrava(amb.dirEstado, 'frentes', async () => descartarPidMorto(amb.dirEstado, evento.sessao, existeDe(amb)));
+    }
+    return s;
+  } catch (e) {
+    if (e?.name !== 'ErroDeEstado') throw e;
+    return undefined;
+  }
+}
+
+async function sinal(evento, amb) {
+  const s = await manterVivo(evento, amb);
+  if (s === null && evento.agente) {
+    await comTrava(amb.dirEstado, 'frentes', async () => {
+      if (lerSessao(amb.dirEstado, evento.sessao)) return tocarSinal(amb.dirEstado, evento.sessao);
+      const pid = pidDe(amb);
+      return registrarSessao(amb.dirEstado, { id: evento.sessao, agente: evento.agente, pid, pidInicio: pid == null ? null : inicioDe(amb)(pid) });
+    });
   }
   return {};
 }
 
-function fim(evento, amb) {
-  if (lerSessao(amb.dirEstado, evento.sessao)) encerrarSessao(amb.dirEstado, evento.sessao);
+async function fim(evento, amb) {
+  await comTrava(amb.dirEstado, 'frentes', async () => {
+    if (lerSessao(amb.dirEstado, evento.sessao)) encerrarSessao(amb.dirEstado, evento.sessao, 'fim');
+  });
   registrarEvento(amb.dirEstado, { tipo: 'sessao-fim', sessao: evento.sessao });
   return {};
 }
 
-function antes(evento, amb) {
+async function antes(evento, amb) {
+  // O sinal de vida não decide nada aqui: falha ao tocá-lo não pode virar recusa da ferramenta.
+  try { await manterVivo(evento, amb); } catch { /* segue para as travas */ }
   const { acao } = evento;
   if (acao?.tipo === 'outra') return { decisao: 'permite' };
-  const r = avaliar(acao.tipo === 'comando' ? { ...acao, cwd: evento.cwd ?? null } : acao, contextoDasTravas(amb));
+  const r = avaliar({ ...acao, cwd: evento.cwd ?? null }, contextoDasTravas(amb));
   const comando = acao.tipo === 'comando' ? cortar(acao.comando, LIMITE_COMANDO_NO_EVENTO) : undefined;
   if (!r.permite) {
     registrarEvento(amb.dirEstado, { tipo: 'recusa', sessao: evento.sessao, trava: r.trava, comando });
@@ -94,7 +180,7 @@ function antes(evento, amb) {
 
 const TRATADORES = { inicio, sinal, antes, fim };
 
-export function tratar(evento, amb) {
+export async function tratar(evento, amb) {
   const fn = Object.hasOwn(TRATADORES, evento?.tipo) ? TRATADORES[evento.tipo] : null;
   if (!fn) throw new TypeError(`tratar: tipo de evento desconhecido: ${String(evento?.tipo).slice(0, 40)}`);
   return fn(evento, amb);

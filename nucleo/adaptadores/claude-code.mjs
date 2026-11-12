@@ -9,7 +9,7 @@ export const AGENTE = 'claude-code';
 
 const LIMITE_ID = 128;
 const EVENTOS = { SessionStart: 'inicio', UserPromptSubmit: 'sinal', Stop: 'sinal', PreToolUse: 'antes', SessionEnd: 'fim' };
-const ORIGENS = { startup: 'novo', clear: 'novo', resume: 'continuacao', compact: 'continuacao', fork: 'continuacao' };
+const ORIGENS = { startup: 'novo', clear: 'continuacao', resume: 'continuacao', compact: 'continuacao', fork: 'continuacao' };
 // Ferramenta -> campo de tool_input com o comando ou o arquivo.
 const COMANDOS = { Bash: 'command', PowerShell: 'command', Monitor: 'command' };
 const EDICOES = { Edit: 'file_path', Write: 'file_path', NotebookEdit: 'notebook_path' };

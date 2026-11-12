@@ -39,12 +39,14 @@ test('claude-code: PowerShell e Monitor são comandos', () => {
 
 test('claude-code: SessionStart com source compact é continuação', () => assert.equal(traduzirEntrada(g('inicio-compact.json')).origem, 'continuacao'));
 
+test('claude-code: /clear é continuação', () => assert.equal(traduzirEntrada(g('inicio.json', { source: 'clear' })).origem, 'continuacao'));
+
 test('claude-code: SessionStart traduz origem e modelo', () => {
   const e = traduzirEntrada(g('inicio.json'));
   assert.deepEqual(e, { tipo: 'inicio', agente: 'claude-code', sessao: ID, cwd: D, origem: 'novo', modelo: null });
   assert.equal(traduzirEntrada(g('inicio-compact.json')).modelo, 'claude-haiku-5-5');
   assert.equal(traduzirEntrada(g('inicio-resume.json')).origem, 'continuacao');
-  const origens = { startup: 'novo', clear: 'novo', resume: 'continuacao', compact: 'continuacao', fork: 'continuacao', outra: 'novo' };
+  const origens = { startup: 'novo', clear: 'continuacao', resume: 'continuacao', compact: 'continuacao', fork: 'continuacao', outra: 'novo' };
   for (const [source, origem] of Object.entries(origens)) assert.equal(traduzirEntrada(g('inicio.json', { source })).origem, origem, source);
   assert.equal(traduzirEntrada(g('inicio.json', { source: undefined })).origem, 'novo');
   assert.equal(traduzirEntrada(g('inicio.json', { model: 7 })).modelo, null);

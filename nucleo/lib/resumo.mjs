@@ -28,15 +28,34 @@ function textoDaBase(config, baseLimpa) {
   return `Base ${base}: não consegui conferir o checkout principal.`;
 }
 
-export function montarResumo({ sessao, frentes = [], config, baseLimpa }) {
+export const LIMITE_LINHA_DA_SITUACAO = 200;
+
+// Linhas da situação (avisos, frentes sem dona, sobreposições), cada uma com no máximo 200 caracteres.
+function linhasDaSituacao({ semDona = [], sobreposicoes = [], avisos = [] }) {
+  const linhas = [];
+  const corte = t => linha(t, LIMITE_LINHA_DA_SITUACAO);
+  if (avisos.length) linhas.push(corte(`Avisos: ${avisos.map(a => linha(a, 200)).join(' ')}`));
+  if (semDona.length) {
+    linhas.push(corte(`Sem dona: ${semDona.map(f => `${linha(f.id, 20)} ${linha(f.nome, 49)} (${linha(f.saida, 80)})`).join('; ')}`));
+  }
+  if (sobreposicoes.length) {
+    linhas.push(corte(`Sobreposições: ${sobreposicoes.map(s => `${linha(s.arquivo, 80)} (${s.frentes.map(n => linha(n, 49)).join(', ')})`).join('; ')}`));
+  }
+  return linhas;
+}
+
+// `situacao` = {semDona: [{id, nome, saida}], sobreposicoes: [{arquivo, frentes}], avisos: [texto]}.
+export function montarResumo({ sessao, frentes = [], config, baseLimpa, situacao = {} }) {
   const minha = nomeDaFrente(sessao.frente);
-  const outras = frentes.filter(f => f.nome !== minha)
+  const listadasSemDona = new Set((situacao.semDona ?? []).map(f => f.nome));
+  const outras = frentes.filter(f => f.nome !== minha && !listadasSemDona.has(f.nome))
     .map(f => `${linha(f.id, 20)} ${linha(f.nome, 49)} (${f.dona ? `dona ${idCurto(f.dona)}` : 'sem dona'})`);
   const nomes = config.git.protegidos.map(r => linha(r, 40));
   const protegidos = nomes.length > 1 ? `${nomes.slice(0, -1).join(', ')} e ${nomes.at(-1)}` : (nomes[0] ?? 'ramo protegido');
   const cabeca = [
     `Sessão ${linha(idCurto(sessao.id), 8)} (${linha(sessao.papel ?? 'executor', 20)}) no harness.`,
     linhaDaSuaFrente(sessao, frentes),
+    ...linhasDaSituacao(situacao),
   ];
   const cauda = [
     textoDaBase(config, baseLimpa),

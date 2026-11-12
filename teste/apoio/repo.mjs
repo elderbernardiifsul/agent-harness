@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, realpathSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, realpathSync, readFileSync, mkdirSync, existsSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -133,4 +133,11 @@ export function gravado(nome, troca = {}) {
 export function ganchoPre(p, toolInput, toolName = 'Bash', { cwd = p.raiz, env } = {}) {
   const base = gravado(toolName === 'Bash' ? 'pre-bash.json' : 'pre-edit.json', { cwd, tool_name: toolName, tool_input: toolInput });
   return p.ah(['gancho', 'claude-code'], { entrada: JSON.stringify(base), env });
+}
+
+// Recua em `minutos` a data do sinal de vida da sessão (arquivo `sessoes/<sessao>.sinal`).
+export function envelhecerSinal(p, sessao, minutos) {
+  const arquivo = join(dirDoTeste(p), 'sessoes', `${sessao}.sinal`);
+  const quando = new Date(Date.now() - minutos * 60000);
+  utimesSync(arquivo, quando, quando);
 }
