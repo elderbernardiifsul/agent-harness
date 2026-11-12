@@ -1,0 +1,16 @@
+#!/bin/sh
+# Entrada do harness: roda o núcleo instalado no checkout principal do projeto.
+if ! command -v node >/dev/null 2>&1; then
+  printf '%s\n' 'Recusado: o Node não foi encontrado.' 'Faça: instale o Node 22 ou mais novo e rode tools/ah doctor' >&2
+  exit 2
+fi
+aqui=$(dirname "$0")
+principal=$(git -C "$aqui" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | head -n 1)
+if [ -z "$principal" ]; then
+  principal=$(cd "$aqui/.." && pwd)
+fi
+if [ ! -f "$principal/.harness/nucleo/bin/ah.mjs" ]; then
+  printf '%s\n' "Recusado: não achei .harness/nucleo em $principal." 'Faça: rode o init a partir do clone do agent-harness' >&2
+  exit 2
+fi
+exec node "$principal/.harness/nucleo/bin/ah.mjs" "$@"

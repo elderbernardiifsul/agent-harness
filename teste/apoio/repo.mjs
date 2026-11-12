@@ -92,3 +92,15 @@ export function escreverConfig(p, config = {}) {
   mkdirSync(join(p.raiz, '.harness'), { recursive: true });
   writeFileSync(join(p.raiz, '.harness', 'config.json'), JSON.stringify({ projeto: 'loja', ...config }, null, 2));
 }
+
+// Repositório de teste com o init já aplicado e commitado (por caminho), para os testes partirem de um repositório limpo.
+export function criarProjeto(opcoes = {}) {
+  const p = criarRepo(opcoes);
+  const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as']);
+  if (r.codigo !== 0) throw new Error(`ah init falhou: ${r.erro}`);
+  for (const args of [['add', '--', '.harness', 'tools', 'docs/agents'], ['commit', '-m', 'chore: instala o harness']]) {
+    const g = p.git(args);
+    if (g.codigo !== 0) throw new Error(`git ${args.join(' ')} falhou: ${g.erro}`);
+  }
+  return p;
+}
