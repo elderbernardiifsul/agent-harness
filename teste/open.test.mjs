@@ -197,3 +197,11 @@ test('nota entra na frente; sem frente é recusada', () => {
   assert.match(vazia.erro, /Faça: /);
   p.limpar();
 });
+
+test('M2: ramo local repetido aponta também a limpeza da sobra de um open interrompido', () => {
+  const p = criarProjeto();
+  p.git(['branch', 'feat/xx']);
+  const r = p.ah(['open', 'xx']);
+  assert.match(r.erro, /Faça: escolha outro nome.*git worktree remove .*xx.*git branch -d feat\/xx/);
+  p.limpar();
+});

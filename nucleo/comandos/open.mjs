@@ -128,6 +128,11 @@ export async function executar(args, amb) {
     const repetido = lerFrente(dirEstado, o.nome) ? 'frente'
       : existeRamo(amb.raiz, ramo, { env: amb.env }) ? 'ramo local'
         : existeRamo(amb.raiz, ramo, { remoto, env: amb.env }) ? 'ramo remoto' : null;
+    if (repetido === 'ramo local') {
+      const wt = path.join(dirWorktrees(cfg, amb.env, process.platform, os.homedir()), o.nome);
+      throw recusa(`Já existe ramo local com o nome ${o.nome}.`,
+        `escolha outro nome para a frente; se é sobra de um ah open interrompido (sem trabalho a guardar), limpe com git worktree remove ${wt} (se a pasta existir) e git branch -d ${ramo}, e rode ah open de novo`);
+    }
     if (repetido) throw recusa(`Já existe ${repetido} com o nome ${o.nome}.`, 'escolha outro nome para a frente');
 
     const temRemoto = git(['remote'], { cwd: amb.raiz, env: amb.env }).saida.split('\n').includes(remoto);
@@ -137,6 +142,11 @@ export async function executar(args, amb) {
     }
     const partida = pontoDePartida(amb, cfg.git.base, remoto);
     if (partida.erro) throw new ErroDeUso(partida.erro);
+    // Sem o harness no ponto de partida, o worktree nasceria sem tools/ah e sem gancho.
+    if (git(['cat-file', '-e', `${partida.ponto}:tools/ah`], { cwd: amb.raiz, env: amb.env }).codigo !== 0) {
+      throw recusa(`O harness ainda não está no ramo ${cfg.git.base} (${partida.ponto} não tem tools/ah); a frente nasceria sem ele.`,
+        `faça o commit do harness lá: git switch ${cfg.git.base} e o git add/git commit que o ah init mostrou (rode tools/ah doctor para conferir)`);
+    }
 
     const frentesAbertas = listarFrentes(dirEstado);
     const id = proximoId({ sigla: maquina.sigla, historico: lerHistorico(amb, partida.refs), frentes: frentesAbertas });

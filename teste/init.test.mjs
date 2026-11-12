@@ -25,7 +25,7 @@ test('init cria a estrutura e não faz commit', () => {
   assert.equal(manifesto.versao, VERSAO);
   assert.match(manifesto.commit, /^[0-9a-f]{40}$/);
   assert.ok(!Number.isNaN(Date.parse(manifesto.copiadoEm)));
-  assert.match(r.saida, /Agora rode: tools\/ah doctor/);
+  assert.match(r.saida, /Depois rode: tools\/ah doctor/);
   assert.equal(p.git(['log', '--oneline']).saida.trim().split('\n').length, 1);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(p.estado, 'maquina.json'), 'utf8')), { sigla: 'as', login: 'ana-souza' });
   if (process.platform !== 'win32') assert.ok(fs.statSync(path.join(p.raiz, 'tools/ah')).mode & 0o100, 'tools/ah executável');
@@ -234,4 +234,61 @@ test('init recusa .claude/settings.json inválido sem sobrescrever nem criar nad
     assert.equal(ler(p, '.claude/settings.json'), texto);
     assert.equal(fs.existsSync(path.join(p.raiz, '.harness')), false, texto);
   }
+});
+
+// ---- onda final: C1 (repositório que começa na main)
+// Divide uma linha de comando impressa pelo init em argumentos (aspas duplas simples, sem escape).
+const argsDaLinha = linha => [...linha.matchAll(/"([^"]*)"|(\S+)/g)].map(m => m[1] ?? m[2]);
+const passosImpressos = saida => saida.split('\n').filter(l => l.startsWith('  git ')).map(l => argsDaLinha(l.trim()).slice(1));
+
+test('C1: na main, o init manda fazer o commit no ramo base, e os comandos impressos funcionam', () => {
+  const p = criarRepo({ ramos: ['main'] });
+  const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Falta levar o harness para o ramo base dev/);
+  const passos = passosImpressos(r.saida);
+  assert.deepEqual(passos[0], ['switch', 'dev']);
+  assert.deepEqual(passos[1].slice(0, 2), ['add', '--']);
+  for (const c of ['.harness', 'tools/ah', 'tools/ah.cmd', 'docs/agents/sessoes-paralelas.md', 'docs/agents/historico-das-frentes.md', '.claude/settings.json', '.github/workflows/ah-ci.yml'])
+    assert.ok(passos[1].includes(c), c);
+  assert.deepEqual(passos[2], ['commit', '-m', 'chore: instala o agent-harness']);
+  assert.match(r.saida, /Depois rode: tools\/ah doctor/);
+  for (const args of passos) assert.equal(p.git(args).codigo, 0, args.join(' '));
+  const d = p.ah(['doctor']);
+  assert.match(d.saida, /^ok\s+Harness no ramo base/m);
+  const o = p.ah(['open', 'carrinho']);
+  assert.equal(o.codigo, 0, o.erro);
+  const wt = path.join(p.env.AH_WORKTREES, 'carrinho');
+  assert.ok(fs.existsSync(path.join(wt, 'tools', 'ah')));
+  assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']).saida.includes('Agora rode: tools/ah doctor'), true);
+  p.limpar();
+});
+
+test('C1: já no ramo base o init não manda trocar; commit na main é acusado pelo doctor e recusado pelo open', () => {
+  const q = criarRepo();
+  const rq = q.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']);
+  assert.doesNotMatch(rq.saida, /git switch/);
+  assert.match(rq.saida, /^ {2}git add -- /m);
+  q.limpar();
+
+  const p = criarRepo({ ramos: ['main'] });
+  assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']).codigo, 0);
+  assert.equal(p.git(['add', '--', '.harness', 'tools', 'docs/agents', '.claude', '.github']).codigo, 0);
+  assert.equal(p.git(['commit', '-m', 'chore: instala o harness']).codigo, 0);
+  const d = p.ah(['doctor']);
+  assert.equal(d.codigo, 1);
+  assert.match(d.saida, /^FALHOU\s+Harness no ramo base: tools\/ah e \.harness\/config\.json não estão no ramo dev.*faça o commit do harness em dev/m);
+  const linhas = d.saida.split('\n');
+  assert.ok(linhas.findIndex(l => l.includes('Harness no ramo base')) < linhas.findIndex(l => l.includes('Gancho responde')));
+  const o = p.ah(['open', 'carrinho']);
+  assert.equal(o.codigo, 1);
+  assert.match(o.erro, /Recusado: O harness ainda não está no ramo dev.*\nFaça: faça o commit do harness lá: git switch dev/);
+  assert.equal(fs.existsSync(path.join(p.env.AH_WORKTREES, 'carrinho')), false);
+  assert.equal(p.git(['show-ref', '--verify', '--quiet', 'refs/heads/feat/carrinho']).codigo, 1);
+  // De novo o init, com tudo commitado na main: manda levar para a dev pelo merge.
+  const r2 = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']);
+  assert.deepEqual(passosImpressos(r2.saida), [['switch', 'dev'], ['merge', 'main']]);
+  for (const args of passosImpressos(r2.saida)) assert.equal(p.git(args).codigo, 0, args.join(' '));
+  assert.equal(p.ah(['open', 'carrinho']).codigo, 0);
+  p.limpar();
 });

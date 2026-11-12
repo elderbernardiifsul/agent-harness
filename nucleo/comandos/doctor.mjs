@@ -177,6 +177,17 @@ export const VERIFICACOES = [
     return completo ? ok(nome) : falha(nome, 'faltam ou diferem os ganchos que o init instala; rode ah init');
   }),
 
+  verificacao('Harness no ramo base', amb => {
+    const nome = 'Harness no ramo base';
+    if (!amb.config) return null;
+    const base = amb.config.git.base;
+    const faltam = ['tools/ah', '.harness/config.json']
+      .filter(c => git(['cat-file', '-e', `refs/heads/${base}:${c}`], { cwd: amb.raiz, env: amb.env }).codigo !== 0);
+    if (!faltam.length) return ok(nome);
+    return falha(nome, `${faltam.join(' e ')} ${faltam.length > 1 ? 'não estão' : 'não está'} no ramo ${base}, de onde as frentes partem; faça o commit do harness em ${base}: `
+      + `git switch ${base} e o git add/git commit que o ah init mostrou (se o commit já está em outro ramo: git switch ${base} && git merge <esse ramo>)`);
+  }),
+
   verificacao('Gancho responde', amb => {
     const nome = 'Gancho responde';
     if (!amb.config || !usaClaude(amb)) return null;

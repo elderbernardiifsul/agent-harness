@@ -89,7 +89,7 @@ test('rodar o init duas vezes é idempotente (CI e proteção)', () => {
   const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--teste', 'npm test']);
   assert.equal(r.codigo, 0, r.erro);
   assert.equal(ler(p, ARQ), antes);
-  assert.doesNotMatch(r.saida, /ah-ci\.yml/);
+  assert.doesNotMatch(r.saida, /^\s+\.github\/workflows\/ah-ci\.yml$/m); // não aparece entre os gravados
   assert.equal(puts(p).length, 4);
   // com o servidor já protegido, o segundo init não altera nada
   p.ghResponder([]);

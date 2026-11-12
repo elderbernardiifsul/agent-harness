@@ -352,6 +352,28 @@ export async function executar(args, amb) {
     amb.avisar(`Não sobrescrevi:\n${conflitos.map(r => `  ${r}`).join('\n')}\nFaça: confira a diferença e rode ah init --sobrescrever se quiser trocar esses arquivos\n`);
     return 1;
   }
-  amb.escrever('Agora rode: tools/ah doctor\n');
+  amb.escrever(passosDoCommit(raiz, configFinal.git.base, amb.env));
   return 0;
+}
+
+// Caminhos que o init grava e que entram no commit do harness.
+const CAMINHOS_DO_COMMIT = ['.harness', 'tools/ah', 'tools/ah.cmd', 'docs/agents/sessoes-paralelas.md', 'docs/agents/historico-das-frentes.md', ARQUIVO_CLAUDE, ARQUIVO_CI];
+const MENSAGEM_DO_COMMIT = 'chore: instala o agent-harness';
+
+// As frentes partem do ramo base: o commit do harness tem de ir para lá, senão o worktree
+// nasce sem tools/ah e o gancho não existe. Diz os comandos exatos.
+function passosDoCommit(raiz, base, env) {
+  const caminhos = CAMINHOS_DO_COMMIT.filter(c => fs.existsSync(path.join(raiz, ...c.split('/'))));
+  const pendentes = git(['status', '--porcelain', '--untracked-files=all', '--', ...caminhos], { cwd: raiz, env }).saida.trim() !== '';
+  const atual = ramoAtual(raiz, env);
+  const naBase = git(['cat-file', '-e', `refs/heads/${base}:tools/ah`], { cwd: raiz, env }).codigo === 0;
+  if (!pendentes && naBase) return 'Agora rode: tools/ah doctor\n';
+  const passos = [];
+  if (atual !== base) passos.push(`git switch ${base}`);
+  if (pendentes) {
+    passos.push(`git add -- ${caminhos.join(' ')}`, `git commit -m "${MENSAGEM_DO_COMMIT}"`);
+  } else if (atual && atual !== base) {
+    passos.push(`git merge ${atual}`);
+  }
+  return `Falta levar o harness para o ramo base ${base} (as frentes partem dele; fora dele não há tools/ah nem gancho):\n${passos.map(l => `  ${l}`).join('\n')}\nDepois rode: tools/ah doctor\n`;
 }
