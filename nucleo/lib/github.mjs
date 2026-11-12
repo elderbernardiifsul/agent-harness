@@ -3,11 +3,12 @@ import { spawnSync } from 'node:child_process';
 const TEMPO_LIMITE_MS = 15000;
 
 // Executa o gh; se env.AH_GH termina em .mjs, executa esse arquivo com o Node
-// (é como os testes trocam o gh). Nunca lança; gh ausente devolve código 127.
-export function gh(args, { cwd, env = process.env, entrada } = {}) {
+// (é como os testes trocam o gh). Nunca lança; gh ausente ou que passa de `timeoutMs`
+// (padrão de 15 s) devolve código 127.
+export function gh(args, { cwd, env = process.env, entrada, timeoutMs = TEMPO_LIMITE_MS } = {}) {
   const alvo = env.AH_GH;
   const [cmd, lista] = alvo && alvo.endsWith('.mjs') ? [process.execPath, [alvo, ...args]] : [alvo || 'gh', args];
-  const r = spawnSync(cmd, lista, { cwd, env, encoding: 'utf8', input: entrada, timeout: TEMPO_LIMITE_MS });
+  const r = spawnSync(cmd, lista, { cwd, env, encoding: 'utf8', input: entrada, timeout: timeoutMs });
   if (r.error) return { codigo: 127, saida: '', erro: String(r.error.message ?? r.error) };
   return { codigo: r.status ?? 1, saida: r.stdout ?? '', erro: r.stderr ?? '' };
 }

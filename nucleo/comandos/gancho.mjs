@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { raizPrincipal, dirEstado as caminhoDoEstado } from '../lib/caminhos.mjs';
+import { fileURLToPath } from 'node:url';
 import { carregarConfig } from '../lib/config.mjs';
 import { tratar, respostaNaQuebra } from '../adaptadores/contrato.mjs';
 import * as claudeCode from '../adaptadores/claude-code.mjs';
@@ -44,6 +45,24 @@ function raizDoHarness(cwd) {
   return fs.existsSync(path.join(raiz, '.harness')) ? raiz : null;
 }
 
+// Raiz do projeto em que este núcleo está instalado (`<raiz>/.harness/nucleo/comandos/`), ou null no clone.
+function raizDaInstalacao() {
+  const nucleo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const harness = path.dirname(nucleo);
+  return path.basename(nucleo) === 'nucleo' && path.basename(harness) === '.harness' ? path.dirname(harness) : null;
+}
+
+// O projeto do evento: a pasta do evento, a do processo, CLAUDE_PROJECT_DIR e, por fim, a
+// instalação deste núcleo. Um `cd` do agente para fora do projeto não desliga as travas.
+function acharRaiz(cwdDoEvento, amb) {
+  const candidatos = [cwdDoEvento, amb.cwd, amb.env?.CLAUDE_PROJECT_DIR, raizDaInstalacao()];
+  for (const c of candidatos) {
+    const raiz = raizDoHarness(c);
+    if (raiz) return raiz;
+  }
+  return null;
+}
+
 function escreverSaida(amb, { saida, erro, codigo }) {
   const comFim = t => (t && !t.endsWith('\n') ? `${t}\n` : t);
   if (saida) amb.escrever(comFim(saida));
@@ -71,9 +90,9 @@ export async function executar(args, amb) {
     evento = adaptador.traduzirEntrada(json);
     if (!evento) throw new Error('a entrada do agente não é um objeto JSON');
 
-    // O evento pode vir de um worktree de frente; fora de projeto do harness, não é conosco.
+    // O evento pode vir de um worktree de frente; sem projeto do harness achado, não é conosco.
     ctx = { raiz: null, cwd: evento.cwd };
-    const raiz = raizDoHarness(evento.cwd) ?? raizDoHarness(amb.cwd);
+    const raiz = acharRaiz(evento.cwd, amb);
     if (!raiz) return 0;
     ctx = { raiz, cwd: evento.cwd };
     const config = carregarConfig(raiz);
@@ -88,7 +107,7 @@ export async function executar(args, amb) {
       if (ctx.raiz == null && provavel.acao) {
         // A tradução falhou antes de achar a raiz: as exceções precisam dela (caminho absoluto do ah, configuração).
         const cwd = typeof json?.cwd === 'string' && path.isAbsolute(json.cwd) ? json.cwd : null;
-        ctx = { raiz: raizDoHarness(cwd) ?? raizDoHarness(amb.cwd), cwd: cwd ?? amb.cwd };
+        ctx = { raiz: acharRaiz(cwd, amb), cwd: cwd ?? amb.cwd };
       }
       const resposta = respostaNaQuebra(provavel, e?.message ?? String(e), ctx);
       return escreverSaida(amb, leitor.traduzirSaida(provavel, resposta));

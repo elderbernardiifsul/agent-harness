@@ -8,7 +8,9 @@
 //
 // `acao` é {tipo: 'comando', comando} | {tipo: 'edicao', arquivo} | {tipo: 'outra'}.
 // `amb` é o do despacho (raiz, config, dirEstado, env), mais, opcionais, `topoDe`,
-// `ramoAtual`, `baseDoPr` (para as travas) e `pid`.
+// `ramoAtual`, `baseDoPr`, `tempoDoGhMs` (para as travas) e `pid`.
+// Um comando pode trazer `shell: 'posix'` quando o agente o roda num shell POSIX (Bash).
+import fs from 'node:fs';
 import path from 'node:path';
 import { avaliar } from '../lib/travas.mjs';
 import { textoDaRecusa } from '../lib/recusa.mjs';
@@ -22,15 +24,17 @@ import { gh } from '../lib/github.mjs';
 
 const LIMITE_COMANDO_NO_EVENTO = 500;
 const LIMITE_MOTIVO = 300;
+// O gancho do agente tem tempo-limite próprio; se o processo morresse antes, a ação passaria.
+const TEMPO_DO_GH_MS = 5000;
 
 const cortar = (texto, limite) => (texto.length > limite ? `${texto.slice(0, limite - 1)}…` : texto);
 
 // Ramo de destino de um PR pelo gh. Só é chamado quando o comando é um `gh pr merge`
-// (que já depende da rede); qualquer falha devolve null, e a trava recusa.
-function baseDoPrPeloGh(env) {
+// (que já depende da rede); qualquer falha ou demora devolve null, e a trava recusa.
+function baseDoPrPeloGh(env, timeoutMs) {
   return (numero, cwd) => {
     const args = ['pr', 'view', ...(numero == null ? [] : [String(numero)]), '--json', 'baseRefName', '--jq', '.baseRefName'];
-    const r = gh(args, { cwd: cwd ?? undefined, env });
+    const r = gh(args, { cwd: cwd ?? undefined, env, timeoutMs });
     const nome = r.codigo === 0 ? r.saida.trim() : '';
     return /^[^\s]+$/.test(nome) ? nome : null;
   };
@@ -42,7 +46,7 @@ function contextoDasTravas(amb) {
     raiz: amb.raiz,
     topoDe: amb.topoDe ?? (c => topoDe(c, amb.env)),
     ramoAtual: amb.ramoAtual ?? (c => ramoAtual(c, amb.env)),
-    baseDoPr: amb.baseDoPr ?? baseDoPrPeloGh(amb.env),
+    baseDoPr: amb.baseDoPr ?? baseDoPrPeloGh(amb.env, amb.tempoDoGhMs ?? TEMPO_DO_GH_MS),
   };
 }
 
@@ -100,19 +104,22 @@ export function tratar(evento, amb) {
 
 const NOMES_DO_AH = new Set(['tools/ah', './tools/ah', 'ah']);
 
-// O que passa mesmo com o harness quebrado: um comando que é uma única chamada ao `ah`
-// (para o doctor rodar) e a edição de `.harness/config.json` (para consertá-la).
+// O que passa mesmo com o harness quebrado: um comando de shell POSIX que é uma única
+// chamada ao `ah` (para o doctor rodar), sem variável antes nem redirecionamento, e a
+// edição de `.harness/config.json` (para consertá-la), desde que não seja um link.
 // `ctx` = {raiz, cwd}; raiz nula (não achei o projeto) não deixa passar edição nenhuma.
 export function passaNaQuebra(acao, { raiz, cwd }) {
   if (acao?.tipo === 'comando') {
-    if (typeof acao.comando !== 'string') return false;
+    if (acao.shell !== 'posix' || typeof acao.comando !== 'string') return false;
+    // O interpretador não mostra redirecionamentos: qualquer < ou > no texto basta para recusar.
+    if (/[<>]/.test(acao.comando)) return false;
     let comandos;
     try {
       comandos = comandosSimples(acao.comando, cwd ?? null);
     } catch {
       return false;
     }
-    if (comandos.length !== 1) return false;
+    if (comandos.length !== 1 || Object.keys(comandos[0].env ?? {}).length) return false;
     const [argv0] = comandos[0].argv;
     if (typeof argv0 !== 'string') return false;
     return NOMES_DO_AH.has(argv0) || (raiz != null && argv0 === path.join(raiz, 'tools', 'ah'));
@@ -120,7 +127,12 @@ export function passaNaQuebra(acao, { raiz, cwd }) {
   if (acao?.tipo === 'edicao') {
     if (raiz == null || typeof acao.arquivo !== 'string' || acao.arquivo === '') return false;
     const alvo = path.resolve(cwd ?? raiz, acao.arquivo);
-    return path.relative(raiz, alvo) === path.join('.harness', 'config.json');
+    if (path.relative(raiz, alvo) !== path.join('.harness', 'config.json')) return false;
+    try {
+      return !fs.lstatSync(alvo).isSymbolicLink();
+    } catch (e) {
+      return e.code === 'ENOENT';
+    }
   }
   return false;
 }

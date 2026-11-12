@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { criarProjeto, amb, dirDoTeste } from './apoio/repo.mjs';
 import { tratar, passaNaQuebra, respostaNaQuebra } from '../nucleo/adaptadores/contrato.mjs';
@@ -115,6 +117,22 @@ test('antes: outra ferramenta e edição permitem', () => {
   assert.deepEqual(tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'edicao', arquivo: path.join(p.raiz, 'README.md') } }, amb(p)), { decisao: 'permite' });
 });
 
+test('antes: gh que demora vira recusa do T5, não liberação', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ah-gh-lento-'));
+  try {
+    const lento = path.join(dir, 'gh-lento.mjs');
+    fs.writeFileSync(lento, 'setTimeout(() => process.stdout.write("dev\\n"), 5000);\n');
+    const inicio = Date.now();
+    const r = tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'comando', comando: 'gh pr merge 7' } },
+      { ...amb(p), env: { ...p.env, AH_GH: lento }, tempoDoGhMs: 300 });
+    assert.equal(r.decisao, 'recusa');
+    assert.match(r.mensagem, /^Recusado \(T5\): não consegui descobrir/);
+    assert.ok(Date.now() - inicio < 3000, String(Date.now() - inicio));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('antes: gh pr merge pergunta ao gh o ramo de destino do PR', () => {
   p.ghResponder([{ prefixo: ['pr', 'view', '7'], saida: 'dev\n' }, { prefixo: ['pr', 'view', '8'], saida: 'main\n' }, { prefixo: ['pr', 'view'], codigo: 1 }]);
   assert.deepEqual(antes('gh pr merge 7 --squash'), { decisao: 'permite' });
@@ -123,8 +141,12 @@ test('antes: gh pr merge pergunta ao gh o ramo de destino do PR', () => {
   assert.ok(p.ghChamadas().some(c => c.argv.join(' ') === 'pr view 7 --json baseRefName --jq .baseRefName'));
 });
 
-test('antes: o T2 olha o cwd do evento', () => {
-  assert.equal(antes('git add -A').decisao, 'recusa');
+test('antes: o T2 usa o cwd do evento, não o do processo', () => {
+  const wt = path.join(path.dirname(p.raiz), 'wt-contrato');
+  assert.equal(p.git(['worktree', 'add', wt, '-b', 'feat/contrato']).codigo, 0);
+  const evento = cwd => ({ tipo: 'antes', sessao: 's1', cwd, acao: { tipo: 'comando', comando: 'git add -A' } });
+  assert.equal(tratar(evento(wt), { ...amb(p), cwd: p.raiz }).decisao, 'permite');
+  assert.equal(tratar(evento(p.raiz), { ...amb(p), cwd: wt }).decisao, 'recusa');
 });
 
 test('sinal toca o sinal de vida e fim encerra a sessão', async () => {
@@ -150,12 +172,12 @@ test('tipo de evento desconhecido lança', () => {
 // ---- quando o gancho quebra
 
 const R = path.join(path.sep === '/' ? '/' : 'C:\\', 'proj');
-const cmd = comando => ({ tipo: 'comando', comando });
+const cmd = comando => ({ tipo: 'comando', comando, shell: 'posix' });
 const ed = arquivo => ({ tipo: 'edicao', arquivo });
 
-for (const c of ['tools/ah doctor', './tools/ah doctor', 'ah board', `${path.join(R, 'tools', 'ah')} doctor`, 'AH_SESSAO=x tools/ah whoami'])
+for (const c of ['tools/ah doctor', './tools/ah doctor', 'ah board', `${path.join(R, 'tools', 'ah')} doctor`])
   test(`na quebra passa: ${c}`, () => assert.ok(passaNaQuebra(cmd(c), { raiz: R, cwd: R })));
-for (const c of ['tools/ah doctor; git push origin main', 'tools/ah $(git push origin main)', 'ah x | sh', 'tools/ah doctor && rm -rf .', 'git status',
+for (const c of ['AH_SESSAO=x tools/ah whoami', 'tools/ah doctor > f', 'tools/ah doctor 2>&1', 'tools/ah board < x', 'tools/ah doctor; git push origin main', 'tools/ah $(git push origin main)', 'ah x | sh', 'tools/ah doctor && rm -rf .', 'git status',
   'cd tools && ./ah doctor', 'node tools/ah doctor', 'tools/ah "doctor', 'outro/tools/ah doctor', '`tools/ah`', 'tools/ahx', ''])
   test(`na quebra não passa: ${JSON.stringify(c)}`, () => assert.ok(!passaNaQuebra(cmd(c), { raiz: R, cwd: R })));
 
@@ -171,6 +193,11 @@ test('na quebra passa a edição de .harness/config.json pelo caminho resolvido'
   }
   assert.ok(!passaNaQuebra(ed(path.join(R, '.harness', 'config.json')), { raiz: null, cwd: R }));
   assert.ok(!passaNaQuebra({ tipo: 'outra' }, ctx));
+});
+
+test('na quebra a exceção do ah vale só para o shell do Bash', () => {
+  assert.ok(!passaNaQuebra({ tipo: 'comando', comando: 'tools/ah doctor' }, { raiz: R, cwd: R }));
+  assert.ok(!passaNaQuebra({ tipo: 'comando', comando: 'tools/ah doctor', shell: 'powershell' }, { raiz: R, cwd: R }));
 });
 
 test('resposta na quebra: recusa T0 no antes, aviso nos outros', () => {

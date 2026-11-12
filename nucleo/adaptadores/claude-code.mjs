@@ -1,6 +1,8 @@
 // Adaptador do Claude Code: traduz o JSON que o gancho recebe na entrada padrão para
 // o contrato neutro (contrato.mjs) e a resposta do contrato para saída, erro e código.
 // Formato conferido no ensaio de docs/referencia/capacidades-por-agente.md.
+import fs from 'node:fs';
+import path from 'node:path';
 import { validarNomeSeguro } from '../lib/estado.mjs';
 
 export const AGENTE = 'claude-code';
@@ -41,7 +43,7 @@ function acaoDe(json, tipo) {
   if (Object.hasOwn(COMANDOS, nome)) {
     const comando = json.tool_input[COMANDOS[nome]];
     if (typeof comando !== 'string') throw new ErroDeEntrada(`tool_input.command de ${nome} não é texto`, tipo);
-    return { tipo: 'comando', comando };
+    return nome === 'Bash' ? { tipo: 'comando', comando, shell: 'posix' } : { tipo: 'comando', comando };
   }
   if (Object.hasOwn(EDICOES, nome)) {
     const arquivo = json.tool_input[EDICOES[nome]];
@@ -61,6 +63,16 @@ export function acaoLeniente(json) {
   }
 }
 
+// O cwd tem de ser uma pasta absoluta que existe: relativo seria resolvido contra a pasta do processo.
+function pastaAbsoluta(cwd) {
+  if (typeof cwd !== 'string' || cwd === '' || !path.isAbsolute(cwd)) return false;
+  try {
+    return fs.statSync(cwd).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 export function traduzirEntrada(json) {
   if (!eObjeto(json)) return null;
   const tipo = tipoProvavel(json);
@@ -72,7 +84,7 @@ export function traduzirEntrada(json) {
   } catch {
     throw new ErroDeEntrada(`session_id inválido: ${descrever(sessao)}`, tipo);
   }
-  if (typeof json.cwd !== 'string' || json.cwd === '') throw new ErroDeEntrada(`cwd inválido: ${descrever(json.cwd)}`, tipo);
+  if (!pastaAbsoluta(json.cwd)) throw new ErroDeEntrada(`cwd inválido: ${descrever(json.cwd)}`, tipo);
   const base = { tipo, agente: AGENTE, sessao, cwd: json.cwd };
   if (tipo === 'inicio') {
     const origem = Object.hasOwn(ORIGENS, json.source) ? ORIGENS[json.source] : 'novo';

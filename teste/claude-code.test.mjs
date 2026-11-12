@@ -14,57 +14,65 @@ const DIR_GRAVADOS = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ev
 
 // ---- traduzirEntrada
 
+// Os eventos gravados têm cwd fictício; a tradução exige uma pasta que exista.
+const D = path.dirname(fileURLToPath(import.meta.url));
+const g = (nome, troca = {}) => gravado(nome, { cwd: D, ...troca });
+
 test('claude-code: PreToolUse de Bash vira acao de comando', () => {
-  const e = traduzirEntrada(gravado('pre-bash.json'));
-  assert.deepEqual(e, { tipo: 'antes', agente: 'claude-code', sessao: ID, cwd: '/tmp/loja', acao: { tipo: 'comando', comando: 'git push origin main' } });
+  const e = traduzirEntrada(g('pre-bash.json'));
+  assert.deepEqual(e, { tipo: 'antes', agente: 'claude-code', sessao: ID, cwd: D, acao: { tipo: 'comando', comando: 'git push origin main', shell: 'posix' } });
 });
 
 test('claude-code: Edit, Write e NotebookEdit viram edição com o arquivo', () => {
-  assert.deepEqual(traduzirEntrada(gravado('pre-edit.json')).acao, { tipo: 'edicao', arquivo: '/tmp/loja/nota.txt' });
-  assert.deepEqual(traduzirEntrada(gravado('pre-write.json')).acao, { tipo: 'edicao', arquivo: '/tmp/loja/nota.txt' });
-  assert.deepEqual(traduzirEntrada(gravado('pre-notebookedit.json')).acao, { tipo: 'edicao', arquivo: '/tmp/loja/nb.ipynb' });
+  assert.deepEqual(traduzirEntrada(g('pre-edit.json')).acao, { tipo: 'edicao', arquivo: '/tmp/loja/nota.txt' });
+  assert.deepEqual(traduzirEntrada(g('pre-write.json')).acao, { tipo: 'edicao', arquivo: '/tmp/loja/nota.txt' });
+  assert.deepEqual(traduzirEntrada(g('pre-notebookedit.json')).acao, { tipo: 'edicao', arquivo: '/tmp/loja/nb.ipynb' });
 });
 
 test('claude-code: PowerShell e Monitor são comandos', () => {
   for (const tool_name of ['PowerShell', 'Monitor']) {
-    const e = traduzirEntrada(gravado('pre-bash.json', { tool_name, tool_input: { command: 'git push origin main' } }));
+    const e = traduzirEntrada(g('pre-bash.json', { tool_name, tool_input: { command: 'git push origin main' } }));
     assert.deepEqual(e.acao, { tipo: 'comando', comando: 'git push origin main' }, tool_name);
+    assert.equal(e.acao.shell, undefined);
   }
 });
 
-test('claude-code: SessionStart com source compact é continuação', () => assert.equal(traduzirEntrada(gravado('inicio-compact.json')).origem, 'continuacao'));
+test('claude-code: SessionStart com source compact é continuação', () => assert.equal(traduzirEntrada(g('inicio-compact.json')).origem, 'continuacao'));
 
 test('claude-code: SessionStart traduz origem e modelo', () => {
-  const e = traduzirEntrada(gravado('inicio.json'));
-  assert.deepEqual(e, { tipo: 'inicio', agente: 'claude-code', sessao: ID, cwd: '/tmp/loja', origem: 'novo', modelo: null });
-  assert.equal(traduzirEntrada(gravado('inicio-compact.json')).modelo, 'claude-haiku-5-5');
-  assert.equal(traduzirEntrada(gravado('inicio-resume.json')).origem, 'continuacao');
+  const e = traduzirEntrada(g('inicio.json'));
+  assert.deepEqual(e, { tipo: 'inicio', agente: 'claude-code', sessao: ID, cwd: D, origem: 'novo', modelo: null });
+  assert.equal(traduzirEntrada(g('inicio-compact.json')).modelo, 'claude-haiku-5-5');
+  assert.equal(traduzirEntrada(g('inicio-resume.json')).origem, 'continuacao');
   const origens = { startup: 'novo', clear: 'novo', resume: 'continuacao', compact: 'continuacao', fork: 'continuacao', outra: 'novo' };
-  for (const [source, origem] of Object.entries(origens)) assert.equal(traduzirEntrada(gravado('inicio.json', { source })).origem, origem, source);
-  assert.equal(traduzirEntrada(gravado('inicio.json', { source: undefined })).origem, 'novo');
-  assert.equal(traduzirEntrada(gravado('inicio.json', { model: 7 })).modelo, null);
+  for (const [source, origem] of Object.entries(origens)) assert.equal(traduzirEntrada(g('inicio.json', { source })).origem, origem, source);
+  assert.equal(traduzirEntrada(g('inicio.json', { source: undefined })).origem, 'novo');
+  assert.equal(traduzirEntrada(g('inicio.json', { model: 7 })).modelo, null);
 });
 
 test('claude-code: UserPromptSubmit e Stop são sinal; SessionEnd é fim', () => {
-  assert.deepEqual(traduzirEntrada(gravado('prompt.json')), { tipo: 'sinal', agente: 'claude-code', sessao: ID, cwd: '/tmp/loja' });
-  assert.equal(traduzirEntrada(gravado('stop.json')).tipo, 'sinal');
-  assert.equal(traduzirEntrada(gravado('fim.json')).tipo, 'fim');
+  assert.deepEqual(traduzirEntrada(g('prompt.json')), { tipo: 'sinal', agente: 'claude-code', sessao: ID, cwd: D });
+  assert.equal(traduzirEntrada(g('stop.json')).tipo, 'sinal');
+  assert.equal(traduzirEntrada(g('fim.json')).tipo, 'fim');
 });
 
 test('claude-code: entrada inválida lança dizendo o tipo provável do evento', () => {
   const casos = [
-    [gravado('pre-bash.json', { session_id: '../x' }), 'antes'],
-    [gravado('pre-bash.json', { session_id: 'a/b' }), 'antes'],
-    [gravado('pre-bash.json', { session_id: 'x'.repeat(300) }), 'antes'],
-    [gravado('pre-bash.json', { session_id: 7 }), 'antes'],
-    [gravado('pre-bash.json', { cwd: 3 }), 'antes'],
-    [gravado('pre-bash.json', { tool_input: { command: 1 } }), 'antes'],
-    [gravado('pre-bash.json', { tool_input: 'git push' }), 'antes'],
-    [gravado('pre-bash.json', { tool_name: 'WebFetch' }), 'antes'],
-    [gravado('pre-edit.json', { tool_input: { file_path: null } }), 'antes'],
-    [gravado('stop.json', { session_id: '..' }), 'sinal'],
-    [gravado('inicio.json', { session_id: '' }), 'inicio'],
-    [gravado('fim.json', { hook_event_name: 'Notification' }), 'desconhecido'],
+    [g('pre-bash.json', { session_id: '../x' }), 'antes'],
+    [g('pre-bash.json', { session_id: 'a/b' }), 'antes'],
+    [g('pre-bash.json', { session_id: 'x'.repeat(300) }), 'antes'],
+    [g('pre-bash.json', { session_id: 7 }), 'antes'],
+    [g('pre-bash.json', { cwd: 3 }), 'antes'],
+    [g('pre-bash.json', { cwd: 'relativo/pasta' }), 'antes'],
+    [g('pre-bash.json', { cwd: path.join(D, 'nao-existe') }), 'antes'],
+    [g('pre-bash.json', { cwd: path.join(D, 'claude-code.test.mjs') }), 'antes'],
+    [g('pre-bash.json', { tool_input: { command: 1 } }), 'antes'],
+    [g('pre-bash.json', { tool_input: 'git push' }), 'antes'],
+    [g('pre-bash.json', { tool_name: 'WebFetch' }), 'antes'],
+    [g('pre-edit.json', { tool_input: { file_path: null } }), 'antes'],
+    [g('stop.json', { session_id: '..' }), 'sinal'],
+    [g('inicio.json', { session_id: '' }), 'inicio'],
+    [g('fim.json', { hook_event_name: 'Notification' }), 'desconhecido'],
     [{ session_id: ID }, 'desconhecido'],
   ];
   for (const [json, tipo] of casos) {
@@ -214,15 +222,59 @@ test('fora de repositório do harness o gancho permite e sai com 0', () => {
   const fora = fs.mkdtempSync(path.join(os.tmpdir(), 'ah-fora-'));
   const semHarness = criarRepo();
   try {
-    const r = p.ah(['gancho', 'claude-code'], { cwd: fora, entrada: JSON.stringify(gravado('pre-bash.json', { cwd: fora })) });
+    const r = p.ah(['gancho', 'claude-code'], { cwd: fora, entrada: JSON.stringify(gravado('pre-bash.json', { cwd: fora })), env: { CLAUDE_PROJECT_DIR: '' } });
     assert.deepEqual([r.codigo, r.erro], [0, '']);
     const r2 = semHarness.ah(['gancho', 'claude-code'], { entrada: JSON.stringify(gravado('pre-bash.json', { cwd: semHarness.raiz })) });
     assert.deepEqual([r2.codigo, r2.erro], [0, '']);
-    const r3 = p.ah(['gancho', 'claude-code'], { cwd: fora, entrada: JSON.stringify(gravado('inicio.json', { cwd: fora })) });
+    const r3 = p.ah(['gancho', 'claude-code'], { cwd: fora, entrada: JSON.stringify(gravado('inicio.json', { cwd: fora })), env: { CLAUDE_PROJECT_DIR: '' } });
     assert.deepEqual([r3.codigo, r3.saida], [0, '']);
   } finally {
     fs.rmSync(fora, { recursive: true, force: true });
     semHarness.limpar();
+  }
+});
+
+test('cwd relativo ou inexistente no antes recusa com T0', () => {
+  for (const cwd of ['relativo', path.join(p.raiz, 'nao-existe')]) {
+    const r = gancho(gravado('pre-bash.json', { cwd, tool_input: { command: 'git status' } }));
+    assert.equal(r.codigo, 2, cwd);
+    assert.match(r.erro, /Recusado \(T0\)/);
+  }
+});
+
+test('evento de fora do projeto ainda acha o projeto por CLAUDE_PROJECT_DIR e pela instalação', () => {
+  const fora = fs.mkdtempSync(path.join(os.tmpdir(), 'ah-fora-'));
+  const entrada = JSON.stringify(gravado('pre-bash.json', { cwd: fora, tool_input: { command: `git -C ${p.raiz} push origin main` } }));
+  try {
+    const r = p.ah(['gancho', 'claude-code'], { cwd: fora, entrada, env: { CLAUDE_PROJECT_DIR: p.raiz } });
+    assert.equal(r.codigo, 2, r.erro);
+    assert.match(r.erro, /Recusado \(T5\)/);
+    const semNada = p.ah(['gancho', 'claude-code'], { cwd: fora, entrada, env: { CLAUDE_PROJECT_DIR: '' } });
+    assert.equal(semNada.codigo, 0, 'o clone não é instalação de projeto nenhum');
+    if (process.platform !== 'win32') {
+      const i = spawnSync(path.join(p.raiz, 'tools/ah'), ['gancho', 'claude-code'], { cwd: fora, env: { ...p.env, CLAUDE_PROJECT_DIR: '' }, encoding: 'utf8', input: entrada });
+      assert.equal(i.status, 2, i.stderr);
+      assert.match(i.stderr, /Recusado \(T5\)/);
+    }
+  } finally {
+    fs.rmSync(fora, { recursive: true, force: true });
+  }
+});
+
+test('com a configuração quebrada, a exceção do ah é estreita e o link para a configuração não passa', () => {
+  const q = criarProjeto();
+  gravar(q, '.harness/config.json', '{ quebrado');
+  for (const c of ['AH_GUARD=off tools/ah doctor', 'tools/ah doctor > .harness/config.json', 'tools/ah board < /dev/null']) {
+    assert.equal(ganchoPre(q, { command: c }).codigo, 2, c);
+  }
+  assert.equal(ganchoPre(q, { command: 'tools/ah doctor' }, 'PowerShell').codigo, 2);
+  assert.equal(ganchoPre(q, { command: 'tools/ah doctor' }).codigo, 0);
+  if (process.platform !== 'win32') {
+    const alvo = path.join(q.raiz, 'alvo.txt');
+    fs.writeFileSync(alvo, 'x');
+    fs.rmSync(path.join(q.raiz, '.harness/config.json'));
+    fs.symlinkSync(alvo, path.join(q.raiz, '.harness/config.json'));
+    assert.equal(ganchoPre(q, { file_path: path.join(q.raiz, '.harness/config.json'), content: '{}' }, 'Write').codigo, 2);
   }
 });
 
