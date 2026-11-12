@@ -342,7 +342,7 @@ Os comandos que ficaram para fatias mais tardias (`papel`, `deps`, `atualizar`) 
 
 As travas locais leem o texto do comando: são aviso cedo, não barreira. Por isso o `init` também prepara, pelo `gh`:
 
-- **Proteção de ramo** no GitHub para os ramos protegidos da configuração (sem push direto; entrada por PR).
+- **Proteção de ramo** no GitHub para os ramos protegidos da configuração (sem push direto, inclusive para quem administra; entrada por PR). Com isso, publicar deixa de ser um push: levar `dev` para `stage` e `stage` para `main` é abrir um PR e mesclá-lo com `AH_GUARD=off gh pr merge`, por ordem do executivo. Isto substitui o push com `AH_GUARD=off` descrito na seção 11.
 - **Um fluxo de CI** modelo, que roda os testes do projeto em PR e em push na base. O comando de teste vem da configuração; sem comando definido, o fluxo é criado desligado e o `doctor` avisa.
 
 Se a conta ou o plano não permitir proteção de ramo, o `init` segue, e o `doctor` mostra o item como "sem proteção no servidor: só a trava local protege". Quem constrói confirma na documentação oficial o que cada tipo de conta permite.
