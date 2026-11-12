@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ErroDeUso, raizPrincipal, dirEstado as caminhoDoEstado } from '../lib/caminhos.mjs';
-import { ErroDeConfig, carregarConfig } from '../lib/config.mjs';
+import { ErroDeConfig, carregarConfig, configAusente } from '../lib/config.mjs';
 import { ErroDeEstado } from '../lib/estado.mjs';
 import { idDaSessao } from '../lib/sessao.mjs';
 
@@ -27,8 +27,15 @@ async function ajuda(dir, escrever) {
     const m = await import(pathToFileURL(path.join(dir, `${n}.mjs`)).href);
     escrever(`  ${n.padEnd(largura)}  ${m.descricao ?? ''}\n`);
   }
+  escrever('\nPara o uso de um comando: ah <comando> --help\n');
   return 0;
 }
+
+// `--help` ou `-h` antes de um `--` pede a ajuda do comando.
+const pedeAjuda = args => {
+  const fim = args.indexOf('--');
+  return (fim < 0 ? args : args.slice(0, fim)).some(a => a === '--help' || a === '-h');
+};
 
 export async function despachar(argv, {
   cwd = process.cwd(), env = process.env, dirComandos = DIR_COMANDOS,
@@ -42,6 +49,10 @@ export async function despachar(argv, {
   }
   try {
     const modulo = await import(pathToFileURL(path.join(dirComandos, `${nome}.mjs`)).href);
+    if (pedeAjuda(args)) {
+      escrever(`ah ${nome}: ${modulo.descricao ?? ''}\nUso: ${modulo.uso ?? `ah ${nome}`}\n`);
+      return 0;
+    }
     const req = { ...REQUISITOS_PADRAO, ...(modulo.requisitos ?? {}) };
 
     let raiz = null;
@@ -59,7 +70,7 @@ export async function despachar(argv, {
         if (!(e instanceof ErroDeConfig)) throw e;
         if (req.config) {
           // Arquivo ausente: ainda não há projeto; arquivo existente mas inválido: mostra o erro.
-          if (e.erros.every(x => x.motivo.includes('ENOENT'))) {
+          if (configAusente(e)) {
             return recusar(avisar, 'este projeto ainda não tem .harness/config.json', 'peça ao agente: prepare meu projeto (`ah init`)');
           }
           return recusar(avisar, e.message, 'corrija .harness/config.json (ou rode `ah doctor`)');

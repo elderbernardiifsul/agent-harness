@@ -4,10 +4,12 @@ import { gravarFrente, lerFrente } from '../lib/frente.mjs';
 import { lerSessao } from '../lib/sessao.mjs';
 
 export const descricao = 'acrescenta uma nota à frente da sessão';
+export const uso = 'ah nota <texto>';
 export const requisitos = { config: true, sessao: true };
 
 export async function executar(args, amb) {
-  const texto = args.join(' ').trim();
+  // `--` antes do texto separa: `ah nota -- --help` grava "--help".
+  const texto = (args[0] === '--' ? args.slice(1) : args).join(' ').trim();
   if (!texto) throw new ErroDeUso('A nota está vazia.\nPróximo passo: escreva o texto, como ah nota "mexendo no total"');
   const sessao = lerSessao(amb.dirEstado, amb.sessaoId);
   const nome = sessao?.frente ? (sessao.frente.nome ?? sessao.frente) : null;

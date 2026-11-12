@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { arquivoDaMaquina, dirEstado as caminhoDoEstado } from '../lib/caminhos.mjs';
-import { ErroDeConfig, carregarConfig } from '../lib/config.mjs';
+import { ErroDeConfig, carregarConfig, configAusente } from '../lib/config.mjs';
 import { ErroDeEstado, lerJson } from '../lib/estado.mjs';
 import { idsNoHistorico, listarFrentes, siglaValida } from '../lib/frente.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
@@ -14,6 +14,7 @@ import { gh, protecaoDoRamo, repoAtual } from '../lib/github.mjs';
 import { mesclarGanchos } from './init.mjs';
 
 export const descricao = 'confere se o projeto está bem preparado';
+export const uso = 'ah doctor [--json]';
 export const requisitos = { config: false, sessao: false, repositorio: false };
 
 const NUCLEO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -98,7 +99,7 @@ export const VERIFICACOES = [
       return ok(nome);
     } catch (e) {
       if (!(e instanceof ErroDeConfig)) throw e;
-      if (e.erros.every(x => x.motivo.includes('ENOENT'))) return falha(nome, 'não há .harness/config.json; rode ah init');
+      if (configAusente(e)) return falha(nome, 'não há .harness/config.json; rode ah init');
       return falha(nome, `${e.erros.map(x => `${x.campo} (${x.motivo})`).join('; ')}; corrija .harness/config.json`);
     }
   }),

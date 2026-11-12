@@ -11,6 +11,7 @@ import { consultarProtecao, loginAtual, protegerRamo, repoAtual } from '../lib/g
 import { VERSAO } from '../versao.mjs';
 
 export const descricao = 'instala o harness neste projeto, a partir do clone do agent-harness';
+export const uso = 'ah init [--projeto <nome>] [--sigla <sigla>] [--agentes claude-code] [--teste "<comando>"] [--sem-protecao] [--sobrescrever]';
 export const requisitos = { config: false, sessao: false };
 
 const RAIZ_DO_HARNESS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -53,7 +54,7 @@ function lerOpcoes(args) {
     if (nome === '--sobrescrever' && valor === undefined) { o.sobrescrever = true; continue; }
     if (nome === '--sem-protecao' && valor === undefined) { o['sem-protecao'] = true; continue; }
     if (!COM_VALOR.has(nome)) {
-      throw new ErroDeUso(`Opção desconhecida: ${args[i].slice(0, 40)}\nPróximo passo: use ah init [--projeto <nome>] [--sigla <sigla>] [--agentes claude-code] [--teste "<comando>"] [--sem-protecao] [--sobrescrever]`);
+      throw new ErroDeUso(`Opção desconhecida: ${args[i].slice(0, 40)}\nPróximo passo: use ${uso}`);
     }
     if (valor === undefined) {
       valor = args[++i];

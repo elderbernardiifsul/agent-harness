@@ -29,3 +29,23 @@ test('carregarConfig lê o arquivo, aplica padrões e recusa o inválido', () =>
   assert.throws(() => carregarConfig(d), e => e.name === 'ErroDeConfig' && e.erros.length === 1);
   fs.rmSync(d, { recursive: true, force: true });
 });
+
+test('M4: config ausente pelo código ENOENT, não pelo texto', async () => {
+  const { criarRepo, gravar } = await import('./apoio/repo.mjs');
+  const p = criarRepo();
+  try {
+    gravar(p, '.harness/config.json', 'ENOENT');
+    const r = p.ah(['board']);
+    assert.equal(r.codigo, 1);
+    assert.doesNotMatch(r.erro, /ainda não tem/);
+    assert.match(r.erro, /Configuração inválida/);
+    const d = p.ah(['doctor']);
+    assert.match(d.saida, /^FALHOU\s+\.harness\/config\.json válido: .*não consegui ler/m);
+    assert.doesNotMatch(d.saida, /não há \.harness\/config\.json/);
+    fs.rmSync(path.join(p.raiz, '.harness', 'config.json'));
+    assert.match(p.ah(['board']).erro, /ainda não tem \.harness\/config\.json/);
+    assert.match(p.ah(['doctor']).saida, /não há \.harness\/config\.json; rode ah init/);
+  } finally {
+    p.limpar();
+  }
+});

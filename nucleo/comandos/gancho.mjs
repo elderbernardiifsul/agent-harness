@@ -12,6 +12,7 @@ import { tratar, respostaNaQuebra } from '../adaptadores/contrato.mjs';
 import * as claudeCode from '../adaptadores/claude-code.mjs';
 
 export const descricao = 'recebe um evento do agente (uso dos ganchos instalados pelo init)';
+export const uso = 'ah gancho claude-code  (o agente chama; o evento chega em JSON pela entrada padrão)';
 // Roda sem configuração válida e sem sessão no ambiente: a sessão vem do JSON, e a
 // regra de quebra precisa valer justamente quando a configuração está ruim.
 export const requisitos = { config: false, sessao: false, repositorio: false };

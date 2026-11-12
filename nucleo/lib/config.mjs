@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 export class ErroDeConfig extends Error {
+  // `erros`: [{campo, motivo, codigo?}]; `codigo` é o do sistema (ENOENT…) quando o arquivo não foi lido.
   constructor(erros) {
     super(`Configuração inválida: ${erros.map(e => `${e.campo} (${e.motivo})`).join('; ')}`);
     this.name = 'ErroDeConfig';
@@ -92,9 +93,12 @@ export function carregarConfig(raiz) {
   try {
     obj = JSON.parse(readFileSync(arquivo, 'utf8'));
   } catch (e) {
-    throw new ErroDeConfig([{ campo: arquivo, motivo: `não consegui ler (${e.code ?? e.message})` }]);
+    throw new ErroDeConfig([{ campo: arquivo, motivo: `não consegui ler (${e.code ?? e.message})`, codigo: e.code ?? null }]);
   }
   const v = validarConfig(obj);
   if (!v.ok) throw new ErroDeConfig(v.erros);
   return aplicarPadroes(obj);
 }
+
+// O erro diz só que o arquivo de configuração não existe.
+export const configAusente = e => e instanceof ErroDeConfig && e.erros.length > 0 && e.erros.every(x => x.codigo === 'ENOENT');

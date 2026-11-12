@@ -8,9 +8,9 @@ import { comentar } from '../lib/github.mjs';
 import { gravarSessao, idCurto, lerSessao } from '../lib/sessao.mjs';
 
 export const descricao = 'fecha a frente da sessão sem perder trabalho';
+export const uso = 'ah close [<nome>] [--resumo "<texto>"] [--descartar-ignorados]';
 export const requisitos = { config: true, sessao: true, repositorio: true };
 
-const USO = 'use ah close [<nome>] [--resumo "<texto>"] [--descartar-ignorados]';
 const ARQUIVO_DO_HISTORICO = 'docs/agents/historico-das-frentes.md';
 const MAX_LISTA = 20;
 
@@ -19,14 +19,14 @@ function lerOpcoes(args) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (!arg.startsWith('--')) {
-      if (o.nome !== null) throw new ErroDeUso(`Argumento a mais: ${arg.slice(0, 40)}\nPróximo passo: ${USO}`);
+      if (o.nome !== null) throw new ErroDeUso(`Argumento a mais: ${arg.slice(0, 40)}\nPróximo passo: use ${uso}`);
       o.nome = arg;
       continue;
     }
     const igual = arg.indexOf('=');
     const nome = igual >= 0 ? arg.slice(0, igual) : arg;
     if (nome === '--descartar-ignorados' && igual < 0) { o.descartarIgnorados = true; continue; }
-    if (nome !== '--resumo') throw new ErroDeUso(`Opção desconhecida: ${arg.slice(0, 40)}\nPróximo passo: ${USO}`);
+    if (nome !== '--resumo') throw new ErroDeUso(`Opção desconhecida: ${arg.slice(0, 40)}\nPróximo passo: use ${uso}`);
     let valor = igual >= 0 ? arg.slice(igual + 1) : args[++i];
     // Sem "=", um valor que começa por "--" seria outra opção: não o engolimos.
     if (valor === undefined || (igual < 0 && valor.startsWith('--'))) {

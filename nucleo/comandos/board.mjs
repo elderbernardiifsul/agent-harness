@@ -3,9 +3,9 @@ import { listarFrentes } from '../lib/frente.mjs';
 import { idCurto } from '../lib/sessao.mjs';
 
 export const descricao = 'mostra as frentes abertas';
+export const uso = 'ah board [--json]';
 export const requisitos = { config: true, sessao: false };
 
-const USO = 'use ah board [--json]';
 const LIMITE_PLANO = 30;
 const LIMITE_NOTA = 40;
 
@@ -19,8 +19,8 @@ export async function executar(args, amb) {
   let json = false;
   for (const arg of args) {
     if (arg === '--json') json = true;
-    else if (arg.startsWith('--')) throw new ErroDeUso(`Opção desconhecida: ${arg.slice(0, 40)}\nPróximo passo: ${USO}`);
-    else throw new ErroDeUso(`Argumento a mais: ${arg.slice(0, 40)}\nPróximo passo: ${USO}`);
+    else if (arg.startsWith('--')) throw new ErroDeUso(`Opção desconhecida: ${arg.slice(0, 40)}\nPróximo passo: use ${uso}`);
+    else throw new ErroDeUso(`Argumento a mais: ${arg.slice(0, 40)}\nPróximo passo: use ${uso}`);
   }
   const frentes = listarFrentes(amb.dirEstado);
   if (json) {

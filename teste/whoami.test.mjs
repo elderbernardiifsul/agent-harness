@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { criarRepo, escreverConfig } from './apoio/repo.mjs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { criarRepo, criarProjeto, escreverConfig } from './apoio/repo.mjs';
 import { despachar } from '../nucleo/bin/ah.mjs';
 
 const p = criarRepo();
@@ -95,4 +95,39 @@ test('R3: o despacho obedece ao requisitos que o comando declara', async () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ---- onda final: I3 (--help por comando)
+test('I3: ah <comando> --help e -h mostram descrição e uso, saem 0 e não executam', async () => {
+  const fora = mkdtempSync(path.join(os.tmpdir(), 'ah-ajuda-'));
+  try {
+    for (const nome of ['board', 'close', 'doctor', 'gancho', 'init', 'nota', 'open', 'whoami']) {
+      const m = await import(`../nucleo/comandos/${nome}.mjs`);
+      assert.equal(typeof m.uso, 'string', nome);
+      assert.match(m.uso, new RegExp(`^ah ${nome}`), nome);
+      for (const opcao of ['--help', '-h']) {
+        // sem configuração, sem sessão e até fora de repositório
+        for (const [r, onde] of [[semConfig.ah([nome, opcao], { env: { AH_SESSAO: '' } }), 'sem config'], [semConfig.ah([nome, 'x', opcao], { cwd: fora, env: { AH_SESSAO: '' } }), 'fora']]) {
+          assert.equal(r.codigo, 0, `${nome} ${opcao} ${onde}: ${r.erro}`);
+          assert.equal(r.saida, `ah ${nome}: ${m.descricao}\nUso: ${m.uso}\n`, `${nome} ${opcao} ${onde}`);
+        }
+      }
+    }
+  } finally {
+    rmSync(fora, { recursive: true, force: true });
+  }
+  assert.match(p.ah(['--help']).saida, /ah <comando> --help/);
+});
+
+test('I3: nota --help não grava nota; depois de -- o --help é texto', () => {
+  const q = criarProjeto();
+  assert.equal(q.ah(['open', 'carrinho']).codigo, 0);
+  const frente = () => JSON.parse(readFileSync(path.join(q.estado, 'loja', 'frentes', 'carrinho.json'), 'utf8'));
+  const r = q.ah(['nota', '--help']);
+  assert.equal(r.codigo, 0);
+  assert.match(r.saida, /^ah nota: /);
+  assert.deepEqual(frente().notas ?? [], []);
+  assert.equal(q.ah(['nota', '--', '--help']).codigo, 0);
+  assert.deepEqual(frente().notas.map(n => n.texto), ['--help']);
+  q.limpar();
 });

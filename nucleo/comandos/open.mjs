@@ -9,9 +9,9 @@ import { comentar, loginAtual } from '../lib/github.mjs';
 import { gravarSessao, lerSessao, registrarSessao, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
 
 export const descricao = 'abre uma frente de trabalho: ramo, worktree, registro e comentário nos tickets';
+export const uso = 'ah open <nome> [--tickets 1,2] [--plano <arquivo>] [--caminhos <globs>]';
 export const requisitos = { config: true, sessao: true };
 
-const USO = 'use ah open <nome> [--tickets 1,2] [--plano <arquivo>] [--caminhos <globs>]';
 const COM_VALOR = new Set(['--tickets', '--plano', '--caminhos']);
 const ARQUIVO_DO_HISTORICO = 'docs/agents/historico-das-frentes.md';
 
@@ -20,14 +20,14 @@ function lerOpcoes(args) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (!arg.startsWith('--')) {
-      if (o.nome !== null) throw new ErroDeUso(`Argumento a mais: ${arg.slice(0, 40)}\nPróximo passo: ${USO}`);
+      if (o.nome !== null) throw new ErroDeUso(`Argumento a mais: ${arg.slice(0, 40)}\nPróximo passo: use ${uso}`);
       o.nome = arg;
       continue;
     }
     const igual = arg.indexOf('=');
     const nome = igual >= 0 ? arg.slice(0, igual) : arg;
     let valor = igual >= 0 ? arg.slice(igual + 1) : undefined;
-    if (!COM_VALOR.has(nome)) throw new ErroDeUso(`Opção desconhecida: ${arg.slice(0, 40)}\nPróximo passo: ${USO}`);
+    if (!COM_VALOR.has(nome)) throw new ErroDeUso(`Opção desconhecida: ${arg.slice(0, 40)}\nPróximo passo: use ${uso}`);
     if (valor === undefined) {
       valor = args[++i];
       if (valor === undefined || valor.startsWith('--')) throw new ErroDeUso(`A opção ${nome} precisa de um valor.\nPróximo passo: escreva ${nome} <valor>`);

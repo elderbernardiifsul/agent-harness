@@ -2,6 +2,7 @@ import { lerFrente } from '../lib/frente.mjs';
 import { registrarSessao, lerSessao, idCurto, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
 
 export const descricao = 'mostra quem sou eu: a sessão, o papel e a frente';
+export const uso = 'ah whoami [--json]';
 export const requisitos = { config: true, sessao: true };
 
 export async function executar(args, amb) {
