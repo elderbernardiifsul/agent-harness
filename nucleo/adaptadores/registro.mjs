@@ -9,9 +9,9 @@ export const EVENTOS_DO_CONTRATO = ['inicio', 'sinal', 'antes', 'fim'];
 
 // O que deixa de valer quando o agente não entrega um dos eventos (degradação declarada).
 export const O_QUE_SE_PERDE = {
-  inicio: 'sem resumo no começo nem herança da frente na continuação; a sessão só é registrada pelo ah open (rode tools/ah whoami no começo)',
+  inicio: 'sem resumo no começo nem herança da frente na continuação; a sessão só se registra no primeiro sinal de vida ou no ah open (mande o agente rodar tools/ah whoami no começo)',
   sinal: 'o sinal de vida só se renova a cada ferramenta (antes); sessão parada mais que o prazo do sinal parece morta',
-  antes: 'sem travas automáticas (T0 a T6): nada é recusado antes de rodar',
+  antes: 'sem travas automáticas (T0 a T5): nada é recusado antes de rodar',
   fim: 'a sessão não se encerra pelo agente; vale a vida do processo e do sinal',
 };
 

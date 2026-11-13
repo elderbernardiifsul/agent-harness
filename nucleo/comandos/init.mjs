@@ -26,6 +26,10 @@ const FIM_DO_COMANDO_DO_HARNESS = 'tools/ah gancho claude-code';
 const ARQUIVO_CI = '.github/workflows/ah-ci.yml';
 const MARCA_DA_CI = '# Gerado pelo agent-harness (ah init)';
 const COMANDO_DA_CI_DESLIGADA = 'echo "defina ci.comandoDeTeste em .harness/config.json"';
+const ARQUIVO_AGENTS = 'AGENTS.md';
+const TRECHO_DO_AGENTS = /<!-- agent-harness: início[^\n]*\n[\s\S]*?<!-- agent-harness: fim -->\n?/;
+// Documentos do clone copiados para .harness/nucleo/docs/: o roteiro de adaptação e a referência que ele cita.
+const DOCS_COPIADOS = ['agentes', 'referencia'];
 const semPonto = t => String(t).replace(/[.\s]+$/, '');
 const eObjeto = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -180,6 +184,14 @@ function settingsDoClaude(raiz, dirModelos) {
   return final === texto ? null : final;
 }
 
+// AGENTS.md com o trecho do harness: o arquivo atual com o trecho trocado (entre as marcas) ou
+// acrescentado no fim; sem arquivo, só o trecho.
+export function agentsComTrecho(atual, trecho) {
+  if (atual === null) return trecho;
+  if (TRECHO_DO_AGENTS.test(atual)) return atual.replace(TRECHO_DO_AGENTS, () => trecho);
+  return `${atual}${atual.endsWith('\n') ? '' : '\n'}\n${trecho}`;
+}
+
 function raizReal(p) {
   let atual = path.resolve(p);
   for (;;) {
@@ -273,6 +285,15 @@ export async function executar(args, amb) {
     colocar(arquivoManifesto, Buffer.from(`${JSON.stringify({ versao: VERSAO, commit, copiadoEm: new Date().toISOString() }, null, 2)}\n`));
   }
 
+  // Roteiro de adaptação para outros agentes (o AGENTS.md aponta para ele) e a referência que ele cita.
+  for (const pasta of DOCS_COPIADOS) {
+    const dir = path.join(RAIZ_DO_HARNESS, 'docs', pasta);
+    if (!fs.existsSync(dir)) continue;
+    for (const rel of listarArquivosDoNucleo(dir).arquivos) {
+      colocar(`${PREFIXO_NUCLEO}docs/${pasta}/${rel}`, fs.readFileSync(path.join(dir, ...rel.split('/'))), { atualizaSe: () => true });
+    }
+  }
+
   // Modelo dos ganchos: o doctor da cópia instalada confere o settings.json contra ele.
   colocar(PREFIXO_NUCLEO + 'modelos/claude-code/ganchos.json', fs.readFileSync(path.join(dirModelos, 'claude-code', 'ganchos.json')), { atualizaSe: () => true });
 
@@ -286,6 +307,14 @@ export async function executar(args, amb) {
   for (const doc of ['sessoes-paralelas.md', 'historico-das-frentes.md']) {
     colocar(`docs/agents/${doc}`, fs.readFileSync(path.join(dirModelos, doc)));
   }
+
+  // AGENTS.md: o trecho do harness entre marcas; o resto do arquivo fica.
+  let agentsAtual = null;
+  try {
+    const alvo = path.join(raiz, ARQUIVO_AGENTS);
+    if (fs.lstatSync(alvo).isFile()) agentsAtual = fs.readFileSync(alvo, 'utf8');
+  } catch { /* não existe; link ou pasta, o colocar acusa */ }
+  colocar(ARQUIVO_AGENTS, Buffer.from(agentsComTrecho(agentsAtual, fs.readFileSync(path.join(dirModelos, 'agents-trecho.md'), 'utf8'))), { mescla: true });
 
   // Ganchos do Claude Code: o conteúdo já é a mescla do arquivo atual, então pode trocá-lo.
   if (settingsClaude !== null) colocar(ARQUIVO_CLAUDE, Buffer.from(settingsClaude), { mescla: true });
@@ -363,7 +392,7 @@ export async function executar(args, amb) {
 }
 
 // Caminhos que o init grava e que entram no commit do harness.
-const CAMINHOS_DO_COMMIT = ['.harness', 'tools/ah', 'tools/ah.cmd', 'docs/agents/sessoes-paralelas.md', 'docs/agents/historico-das-frentes.md', ARQUIVO_CLAUDE, ARQUIVO_CI];
+const CAMINHOS_DO_COMMIT = ['.harness', 'tools/ah', 'tools/ah.cmd', ARQUIVO_AGENTS, 'docs/agents/sessoes-paralelas.md', 'docs/agents/historico-das-frentes.md', ARQUIVO_CLAUDE, ARQUIVO_CI];
 const MENSAGEM_DO_COMMIT = 'chore: instala o agent-harness';
 
 // As frentes partem do ramo base: o commit do harness tem de ir para lá, senão o worktree

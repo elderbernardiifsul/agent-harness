@@ -274,7 +274,7 @@ test('C1: já no ramo base o init não manda trocar; commit na main é acusado p
 
   const p = criarRepo({ ramos: ['main'] });
   assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']).codigo, 0);
-  assert.equal(p.git(['add', '--', '.harness', 'tools', 'docs/agents', '.claude', '.github']).codigo, 0);
+  assert.equal(p.git(['add', '--', '.harness', 'tools', 'docs/agents', '.claude', '.github', 'AGENTS.md']).codigo, 0);
   assert.equal(p.git(['commit', '-m', 'chore: instala o harness']).codigo, 0);
   const d = p.ah(['doctor']);
   assert.equal(d.codigo, 1);
@@ -343,4 +343,38 @@ test('init em repositório só com a master cria dev, stage e main a partir dela
   assert.deepEqual(p.git(['branch', '--format=%(refname:short)']).saida.trim().split('\n').sort(), ['dev', 'main', 'master', 'stage']);
   assert.equal(p.git(['branch', '--show-current']).saida.trim(), 'master');
   assert.match(r.saida, /git switch dev/);
+});
+
+// ---- ponteiro para o roteiro de adaptação (fatia 4)
+
+test('init instala no AGENTS.md o ponteiro para o roteiro, e o caminho apontado existe no projeto', t => {
+  const p = criarRepo();
+  t.after(() => p.limpar());
+  assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']).codigo, 0);
+  const texto = ler(p, 'AGENTS.md');
+  assert.match(texto, /não é o Claude Code, as travas automáticas não valem até existir adaptador/);
+  const apontado = /`(\.harness\/nucleo\/docs\/agentes\/README\.md)`/.exec(texto)?.[1];
+  assert.ok(apontado, texto);
+  assert.ok(fs.existsSync(path.join(p.raiz, apontado)), apontado);
+  for (const doc of ['contrato.md', 'exemplo-claude-code.md', 'escrever-um-adaptador.md', 'provar.md']) {
+    assert.ok(fs.existsSync(path.join(p.raiz, '.harness/nucleo/docs/agentes', doc)), doc);
+  }
+  assert.ok(fs.existsSync(path.join(p.raiz, '.harness/nucleo/docs/referencia/capacidades-por-agente.md')));
+  assert.match(p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']).saida, /Depois rode|Agora rode/);
+});
+
+test('init acrescenta o trecho ao AGENTS.md que já existe, sem apagar nada, e não o duplica', t => {
+  const p = criarRepo();
+  t.after(() => p.limpar());
+  gravar(p, 'AGENTS.md', '# Regras da loja\n\nTeste antes de commitar.\n');
+  assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']).codigo, 0);
+  const uma = ler(p, 'AGENTS.md');
+  assert.ok(uma.startsWith('# Regras da loja\n\nTeste antes de commitar.\n'), uma);
+  assert.match(uma, /docs\/agentes\/README\.md/);
+  assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']).codigo, 0);
+  assert.equal(ler(p, 'AGENTS.md'), uma);
+  // Trecho antigo (entre as marcas) é trocado pelo atual.
+  gravar(p, 'AGENTS.md', uma.replace(/(<!-- agent-harness: início[^\n]*\n)[\s\S]*?(<!-- agent-harness: fim -->)/, '$1velho\n$2'));
+  assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']).codigo, 0);
+  assert.equal(ler(p, 'AGENTS.md'), uma);
 });
