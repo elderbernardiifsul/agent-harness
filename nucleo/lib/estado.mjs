@@ -99,7 +99,7 @@ export const PRAZO_MAXIMO_MS = 120000;
 // dono.json ilegível), o teto. Dono sem identidade ou de outra máquina: só o prazo.
 function vencida(dono, mtimeMs, venceMs) {
   if (dono && eDestaMaquina(dono) && donoMorto(dono.pid)) return true;
-  const prazo = !dono ? Math.max(venceMs, PRAZO_MAXIMO_MS)
+  const prazo = !dono ? PRAZO_MAXIMO_MS
     : Number.isFinite(dono.venceMs) && dono.venceMs > 0 ? Math.min(dono.venceMs, PRAZO_MAXIMO_MS) : venceMs;
   let em = Date.parse(dono?.em);
   if (!Number.isFinite(em)) em = mtimeMs;
@@ -247,7 +247,8 @@ function limparRestos(travas) {
 // A pasta da trava nunca sai do lugar com dono dentro. Para tomar uma vencida, tira-se o dono.json dela (rename,
 // atômico) e confere-se o arquivo tirado: se é o dono visto vencido e continua vencido, a pasta fica vazia e
 // sai com rmdir, que só remove pasta vazia. Se é outro (a trava foi trocada no meio), ele volta. Enquanto o
-// dono está fora, ninguém entra (a pasta existe) e ninguém a julga vencida (o rename renovou a data dela).
+// dono está fora, ninguém entra (a pasta existe) e ninguém a julga vencida (o rename renovou a data dela, e
+// pasta sem dono vence pelo teto). Pasta com lixo, ou com dono.json que não é arquivo, não se toma: fica presa.
 // O laço tem voltas contadas: cada volta só recomeça quando a trava mudou (pasta sumiu, dono trocado), e o
 // resto devolve false, para valer o esperaMs de quem chama.
 function tentarPegar(t) {
