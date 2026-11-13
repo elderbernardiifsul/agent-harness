@@ -249,3 +249,38 @@ export function sairDaFilaSinc(dir, senha) {
     }, { esperaMs: 2000, venceMs: TRAVA.venceMs });
   } catch { /* a senha morta sai na próxima passagem */ }
 }
+
+// ---------------------------------------------------------------- retrato (board e doctor)
+
+// Como a fila está, sem trava e sem gravar: {vagas, memoriaLivreMinimaMb, entradas, erro}. Cada entrada traz
+// `estado` ('rodando' | 'esperando'), `desde` (começo ou chegada), `haMs` e `morta`. Erro de leitura
+// (versão desconhecida, arquivo ilegível) vai em `erro` (a saída inteira), sem lançar.
+export function retratoDaFila(dir, { agora = Date.now(), existe, inicio } = {}) {
+  const r = { dir, vagas: null, memoriaLivreMinimaMb: null, entradas: [], erro: null };
+  try {
+    const m = lerConfigDaMaquina(dir, { criar: false });
+    r.vagas = m.vagas;
+    r.memoriaLivreMinimaMb = m.memoriaLivreMinimaMb;
+    const estado = lerEstadoDaFila(dir);
+    const opcoes = {};
+    if (existe) opcoes.existe = existe;
+    if (inicio) opcoes.inicio = inicio;
+    r.entradas = [...estado.entradas].sort((a, b) => a.senha - b.senha).map(e => {
+      const desde = e.rodandoDesde ?? e.chegou ?? null;
+      const ms = Date.parse(desde);
+      return { ...e, estado: e.rodandoDesde ? 'rodando' : 'esperando', desde, haMs: Number.isFinite(ms) ? Math.max(0, agora - ms) : null, morta: entradaMorta(e, opcoes) };
+    });
+  } catch (e) {
+    if (!(e instanceof ErroDeUso)) throw e;
+    r.erro = e.saida;
+  }
+  return r;
+}
+
+export function duracaoCurta(ms) {
+  if (ms == null) return '?';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s} s`;
+  if (s < 3600) return `${Math.floor(s / 60)} min`;
+  return `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`;
+}

@@ -207,11 +207,13 @@ test('sem ramos protegidos a proteção no servidor é aviso', () => {
   assert.match(p.ah(['doctor']).saida, /^aviso\s+Proteção no servidor: .*protegido/m);
 });
 
-test('C1: o doctor tem 20 itens, com "Harness no ramo base" antes de "Gancho responde" e os da fatia 2 depois dele', async () => {
+test('C1: o doctor tem 21 itens, com "Harness no ramo base" antes de "Gancho responde" e os da fatia 2 depois dele', async () => {
   const { VERIFICACOES } = await import('../nucleo/comandos/doctor.mjs');
   const nomes = VERIFICACOES.map(v => v.item);
-  // 16 da fatia 1 e da tarefa 5, menos "Fila de pendentes" (virou "Comentários pendentes"), mais 5 da tarefa 14.
-  assert.equal(nomes.length, 20);
+  // 16 da fatia 1 e da tarefa 5, menos "Fila de pendentes" (virou "Comentários pendentes"), mais 5 da tarefa 14,
+  // mais "Fila de pesado" (fatia 3).
+  assert.equal(nomes.length, 21);
+  assert.ok(nomes.includes('Fila de pesado'));
   assert.equal(nomes.indexOf('Harness no ramo base'), nomes.indexOf('Ganchos do Claude Code instalados') + 1);
   assert.equal(nomes.indexOf('Gancho responde'), nomes.indexOf('Harness no ramo base') + 1);
   const g = nomes.indexOf('Gancho responde');
@@ -405,4 +407,24 @@ test('frente chamada parada: o nome sai entre crases nos itens do doctor', t => 
   const f = JSON.parse(fs.readFileSync(arqF, 'utf8'));
   fs.writeFileSync(arqF, JSON.stringify({ ...f, estado: 'abrindo', processo: { pid: 999999, inicio: null } }));
   assert.match(p.ah(['doctor']).saida, /^aviso\s+Frente `parada` em abertura parada: /m);
+});
+
+test('doctor confere a fila de pesado: legível, versão e senhas mortas', t => {
+  const p = criarProjeto();
+  t.after(() => p.limpar());
+  const dir = path.join(path.dirname(p.raiz), 'fila');
+  fs.mkdirSync(dir, { recursive: true });
+  const env = { env: { AH_FILA: dir } };
+  const item = () => JSON.parse(p.ah(['doctor', '--json'], env).saida).itens.find(i => i.item === 'Fila de pesado');
+  assert.equal(item().estado, 'ok');
+  fs.writeFileSync(path.join(dir, 'fila.json'), JSON.stringify({ versao: 1, proximaSenha: 2, entradas: [{ senha: 1, pid: 999999, worktree: '/x', vagas: 1, chegou: new Date().toISOString(), rodandoDesde: null }] }));
+  assert.equal(item().estado, 'aviso');
+  assert.match(item().fazer, /senha\(s\) de processo morto: 1 \(pid 999999\)/);
+  fs.writeFileSync(path.join(dir, 'fila.json'), JSON.stringify({ versao: 5 }));
+  assert.equal(item().estado, 'falha');
+  assert.match(item().fazer, /formato 5.*atualize o harness/);
+  fs.rmSync(path.join(dir, 'fila.json'));
+  fs.writeFileSync(path.join(dir, 'config.json'), '{');
+  assert.equal(item().estado, 'falha');
+  assert.match(item().fazer, /não é JSON válido.*corrija o arquivo/);
 });
