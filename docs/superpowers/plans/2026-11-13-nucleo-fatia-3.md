@@ -52,3 +52,14 @@ docs/referencia/comandos.md, README.md, docs/referencia/capacidades-por-agente.m
 6. **`board` e `doctor`.** Testes: board mostra quem roda e quem espera (classe, há quanto tempo) e o `--json` traz `fila`; doctor acusa configuração da fila ilegível, versão desconhecida e senha morta. Commit `feat: fila no board e no doctor`.
 7. **`init`.** Teste: config instalada tem `pesado.classes` vazio e `_exemplo`; projeto sem classes não muda. Commit junto com a tarefa 1 ou 6 se couber.
 8. **Documentação.** `comandos.md` (comando, T6, configuração, limites), `README.md`, capacidades por agente. Commit `docs: fila de pesado e T6`.
+
+## Pendências (depois da revisão)
+
+- A hora de início do processo vem de `/proc/<pid>/stat` no Linux (`vida.mjs`, já da fatia 2); a seção 7 do desenho diz "sem `/proc`". Funciona nos três pelo `ps -o lstart` fora do Linux; trocar o Linux para o `ps` também é decisão a tomar.
+- No macOS, cada entrada da fila custa um `ps` (até 2 s de prazo) a cada passagem, sob a trava da fila; com muitas senhas a passagem fica lenta.
+- Windows e macOS não executados: os testes de grupo de processos e de shell levam `skip` no Windows; o `taskkill` e o caminho do `cmd` não rodaram. No Windows o órfão de um `kill -9` no `ah` não é morto (sem grupo).
+- Não ensaiado com agente real (a T6 pelo gancho só nos testes com eventos gravados).
+- O resumo do começo de sessão ainda não mostra quem está no pesado (seção 8).
+- `ah board --numeros` (12.5) não existe; o evento `pesado` já grava espera e duração.
+- Uma pasta de trava da fila com dono vivo mas preso (processo parado) ainda segura todo mundo até vencer (30 s); quem espera não cai, só espera.
+
