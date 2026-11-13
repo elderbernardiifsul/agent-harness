@@ -112,3 +112,86 @@ A falha é a esperada neste worktree: `teste/atualizar.test.mjs`, "a cópia inst
 - **Teste instável fora da linha A:** `teste/estado.test.mjs`, "revisão 2, achado 7: a tomada de trava vencida limpa os restos com mais de 10 min, e só eles", falhou uma vez em cerca de dez rodadas da suíte com `ENOENT` em `y.vencida.1.<ms>.ab12cd34/dono.json`. O teste chama `ha(20)` (que lê `Date.now()`) duas vezes para montar o mesmo nome de pasta; quando o milissegundo vira entre as duas linhas, os caminhos diferem. Conserto: calcular o nome uma vez. Não foi feito aqui (arquivo de teste das travas do estado, fora da linha A).
 - **Arquivos de outras linhas:** nenhum de `nucleo/lib/travas.mjs`, `nucleo/lib/shell.mjs`, configuração, `init`, `atualizar`, `nota`, `nucleo/bin/ah.mjs` foi tocado. `nucleo/adaptadores/contrato.mjs` recebeu a chamada do item 5 (ver acima).
 - **Campo novo no registro da frente:** `fechando` (`{pid, inicio}`), presente só durante um `close`; frentes de versões anteriores não o têm, e a leitura trata a ausência como "nenhum close em curso".
+
+## Terceira revisão: consertos do close
+
+Ramo `rev3-close`, a partir de `bb26d99`. Cada achado teve o teste escrito antes do conserto e visto falhando; a suíte inteira e `node ferramentas/varre-termos.mjs` passaram antes de cada commit. Os testes novos ficam em `teste/close-fases.test.mjs` (mais um em `teste/heranca.test.mjs` e um em `teste/reserva.test.mjs`); nenhum usa espera longa: as pausas são as do gh falso (`GH_FALSO_PAUSA_COMENTARIO`), um gancho `pre-receive` no remoto de teste e a trava das frentes presa pelo próprio teste, com a espera do `close` encurtada por `AH_CLOSE_ESPERA_DA_TRAVA_MS`.
+
+| Commit | Achado | Título |
+|---|---|---|
+| `568e00a` | 1 | fix: comentário de fechamento durável fora da trava e espera longa na fase 3 do close |
+| `4a61c69` | 2 | fix: herança não passa frente em fechamento, e a marca do comentário vale só no mesmo estado |
+| `120e1da` | 3 | fix: handoff recusa frente com o fechamento parado |
+| `7fcd7a7` | 4 | test: uma prova para cada conferência entre as fases do close |
+| (este) | 5 | docs: limite da marca `fechando` no Windows e este registro |
+
+### Achado 1: comentário repetido quando a fase 3 não pega a trava (ou o close morre)
+
+**Feito.** Escolha: um marcador próprio, `<estado>/fechamentos/<nome>.json` (`nucleo/lib/fechamento.mjs`), gravado por troca atômica de arquivo (`gravarJson`), sem a trava `frentes`, logo antes do comentário (`situacao: comentando`) e logo depois (`comentado`), com o id e o estado (`ativa` ou `passada`) da frente. Só o `close` que tem a marca `fechando` viva o grava, então não há corrida entre dois escritores. O campo `fechamentoComentado` do registro da frente saiu: só a fase 3 o gravava, sob a trava, e era isso que deixava o fato a perder.
+
+- O `close` seguinte, com `comentado`, pula o comentário (e, na frente passada, a conferência de quem a tem) e nem precisa do GitHub. Com `comentando` (o anterior parou no meio do comentário, como no SIGKILL do cenário REV3-B), relê os tickets (`ticketsJaFechados` em `nucleo/lib/reserva.mjs`): conta como feito o ticket cujo último marcador da frente é `fechamento`, ou cujo comentário de fechamento espera na fila desta máquina, ou que não existe mais; comenta só nos outros (`liberarTickets` ganhou `pular`). Sem rede, recusa sem comentar (`… preciso do GitHub para saber em que tickets ele saiu …`). Ler os tickets custa uma chamada por ticket, e só depois de um close interrompido no meio do comentário; registrar a intenção antes era a única forma de cobrir o processo morto entre o comentário e a gravação.
+- O quadro mostra `fechamento parado` pela marca (o `--json` continua trazendo `fechamentoComentado: true`); a marca sai junto com o registro da frente na fase 3 (`apagarFechamento`, só se for do mesmo id).
+- A fase 3 e a retirada da marca depois de uma recusa esperam a trava por até 30 s (`ESPERA_DA_TRAVA_MS`, como o `atualizar`; a espera da trava já é a nova tentativa, de 20 em 20 ms). Se ainda assim a trava não sai, a recusa é `Esperei … pela trava "frentes" e ela não foi solta; o fechamento da frente as-1 carrinho parou antes de remover o worktree.`, com o `Faça:` da trava, `depois rode ah close carrinho de novo` e a frase de que os tickets já receberam o comentário e o próximo `close` não comenta de novo. A falha da trava na retirada da marca (fase 2) não troca mais a recusa original: a marca de um processo que vai morrer não vale.
+
+Testes: "fase 3 com a trava das frentes ocupada além da espera…" (REV3-A, sem os 7 s: a trava fica presa até o close terminar, com espera de 300 ms) e "close morto (SIGKILL) com o comentário a caminho…" (REV3-B; falhavam com `Esperei 5000 ms …` e com o quadro em `ativa`), mais "close morto antes de o comentário chegar ao ticket…" (o seguinte comenta, uma vez).
+
+### Achado 2: herança no meio do close
+
+**Reproduzido e feito.** Com o close parado no comentário, `continuarSessao` (começo novo no mesmo processo, ou continuação num destino que já tem frente) deixava a frente `passada`, com a marca `fechando` copiada; no segundo caso, a passagem ia para a fila e saía depois do comentário de fechamento. A fase 3 recusava com "mudou durante o fechamento", e o atalho do close seguinte (frente passada já comentada) pulava `quemTemAFrente`.
+
+- `continuarSessao` (`nucleo/lib/heranca.mjs`) não passa frente com fechamento em curso (`fechamentoEmCurso`) ou parado (marca do comentário): ela vai para a sessão nova, sem passar, com as marcas intactas, nos três caminhos (com vínculo já era assim). O resultado ganhou `emFechamento`, o evento `frente-em-fechamento` é gravado, e o resumo do começo de sessão avisa `A frente as-1 carrinho está sendo fechada e ficou com esta sessão; se ela continuar no quadro, termine com tools/ah close carrinho.` (duas linhas em `nucleo/adaptadores/contrato.mjs`).
+- O atalho continua valendo para a frente que já estava passada quando o close comentou (ele é o que deixa o segundo close terminar como próprio, com a linha do histórico: a releitura veria o próprio fechamento e trataria a frente como fechada em outra máquina). Para não valer na frente que ficou passada depois do comentário, a marca guarda o estado da frente e só vale no mesmo estado: com o estado trocado, o close seguinte confere quem tem a frente e comenta o fechamento de novo, depois da passagem. Na recusa "mudou durante o fechamento" com o estado trocado, a marca é apagada e a saída não promete mais que o próximo close não comenta.
+
+Testes: "começo novo no mesmo processo durante o fechamento…", "continuação num destino que já tem frente…", "fechamento parado (close já morto) e começo novo…", "frente que ficou passada depois do comentário de fechamento…" e, em `teste/heranca.test.mjs`, "começo novo no mesmo processo com a frente sendo fechada…".
+
+### Achado 3: handoff de frente em "fechamento parado"
+
+**Feito, pela recusa.** O `handoff` recusa, nas duas fases, a frente com a marca do comentário: `A frente as-1 carrinho está com o fechamento parado: os tickets já receberam (ou estavam recebendo) o comentário de fechamento.`, `Faça: termine com ah close carrinho (não comenta de novo)`. A recusa da primeira fase vem antes do push. Teste: "handoff de frente com o fechamento parado recusa…" (o handoff passava com código 0).
+
+### Achado 4: conferências sem teste
+
+**Feito.** Um teste por conferência, e cada uma desfeita no código (roteiro fora do repositório, que troca o trecho, roda só o teste e restaura) com o teste falhando:
+
+| Conferência | Teste |
+|---|---|
+| `fechamentoEmCurso` no `takeover` | "takeover recusa a frente órfã que está sendo fechada" |
+| `handoff`, primeira fase, `fechando` | "handoff durante o fechamento recusa na primeira fase, antes do push" (sem ela, o ramo ia para o remoto) |
+| `handoff`, segunda fase, `fechando` | "close que começa durante o push do handoff…" |
+| `handoff`, primeira fase, fechamento parado | "handoff de frente com o fechamento parado…" (o ramo não vai para o remoto) |
+| `handoff`, segunda fase, fechamento parado | "close que comenta e para durante o push do handoff…" |
+| `!eDeste(relida)` na fase 3 | "marca de outro close no registro durante a fase de rede…" |
+| `tirarMarca` na recusa da fase de rede | "recusa na fase de rede (sem GitHub para a frente passada) tira a marca do registro" |
+| `tirarMarca` na recusa da fase 3 | "ramo base trocado durante a fase de rede…" |
+| `deste` em `desfazerAbrindo` | `teste/reserva.test.mjs`, "close de abertura parada: registro tomado por outro processo…" |
+| registro relido na fase 3 (`{...relida}`) | "continuação de sessão durante o fechamento: a fase 3 vale pelo registro relido e solta o foco da sessão nova" |
+| reconferência do ramo base na fase 3 | "ramo base trocado durante a fase de rede…" |
+| marcas `comentando` e `comentado`, e a retirada da marca com a frente | os dois testes do achado 1 |
+| frente em fechamento na herança; marca só no mesmo estado | os testes do achado 2 |
+
+`relida.fechamentoComentado = true` no caminho "mudou durante o fechamento" saiu com o campo: a marca do comentário já está gravada antes da fase 3. O caminho continua coberto por "marca de outro close…" (o close seguinte não comenta de novo).
+
+A marca de outro processo e a troca do registro `abrindo` no meio são simuladas pelo teste, gravando o arquivo da frente: nenhum comando atual troca a marca de um close vivo (outro `close`, `handoff`, `takeover` e `open` recusam). As conferências ficam como defesa contra edição à mão e contra caminhos futuros.
+
+### Achado 5: pid reaproveitado no Windows
+
+**Registrado** em `docs/referencia/comandos.md`, seção `close`, como limite: no Windows a marca `fechando` se confere só pelo pid; o `close` tira a própria marca em toda recusa ou erro, então só um close morto à força a deixa, e com o pid reaproveitado a frente fica `fechando` enquanto o outro processo viver. Saída: confirmar que nenhum `ah close` roda e apagar o campo `fechando` do arquivo da frente. A alternativa no `sweep --reparar` (tirar a marca sem hora de início) apagaria também a de um close vivo no Windows, onde a hora nunca se lê.
+
+### O que ficou
+
+- A seção "Vida da sessão" de `docs/referencia/comandos.md` não foi mexida (fora das seções combinadas): a regra nova da herança está descrita na seção `close`. Vale acrescentar lá uma frase na próxima revisão do documento.
+- `AH_CLOSE_ESPERA_DA_TRAVA_MS` está documentada na seção `close`, não na tabela de variáveis de ambiente, pelo mesmo motivo.
+- A retomada pelo `open` de uma frente passada com o fechamento parado continua recusando pela releitura dos tickets (`… não está passada (foi fechada …)`, com a saída `ah close`), sem mensagem própria.
+
+### Verificação final
+
+```
+$ node --test teste/ 2>&1 | grep -E "^ℹ (tests|pass|fail|skipped)"
+ℹ tests 975
+ℹ pass 973
+ℹ fail 1
+ℹ skipped 1
+$ node ferramentas/varre-termos.mjs
+Nenhum termo proibido encontrado.
+```
+
+A falha é a esperada neste worktree (`teste/atualizar.test.mjs`, "a cópia instalada sem --de recusa…", que exige "agent-harness" no caminho do clone).
