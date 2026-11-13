@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { criarProjeto, amb, dirDoTeste, envelhecerSinal } from './apoio/repo.mjs';
+import { frenteOrfa, vidaDaDona } from '../nucleo/lib/vida.mjs';
 import { processoVivo } from './apoio/processo.mjs';
 import { tratar } from '../nucleo/adaptadores/contrato.mjs';
 import { continuarSessao } from '../nucleo/lib/heranca.mjs';
@@ -207,4 +208,53 @@ test('compact com o pai do gancho diferente não troca um pid vivo declarado', a
   // Sem AH_PID_AGENTE no ambiente do gancho, o pid viria do processo pai (este processo de teste).
   await tratar(inicio('s1', 'continuacao'), semPid);
   assert.equal(lerSessao(dir, 's1').pid, proc.pid);
+});
+
+// ---- /clear real do Claude Code: o SessionEnd (reason clear) chega antes do SessionStart (source clear)
+const fimDe = (id, motivo, continuacao) => ({ tipo: 'fim', sessao: id, motivo, continuacao });
+
+test('/clear na ordem real (fim antes do início, mesmo pid) herda a frente com vínculo', async () => {
+  const a = { ...amb(p), pid: proc.pid, ...comHora };
+  await tratar(inicio('s-a', 'novo'), a);
+  gravarFrente(dir, frenteDe('s-a')); gravarSessao(dir, { ...lerSessao(dir, 's-a'), frente: 'carrinho' });
+  await tratar(fimDe('s-a', 'clear', true), a);
+  const velha = lerSessao(dir, 's-a');
+  assert.equal(velha.fim, null);
+  assert.ok(!Number.isNaN(Date.parse(velha.aguardandoContinuacao)));
+  const r = await tratar(inicio('s-b', 'continuacao'), a);
+  const f = lerFrente(dir, 'carrinho');
+  assert.equal(f.dona, 's-b');
+  assert.deepEqual(f.sessoesAnteriores, ['s-a']);
+  assert.equal(lerSessao(dir, 's-b').frente, 'carrinho');
+  assert.equal(lerSessao(dir, 's-a').motivoFim, 'substituida');
+  assert.equal(lerSessao(dir, 's-a').aguardandoContinuacao, undefined);
+  assert.match(r.contexto, /Sua frente: as-1 carrinho/);
+  const h = lerEventos(dir).filter(e => e.tipo === 'heranca').at(-1);
+  assert.deepEqual([h.de, h.sessao, h.frentes], ['s-a', 's-b', ['carrinho']]);
+  assert.ok(lerEventos(dir).some(e => e.tipo === 'sessao-fim' && e.sessao === 's-a' && e.motivo === 'clear'));
+});
+
+test('/clear sem o início seguinte e com o processo morto: a frente fica órfã e o takeover passa', async t => {
+  const morto = processoVivo();
+  t.after(() => morto.matar());
+  const o = p.ah(['open', 'clear-orfa'], { env: { AH_SESSAO: 's-x', AH_PID_AGENTE: String(morto.pid) } });
+  assert.equal(o.codigo, 0, o.erro);
+  await tratar(fimDe('s-x', 'clear', true), { ...amb(p), pid: morto.pid });
+  assert.equal(lerSessao(dir, 's-x').fim, null);
+  await morto.matar();
+  const f = lerFrente(dir, 'clear-orfa');
+  assert.ok(frenteOrfa(f, vidaDaDona(dir, 's-x', { config: amb(p).config })));
+  const tk = p.ah(['takeover', 'clear-orfa', '--confirmado'], { env: { AH_SESSAO: 's-y' } });
+  assert.equal(tk.codigo, 0, tk.erro);
+  assert.equal(lerFrente(dir, 'clear-orfa').dona, 's-y');
+});
+
+test('fim com outro motivo continua encerrando a sessão', async () => {
+  const a = { ...amb(p), pid: proc.pid, ...comHora };
+  for (const [motivo, continuacao] of [['logout', false], ['other', false], [undefined, undefined]]) {
+    await tratar(inicio('s-a', 'novo'), a);
+    await tratar(fimDe('s-a', motivo, continuacao), a);
+    const s = lerSessao(dir, 's-a');
+    assert.deepEqual([Boolean(s.fim), s.motivoFim, s.aguardandoContinuacao], [true, 'fim', undefined], String(motivo));
+  }
 });

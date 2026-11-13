@@ -118,6 +118,7 @@ export function encerrarSessao(dirEstado, id, motivo = null) {
   if (!s) return null;
   s.fim = new Date().toISOString();
   s.motivoFim = motivo;
+  delete s.aguardandoContinuacao;
   gravarSessao(dirEstado, s);
   return s;
 }

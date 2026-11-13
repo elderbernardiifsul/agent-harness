@@ -1,6 +1,7 @@
 // Continuação de sessão (desenho, seção 11, "Continuação"): a sessão nova substitui as
 // anteriores do mesmo processo do agente (mesmo pid e mesma hora de início, conhecida nos dois
 // lados); herda frente e papel quando é continuação. Começo novo no mesmo processo solta a frente.
+// A sessão velha do /clear chega aqui sem `fim`, com `aguardandoContinuacao` (o contrato não a encerra).
 import { comTrava, registrarEvento } from './estado.mjs';
 import { lerSessao, gravarSessao, listarSessoes } from './sessao.mjs';
 import { listarFrentesTolerante, gravarFrente, frentesDa } from './frente.mjs';
@@ -23,7 +24,7 @@ export function continuarSessao(dirEstado, { sessao, pid, pidInicio = null, orig
     const agora = new Date().toISOString();
     for (const velha of velhas) {
       const daVelha = frentesDa(frentes, velha.id);
-      gravarSessao(dirEstado, { ...velha, fim: agora, motivoFim: 'substituida', frente: null });
+      gravarSessao(dirEstado, { ...velha, fim: agora, motivoFim: 'substituida', frente: null, aguardandoContinuacao: undefined });
       registrarEvento(dirEstado, { tipo: 'substituida', de: velha.id, por: sessao });
       resultado.substituidas.push(velha.id);
       const vinculo = origem === 'continuacao';

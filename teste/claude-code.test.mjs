@@ -57,6 +57,10 @@ test('claude-code: UserPromptSubmit e Stop são sinal; SessionEnd é fim', () =>
   assert.deepEqual(traduzirEntrada(g('prompt.json')), { tipo: 'sinal', agente: 'claude-code', sessao: ID, cwd: D });
   assert.equal(traduzirEntrada(g('stop.json')).tipo, 'sinal');
   assert.equal(traduzirEntrada(g('fim.json')).tipo, 'fim');
+  assert.deepEqual([traduzirEntrada(g('fim.json')).motivo, traduzirEntrada(g('fim.json')).continuacao], ['other', false]);
+  for (const reason of ['clear', 'resume']) assert.equal(traduzirEntrada(g('fim.json', { reason })).continuacao, true, reason);
+  for (const reason of ['logout', 'prompt_input_exit', undefined, 7]) assert.equal(traduzirEntrada(g('fim.json', { reason })).continuacao, false, String(reason));
+  assert.equal(traduzirEntrada(g('fim.json', { reason: 7 })).motivo, null);
 });
 
 test('claude-code: entrada inválida lança dizendo o tipo provável do evento', () => {

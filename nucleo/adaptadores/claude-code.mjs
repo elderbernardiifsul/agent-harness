@@ -10,6 +10,9 @@ export const AGENTE = 'claude-code';
 const LIMITE_ID = 128;
 const EVENTOS = { SessionStart: 'inicio', UserPromptSubmit: 'sinal', Stop: 'sinal', PreToolUse: 'antes', SessionEnd: 'fim' };
 const ORIGENS = { startup: 'novo', clear: 'continuacao', resume: 'continuacao', compact: 'continuacao', fork: 'continuacao' };
+// `reason` do SessionEnd que anuncia uma sessão nova no mesmo processo: no /clear e no /resume o
+// SessionEnd da velha chega antes do SessionStart da nova (ensaio de 2026-11-12). O /compact não gera SessionEnd.
+const FIM_QUE_CONTINUA = new Set(['clear', 'resume']);
 // Ferramenta -> campo de tool_input com o comando ou o arquivo.
 const COMANDOS = { Bash: 'command', PowerShell: 'command', Monitor: 'command' };
 const EDICOES = { Edit: 'file_path', Write: 'file_path', NotebookEdit: 'notebook_path' };
@@ -91,6 +94,10 @@ export function traduzirEntrada(json) {
     return { ...base, origem, modelo: typeof json.model === 'string' && json.model ? json.model : null };
   }
   if (tipo === 'antes') return { ...base, acao: acaoDe(json, tipo) };
+  if (tipo === 'fim') {
+    const motivo = typeof json.reason === 'string' && json.reason ? json.reason : null;
+    return { ...base, motivo, continuacao: FIM_QUE_CONTINUA.has(motivo) };
+  }
   return base;
 }
 

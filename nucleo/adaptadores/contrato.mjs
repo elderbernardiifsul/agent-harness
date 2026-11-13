@@ -4,7 +4,12 @@
 //   {tipo: 'inicio', sessao, agente, cwd, origem: 'novo'|'continuacao', modelo?} -> {contexto}
 //   {tipo: 'sinal', sessao, agente?}                                             -> {}
 //   {tipo: 'antes', sessao, cwd, acao}                                           -> {decisao: 'permite'} | {decisao: 'recusa', mensagem}
-//   {tipo: 'fim', sessao}                                                        -> {}
+//   {tipo: 'fim', sessao, motivo?, continuacao?}                                 -> {}
+//
+// No `fim` com `continuacao: true` (o agente anuncia uma sessão nova no mesmo processo, como o /clear do
+// Claude Code, cujo fim chega antes do início da nova), a sessão não é encerrada: fica com
+// `aguardandoContinuacao` (o instante) e o `inicio` seguinte do mesmo processo a substitui e herda a
+// frente. Se ele não vier, a sessão segue sem `fim` e a vida dela é a do pid e do sinal.
 //
 // `acao` é {tipo: 'comando', comando} | {tipo: 'edicao', arquivo, ferramenta?} | {tipo: 'outra'}.
 // As travas recebem também a sessão, as frentes ativas das outras e a vida das donas (T4).
@@ -283,10 +288,17 @@ async function sinal(evento, amb) {
 }
 
 async function fim(evento, amb) {
+  const continua = evento.continuacao === true;
   await comTrava(amb.dirEstado, 'frentes', async () => {
-    if (lerSessao(amb.dirEstado, evento.sessao)) encerrarSessao(amb.dirEstado, evento.sessao, 'fim');
+    const s = lerSessao(amb.dirEstado, evento.sessao);
+    if (!s) return;
+    if (continua && !s.fim) gravarSessao(amb.dirEstado, { ...s, aguardandoContinuacao: new Date().toISOString() });
+    else if (!continua) encerrarSessao(amb.dirEstado, evento.sessao, 'fim');
   });
-  registrarEvento(amb.dirEstado, { tipo: 'sessao-fim', sessao: evento.sessao });
+  const extra = {};
+  if (typeof evento.motivo === 'string') extra.motivo = evento.motivo;
+  if (continua) extra.aguardandoContinuacao = true;
+  registrarEvento(amb.dirEstado, { tipo: 'sessao-fim', sessao: evento.sessao, ...extra });
   return {};
 }
 
