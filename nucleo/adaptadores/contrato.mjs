@@ -132,6 +132,7 @@ function contextoDasTravas(amb, sessao) {
     normalizar: c => normalizarCaminho(c),
     config: amb.config,
     raiz: amb.raiz,
+    aninhado: Boolean(amb.env?.AH_PESADO_ANINHADO),
     topoDe: amb.topoDe ?? (c => topoDe(c, amb.env)),
     ramoAtual: amb.ramoAtual ?? (c => ramoAtual(c, amb.env)),
     baseDoPr: amb.baseDoPr ?? baseDoPrPeloGh(amb.env, amb.tempoDoGhMs ?? TEMPO_DO_GH_MS),

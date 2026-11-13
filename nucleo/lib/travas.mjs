@@ -8,6 +8,7 @@
 //   T4  escrita no worktree (ou no ramo) da frente de outra sessão viva: git, comandos que
 //       escrevem arquivo, redirecionamentos e edição de arquivo
 //   T5  push e merge de PR em ramo protegido
+//   T6  comando de uma classe de trabalho pesado (pesado.classes) fora do `ah pesado`
 //
 // Limites conhecidos (a trava enxerga a mais, não a tudo): apelidos do git
 // (`-c alias.x=push`), `gh api` direto, `push.default` e `remote.*.push` da
@@ -20,6 +21,7 @@ import { comandosSimples, ErroDeShell } from './shell.mjs';
 import { recusa } from './recusa.mjs';
 import { dentroDe } from './caminhos.mjs';
 import { idCurto } from './sessao.mjs';
+import { classeQueCasa, textoDoArgv } from './fila.mjs';
 
 const PALAVRA_GIT = /(?<![A-Za-z0-9_])(git|gh)(?![A-Za-z0-9_])/i;
 
@@ -669,6 +671,20 @@ function travaT4Edicao(acao, ctx) {
   return primeiraRecusa([acao.arquivo], acao.cwd ?? ctx.raiz, ctx);
 }
 
+// ---------------------------------------------------------------- T6
+
+// O comando casa com uma classe pesada e não roda pelo `ah pesado` (o `ah` é o programa, então ele e o que
+// vem depois do `--` não casam). Chamada aninhada (AH_PESADO_ANINHADO no prefixo ou no ambiente do gancho,
+// `ctx.aninhado`) passa. Sem classes, nada.
+function travaT6(cmd, ctx) {
+  const classes = ctx.config?.pesado?.classes;
+  if (!classes || ctx.aninhado || cmd.env?.AH_PESADO_ANINHADO) return null;
+  const classe = classeQueCasa(cmd.argv, classes);
+  if (!classe) return null;
+  return recusa('T6', `${cmd.argv[0]} é trabalho pesado (classe ${classe}) e roda fora da fila; vários juntos esgotam a memória da máquina`,
+    `tools/ah pesado -- ${textoDoArgv(cmd.argv)}`);
+}
+
 // ---------------------------------------------------------------- T0
 
 function recusaT0(motivo) {
@@ -748,7 +764,7 @@ function novasTrocas(ctx) {
 
 // ---------------------------------------------------------------- entrada
 
-const TRAVAS = [travaT1, travaT2, travaT3, travaT4, travaT5];
+const TRAVAS = [travaT1, travaT2, travaT3, travaT4, travaT5, travaT6];
 
 export function avaliar(acao, ctx) {
   if (acao?.tipo === 'edicao') return travaT4Edicao(acao, ctx) ?? { permite: true };

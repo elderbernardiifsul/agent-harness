@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { criarRepo, escreverConfig } from './apoio/repo.mjs';
+import { criarRepo, criarProjeto, escreverConfig, ganchoPre, dirDoTeste } from './apoio/repo.mjs';
+import { lerEventos } from '../nucleo/lib/estado.mjs';
 import { SCRIPT_PAI_E_NETO } from './apoio/processo.mjs';
 import { processoExiste } from '../nucleo/lib/vida.mjs';
 
@@ -215,4 +216,21 @@ test('SIGINT na espera sai da fila sem rodar', { skip: POSIX }, async t => {
   soltar(p, 'a');
   await ra.fim;
   assert.equal(comecou(p, 'b'), false);
+});
+
+test('T6 pelo gancho: recusa com a saída e registra; pela fila e aninhada passam', t => {
+  const q = criarProjeto();
+  t.after(() => q.limpar());
+  const arq = path.join(q.raiz, '.harness', 'config.json');
+  const cfg = JSON.parse(fs.readFileSync(arq, 'utf8'));
+  assert.equal(ganchoPre(q, { command: 'npm run build' }).codigo, 0, 'sem classes a T6 não recusa');
+  fs.writeFileSync(arq, JSON.stringify({ ...cfg, pesado: { ...cfg.pesado, classes: CLASSES } }));
+  const r = ganchoPre(q, { command: 'cd sub && npm run build' });
+  assert.equal(r.codigo, 2);
+  assert.match(r.erro, /Recusado \(T6\): .*classe grande.*\nFaça: tools\/ah pesado -- npm run build$/m);
+  assert.equal(ganchoPre(q, { command: 'tools/ah pesado -- npm run build' }).codigo, 0);
+  assert.equal(ganchoPre(q, { command: 'npm run build' }, 'Bash', { env: { AH_PESADO_ANINHADO: '4' } }).codigo, 0);
+  const recusas = lerEventos(dirDoTeste(q)).filter(e => e.tipo === 'recusa' && e.trava === 'T6');
+  assert.equal(recusas.length, 1);
+  assert.equal(recusas[0].comando, 'cd sub && npm run build');
 });
