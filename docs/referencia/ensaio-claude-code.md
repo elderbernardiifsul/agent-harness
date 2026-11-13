@@ -291,7 +291,7 @@ O arquivo da `carrinho` ficou intacto (`git status --short` vazio no worktree). 
 
 #### Demonstração do roteiro do professor
 
-`docs/aula/2026-11-13-roteiro-do-professor.md`, passos 1 a 7, com os comandos exatos do roteiro (o `mktemp -d` numa pasta temporária do ensaio). Todas as saídas conferem com o roteiro. Diferenças:
+Roteiro de demonstração da aula de 13/11/2026 (fica com o professor, fora do repositório), passos 1 a 7, com os comandos exatos do roteiro (o `mktemp -d` numa pasta temporária do ensaio). Todas as saídas conferem com o roteiro. Diferenças:
 
 | Passo | O roteiro diz | Saiu |
 |---|---|---|
