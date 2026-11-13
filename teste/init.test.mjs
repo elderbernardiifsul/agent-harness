@@ -378,3 +378,54 @@ test('init acrescenta o trecho ao AGENTS.md que já existe, sem apagar nada, e n
   assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']).codigo, 0);
   assert.equal(ler(p, 'AGENTS.md'), uma);
 });
+
+// ---- AGENTS.md com marcas estragadas, CRLF e link (revisão da fatia 4)
+
+const initLoja = (p, ...extra) => p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao', ...extra]);
+const INICIO = '<!-- agent-harness: início (o ah init reescreve este trecho; escreva fora das marcas) -->';
+const FIM = '<!-- agent-harness: fim -->';
+
+for (const [caso, texto] of [
+  ['marca de fim apagada', `# Regras\n\n${INICIO}\ntrecho velho\n\nTexto do usuário que não pode sumir.\n`],
+  ['duas marcas de início', `# Regras\n\n${INICIO}\nvelho 1\n${INICIO}\nTexto do usuário que não pode sumir.\n${FIM}\n`],
+  ['fim antes do início', `# Regras\n\n${FIM}\nTexto do usuário que não pode sumir.\n${INICIO}\nvelho\n`],
+]) {
+  test(`AGENTS.md com ${caso}: não reescreve o que existe, acrescenta o trecho no fim e avisa`, t => {
+    const p = criarRepo();
+    t.after(() => p.limpar());
+    gravar(p, 'AGENTS.md', texto);
+    const r = initLoja(p);
+    assert.equal(r.codigo, 0, r.erro);
+    const depois = ler(p, 'AGENTS.md');
+    assert.ok(depois.startsWith(texto), depois);
+    assert.match(depois.slice(texto.length), /docs\/agentes\/README\.md/);
+    assert.match(r.erro, /AGENTS\.md tem as marcas do harness incompletas ou repetidas[\s\S]*Faça: /);
+    // De novo: não acrescenta outra vez.
+    assert.equal(initLoja(p).codigo, 0);
+    assert.equal(ler(p, 'AGENTS.md'), depois);
+  });
+}
+
+test('AGENTS.md com CRLF mantém o fim de linha do arquivo', t => {
+  const p = criarRepo();
+  t.after(() => p.limpar());
+  gravar(p, 'AGENTS.md', '# Regras\r\n\r\nTeste antes.\r\n');
+  assert.equal(initLoja(p).codigo, 0);
+  const uma = ler(p, 'AGENTS.md');
+  assert.match(uma, /docs\/agentes\/README\.md/);
+  assert.doesNotMatch(uma, /[^\r]\n/);
+  assert.equal(initLoja(p).codigo, 0);
+  assert.equal(ler(p, 'AGENTS.md'), uma);
+});
+
+test('AGENTS.md que é link simbólico: o init não o troca (nem com --sobrescrever) e diz o que fazer', { skip: process.platform === 'win32' }, t => {
+  const p = criarRepo();
+  t.after(() => p.limpar());
+  gravar(p, 'regras.md', '# Regras\n');
+  fs.symlinkSync('regras.md', path.join(p.raiz, 'AGENTS.md'));
+  const r = initLoja(p, '--sobrescrever');
+  assert.equal(r.codigo, 0, r.erro);
+  assert.ok(fs.lstatSync(path.join(p.raiz, 'AGENTS.md')).isSymbolicLink());
+  assert.equal(ler(p, 'regras.md'), '# Regras\n');
+  assert.match(r.erro, /AGENTS\.md é um link simbólico; não mexi nele[\s\S]*Faça: .*agents-trecho\.md/);
+});

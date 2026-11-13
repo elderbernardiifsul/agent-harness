@@ -27,7 +27,8 @@ const ARQUIVO_CI = '.github/workflows/ah-ci.yml';
 const MARCA_DA_CI = '# Gerado pelo agent-harness (ah init)';
 const COMANDO_DA_CI_DESLIGADA = 'echo "defina ci.comandoDeTeste em .harness/config.json"';
 const ARQUIVO_AGENTS = 'AGENTS.md';
-const TRECHO_DO_AGENTS = /<!-- agent-harness: início[^\n]*\n[\s\S]*?<!-- agent-harness: fim -->\n?/;
+const MARCA_INICIO = '<!-- agent-harness: início';
+const MARCA_FIM = '<!-- agent-harness: fim -->';
 // Documentos do clone copiados para .harness/nucleo/docs/: o roteiro de adaptação e a referência que ele cita.
 const DOCS_COPIADOS = ['agentes', 'referencia'];
 const semPonto = t => String(t).replace(/[.\s]+$/, '');
@@ -184,12 +185,31 @@ function settingsDoClaude(raiz, dirModelos) {
   return final === texto ? null : final;
 }
 
-// AGENTS.md com o trecho do harness: o arquivo atual com o trecho trocado (entre as marcas) ou
-// acrescentado no fim; sem arquivo, só o trecho.
+const ocorrencias = (texto, marca) => texto.split(marca).length - 1;
+
+// AGENTS.md com o trecho do harness: {texto, aviso}. Só troca o trecho quando há exatamente um par de
+// marcas, com o fim depois do início; sem marcas, acrescenta no fim; marca faltando ou repetida não
+// reescreve nada do que existe: acrescenta o trecho novo no fim (uma vez só) e avisa. O fim de linha
+// do arquivo (CRLF ou LF) é mantido.
 export function agentsComTrecho(atual, trecho) {
-  if (atual === null) return trecho;
-  if (TRECHO_DO_AGENTS.test(atual)) return atual.replace(TRECHO_DO_AGENTS, () => trecho);
-  return `${atual}${atual.endsWith('\n') ? '' : '\n'}\n${trecho}`;
+  if (atual === null) return { texto: trecho, aviso: null };
+  const fimDeLinha = atual.includes('\r\n') ? '\r\n' : '\n';
+  const novo = trecho.replace(/\r?\n/g, fimDeLinha);
+  const acrescentado = () => `${atual}${atual === '' || atual.endsWith(fimDeLinha) ? '' : fimDeLinha}${atual === '' ? '' : fimDeLinha}${novo}`;
+  const ini = ocorrencias(atual, MARCA_INICIO);
+  const fim = ocorrencias(atual, MARCA_FIM);
+  if (ini === 0 && fim === 0) return { texto: acrescentado(), aviso: null };
+  const i = atual.indexOf(MARCA_INICIO);
+  const f = atual.indexOf(MARCA_FIM);
+  if (ini === 1 && fim === 1 && f > i) {
+    let depois = f + MARCA_FIM.length;
+    if (atual.startsWith(fimDeLinha, depois)) depois += fimDeLinha.length;
+    return { texto: atual.slice(0, i) + novo + atual.slice(depois), aviso: null };
+  }
+  return {
+    texto: atual.endsWith(novo) ? atual : acrescentado(),
+    aviso: `${ARQUIVO_AGENTS} tem as marcas do harness incompletas ou repetidas; não mexi no que existe e acrescentei o trecho novo no fim.\nFaça: apague do ${ARQUIVO_AGENTS} o trecho antigo e as marcas soltas, deixe só o trecho do fim e rode ah init de novo\n`,
+  };
 }
 
 function raizReal(p) {
@@ -294,6 +314,9 @@ export async function executar(args, amb) {
     }
   }
 
+  // Trecho do AGENTS.md: o aviso do link simbólico manda copiá-lo daqui.
+  colocar(PREFIXO_NUCLEO + 'modelos/agents-trecho.md', fs.readFileSync(path.join(dirModelos, 'agents-trecho.md')), { atualizaSe: () => true });
+
   // Modelo dos ganchos: o doctor da cópia instalada confere o settings.json contra ele.
   colocar(PREFIXO_NUCLEO + 'modelos/claude-code/ganchos.json', fs.readFileSync(path.join(dirModelos, 'claude-code', 'ganchos.json')), { atualizaSe: () => true });
 
@@ -309,12 +332,17 @@ export async function executar(args, amb) {
   }
 
   // AGENTS.md: o trecho do harness entre marcas; o resto do arquivo fica.
-  let agentsAtual = null;
-  try {
-    const alvo = path.join(raiz, ARQUIVO_AGENTS);
-    if (fs.lstatSync(alvo).isFile()) agentsAtual = fs.readFileSync(alvo, 'utf8');
-  } catch { /* não existe; link ou pasta, o colocar acusa */ }
-  colocar(ARQUIVO_AGENTS, Buffer.from(agentsComTrecho(agentsAtual, fs.readFileSync(path.join(dirModelos, 'agents-trecho.md'), 'utf8'))), { mescla: true });
+  // Link simbólico: não é trocado por arquivo nem com --sobrescrever; o init diz o que fazer.
+  let agentsSt = null;
+  try { agentsSt = fs.lstatSync(path.join(raiz, ARQUIVO_AGENTS)); } catch { /* não existe */ }
+  if (agentsSt?.isSymbolicLink()) {
+    amb.avisar(`${ARQUIVO_AGENTS} é um link simbólico; não mexi nele.\nFaça: copie para o arquivo de destino do link o trecho de .harness/nucleo/modelos/agents-trecho.md\n`);
+  } else {
+    const agentsAtual = agentsSt?.isFile() ? fs.readFileSync(path.join(raiz, ARQUIVO_AGENTS), 'utf8') : null;
+    const agents = agentsComTrecho(agentsAtual, fs.readFileSync(path.join(dirModelos, 'agents-trecho.md'), 'utf8'));
+    if (agents.aviso) amb.avisar(agents.aviso);
+    colocar(ARQUIVO_AGENTS, Buffer.from(agents.texto), { mescla: true });
+  }
 
   // Ganchos do Claude Code: o conteúdo já é a mescla do arquivo atual, então pode trocá-lo.
   if (settingsClaude !== null) colocar(ARQUIVO_CLAUDE, Buffer.from(settingsClaude), { mescla: true });
