@@ -890,11 +890,11 @@ Para retomar: tools/ah open cupom
 <section class="slide">
   <p class="rotulo">Como sabemos que funciona</p>
   <h2>O defeito que os testes não pegaram</h2>
-  <p>Os testes simulavam o agente. Todos passavam.</p>
-  <p>No ensaio com o agente de verdade: no <span class="mono">/clear</span>, o aviso de fim da conversa velha chega <b>antes</b> do aviso de começo da nova.</p>
-  <p>A frente ficava sem dona.</p>
+  <p class="pequeno">Os testes simulavam o agente. Todos passavam.</p>
+  <p class="pequeno">No ensaio com o agente de verdade: no <span class="mono">/clear</span>, o aviso de fim da conversa velha chega <b>antes</b> do aviso de começo da nova. A frente ficava sem dona.</p>
+  <p class="pequeno">Consertado e conferido no agente real. E o segundo ensaio achou outro: retomar uma conversa que já tinha frente dava duas frentes a quem só pode ter uma.</p>
   <p class="pequeno destaque">Teste simulado prova a lógica; só o ensaio com o agente real prova o que supomos sobre ele.</p>
-  <aside class="notas">Fonte: docs/referencia/ensaio-claude-code.md, seção da fatia 2 (Claude Code 2.1.319). O harness supunha que fim e começo viriam na ordem "natural". Conserto: um fim por /clear ou resume não encerra a sessão; ela espera a continuação. Confira na referência se o conserto já foi reensaiado com o agente. Ligue ao trabalho final (enunciado §8): o que o artigo afirma precisa aparecer no registro; "pronto" é comando e saída, de preferência na situação real.</aside>
+  <aside class="notas">Fonte: docs/referencia/ensaio-claude-code.md, seções da fatia 2 e "Reensaio do /clear" (Claude Code 2.1.319, 13/11). O harness supunha que fim e começo viriam na ordem "natural". Conserto: um fim por /clear ou por retomada não encerra a sessão; ela espera a continuação, e a nova herda a frente. O reensaio gravou o JSON real (reason "clear", depois source "clear", id novo, mesmo processo) e a frente passou para a conversa nova. O mesmo reensaio achou o defeito do /resume interativo (a conversa retomada ficava com a frente dela e com a da conversa de antes); confira na referência se já foi consertado. Ligue ao trabalho final (enunciado §8): o que o artigo afirma precisa aparecer no registro; "pronto" é comando e saída, de preferência na situação real. Se mostrar com o agente: peça "rode exatamente este comando"; com pedido vago, o modelo pequeno disse que rodou o que não rodou.</aside>
 </section>
 
 <section class="slide">

@@ -1,6 +1,6 @@
 # Roteiro do professor · aula de 13/11/2026
 
-Vários agentes no mesmo repositório. Slides: `2026-11-13-apresentacao.html` (46 slides; N mostra as notas, T troca o tema, número + Enter pula para o slide). Tópicos detalhados: `2026-11-13-topicos.md`.
+Vários agentes no mesmo repositório. Slides: `2026-11-13-apresentacao.html` (46 slides; N mostra as notas, T troca o tema, número + Enter pula para o slide). Tópicos detalhados: `2026-11-13-topicos.md`. Os slides também estão publicados em https://claude.ai/artifact/HjjirrdGcj9Sb5ciSN8muQ (privado); a fonte é o arquivo do repositório: se mudar um, republique a partir dele.
 
 ## Cronograma (180 min)
 
@@ -45,7 +45,7 @@ Se a turma travar numa pergunta, troque por uma versão sem computador: "três p
 
 ## Demonstração ao vivo
 
-Num terminal com fonte grande, longe do projeto real. Sem `gh` (`AH_GH=/bin/false`) não há rede nem ticket: a reserva fica só no slide 25.
+Num terminal com fonte grande, longe do projeto real. Sem `gh` (`AH_GH=/bin/false`) não há rede nem ticket: a reserva fica só no slide 25. Os comandos da demonstração somam menos de 2 s; o tempo vai para a fala.
 
 **1. Repositório descartável** (no intervalo):
 
@@ -60,10 +60,10 @@ export AH_ESTADO=$D/estado AH_WORKTREES=$D/wt AH_GH=/bin/false
 
 ```
 node ~/projetos/agent-harness/nucleo/bin/ah.mjs init --projeto loja --sigla as --sem-protecao
-git switch dev
+git switch dev                                         # Switched to branch 'dev'
 git add -- .harness tools/ah tools/ah.cmd docs/agents/sessoes-paralelas.md docs/agents/historico-das-frentes.md .claude/settings.json .github/workflows/ah-ci.yml
 git commit -qm "chore: instala o agent-harness"
-tools/ah doctor        # espere: 0 falha(s), 4 aviso(s) (sem gh e sem CI)
+tools/ah doctor        # 20 itens; espere: 0 falha(s), 4 aviso(s) (sigla, gh, proteção no servidor e CI, todos por falta de gh)
 ```
 
 **3. Recusas** (slide 30):
@@ -94,12 +94,16 @@ AH_SESSAO=ana-terminal tools/ah open cupom             # Recusado: Esta sessão 
 
 ```
 AH_SESSAO=carla-terminal tools/ah open cupom --caminhos 'src/**'
-#   … Atenção: as-1 carrinho já mudou 1 arquivo(s) de --caminhos: src/total.js
+# Frente as-2 cupom aberta.
+# Trabalhe em: …/wt/cupom
+# Notas de as-1 carrinho:
+#   2026-11-13 mexendo no total
+# Atenção: as-1 carrinho já mudou 1 arquivo(s) de --caminhos: src/total.js
 echo "// cupom" >> $D/wt/cupom/src/total.js
 tools/ah board                                         # SOBREPÕE as-2 / as-1; "Sobreposições: src/total.js: as-1, as-2"
 ```
 
-**5b. A conversa da Carla tenta editar a pasta da Ana** (T4; rode neste mesmo terminal, que é o processo da sessão `ana-terminal` e a mantém viva):
+**5b. A conversa da Carla tenta editar a pasta da Ana** (T4). Sessão aberta à mão, com `AH_SESSAO`, não tem processo de agente: no `board` ela aparece como `sem processo`, e conta como viva pelo sinal de vida, que vale 120 min desde o último comando dela. Por isso a `ana-terminal` está viva aqui; numa demonstração que demore mais que isso, rode antes um `AH_SESSAO=ana-terminal tools/ah whoami`:
 
 ```
 printf '{"session_id":"carla-terminal","hook_event_name":"PreToolUse","cwd":"%s","tool_name":"Edit","tool_input":{"file_path":"%s/wt/carrinho/src/total.js","old_string":"a","new_string":"b"}}' "$PWD" "$D" | tools/ah gancho claude-code; echo "código $?"
@@ -115,6 +119,10 @@ AH_SESSAO=carla-terminal tools/ah handoff --nota "falta validar a data"   # recu
 git -C $D/wt/cupom commit -qam "feat: cupom no total"
 AH_SESSAO=carla-terminal tools/ah handoff --nota "falta validar a data"   # Aviso: sem remoto … / Frente as-2 cupom passada.
 AH_SESSAO=ana-segunda tools/ah open cupom                                 # Frente as-2 cupom retomada.
+#   Trabalhe em: …/wt/cupom
+#   Notas de as-1 carrinho:
+#     2026-11-13 mexendo no total
+#   Atenção: as-1 carrinho já mudou 1 arquivo(s) de --caminhos: src/total.js
 ```
 
 **7. Fechar sem perder:**
@@ -126,7 +134,9 @@ AH_SESSAO=ana-terminal tools/ah close --resumo "frete no total"   # Frente as-1 
 git log --oneline | head -3                            # docs(frentes): fecha as-1 carrinho
 ```
 
-Ensaiado em 12/11/2026 à noite (commits `5f146ed` e `bcfd668`) e de novo com a fatia 2 pronta, já com T1, T3, T4 e `sweep`: as saídas acima são as que apareceram, e o `doctor` do passo 2 mostrou 20 linhas de item, com 0 falha(s) e 4 aviso(s). Outro agente ainda consertava código no mesmo ramo; **ensaie de novo de manhã** e confira as linhas.
+Ensaiado em 12/11/2026 à noite (commits `5f146ed` e `bcfd668`) e em 13/11 com a fatia 2 pronta, já com T1, T3, T4 e `sweep`: as saídas acima são as que apareceram. **Ensaie de novo antes da aula** e confira as linhas: o núcleo ainda recebia consertos na madrugada de 13/11.
+
+**Se for mostrar com o agente de verdade** (Claude Code, num repositório descartável): cada pedido com recusa leva de 5 a 10 s. Peça o comando ao pé da letra, "rode exatamente este comando: `git reset --hard`". No ensaio, com um pedido vago, o modelo pequeno (haiku) não chamou ferramenta nenhuma e respondeu que o `git reset --hard` "descartou" as alterações, sem ter rodado nada. Depois de cada pedido, confira no harness que a recusa foi gravada (`tools/ah board` e o `eventos.jsonl` do estado). Vale um comentário em sala: o agente afirma o que não fez; por isso existe o registro (questão 12, enunciado §8).
 
 ## Plano B
 
@@ -145,6 +155,6 @@ Ensaiado em 12/11/2026 à noite (commits `5f146ed` e `bcfd668`) e de novo com a 
 ## Conferir antes da aula
 
 - `tools/ah --help` (no clone do harness: `node ~/projetos/agent-harness/nucleo/bin/ah.mjs --help`): devem aparecer 12 comandos, `sweep` entre eles. Continuam em construção a fila de trabalho pesado (`pesado`, T6), a atualização do harness instalado e os adaptadores do Codex e do OpenCode (slides 29, 39 e 42).
-- `docs/referencia/ensaio-claude-code.md`, seção da fatia 2: confira se o conserto do `/clear` (slide 40) já foi reensaiado com o agente real; se não, diga isso à turma.
+- `docs/referencia/ensaio-claude-code.md`, seção "Reensaio do `/clear`": o conserto do `/clear` (slide 40) foi conferido com o Claude Code 2.1.319 real em 13/11. O mesmo reensaio achou outro defeito (`/resume` interativo de uma conversa que já tinha frente deixava o executor com duas frentes); confira lá se já foi consertado e, se não, diga isso à turma.
 
 Conferir antes da aula: `tools/ah --help`.
