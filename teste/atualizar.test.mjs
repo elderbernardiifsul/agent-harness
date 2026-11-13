@@ -372,3 +372,17 @@ test('CRLF: arquivo binário do núcleo conta o sha256 exato (trocar CRLF por LF
   assert.equal(r.codigo, 1);
   assert.match(r.erro, /lib\/figura\.bin \(mudou\)/);
 });
+
+test('--simular que termina em recusa não grava nada, nem o evento recusa-de-comando', t => {
+  const { p, clone } = cenario(t);
+  fs.appendFileSync(path.join(nucleo(p), 'comandos', 'board.mjs'), '// mexi aqui\n');
+  const eventos = path.join(dirDoTeste(p), 'eventos.jsonl');
+  const antes = fs.existsSync(eventos) ? fs.readFileSync(eventos, 'utf8') : '';
+  const s = clone.ah(p, ['atualizar', '--simular']);
+  assert.equal(s.codigo, 1);
+  assert.match(s.erro, /Recusado: 1 arquivo\(s\) de \.harness\/nucleo\/ alterado\(s\) à mão/);
+  assert.equal(fs.existsSync(eventos) ? fs.readFileSync(eventos, 'utf8') : '', antes);
+  // Sem --simular, a mesma recusa continua registrada.
+  assert.equal(clone.ah(p, ['atualizar']).codigo, 1);
+  assert.match(fs.readFileSync(eventos, 'utf8'), /"tipo":"recusa-de-comando","comando":"atualizar"/);
+});

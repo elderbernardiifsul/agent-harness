@@ -166,6 +166,16 @@ function trocar(dirHarness, dirNucleo, arquivos, manifesto) {
 
 export async function executar(args, amb) {
   const o = lerOpcoes(args);
+  try {
+    return await atualizar(o, amb);
+  } catch (e) {
+    // Com --simular nada é gravado, nem a recusa nos eventos (o despacho lê `semRegistro`).
+    if (o.simular && e instanceof ErroDeUso) e.semRegistro = true;
+    throw e;
+  }
+}
+
+async function atualizar(o, amb) {
   const aqui = fs.realpathSync(RAIZ_DO_HARNESS);
   let registro = null;
   try { registro = amb.dirEstado ? lerJson(path.join(amb.dirEstado, 'origem.json'), null) : null; } catch { /* ilegível: como sem registro; é regravado */ }

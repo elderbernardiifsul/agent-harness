@@ -143,8 +143,9 @@ export async function despachar(argv, {
   } catch (e) {
     if (e instanceof ErroDeUso || e instanceof ErroDeEstado) {
       const [motivo, ...resto] = e.saida.split('\n');
-      // Recusa de comando também vai para os eventos (decisão 12); falhar aqui não muda a recusa.
-      if (e instanceof ErroDeUso && amb?.dirEstado) {
+      // Recusa de comando também vai para os eventos (decisão 12); falhar aqui não muda a recusa. A de uma
+      // simulação (`semRegistro`) não: simular não grava nada.
+      if (e instanceof ErroDeUso && !e.semRegistro && amb?.dirEstado) {
         try {
           registrarEvento(amb.dirEstado, { tipo: 'recusa-de-comando', comando: nome, sessao: amb.sessaoId, motivo });
         } catch { /* sem como registrar: a recusa sai do mesmo jeito */ }
