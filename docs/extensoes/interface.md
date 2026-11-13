@@ -45,7 +45,7 @@ export default {
 };
 ```
 
-Campo fora desta lista impede a carga (`campo desconhecido: …`), o que acusa erros de digitação como `reacao` no lugar de `reacoes`.
+Campo fora desta lista impede a carga (`campo desconhecido: …`), o que acusa erros de digitação como `reacao` no lugar de `reacoes`. A restrição vale só para o objeto do `export default`: o módulo pode ter outros exports (funções auxiliares exportadas para o teste, por exemplo), que o núcleo ignora, porque a carga lê apenas `modulo.default`.
 
 ## Carga
 
@@ -71,6 +71,35 @@ Toda função da extensão recebe o mesmo formato de contexto:
 | `gravarCampos(nome, campos)` | Grava em `frente.extensoes[<extensão>]` da frente `nome`; ver abaixo |
 | `git(args, opcoes)`, `gh(args, opcoes)` | Os auxiliares do núcleo, na raiz do projeto; devolvem `{codigo, saida, erro}` e não lançam |
 | `ErroDeUso` | Classe para recusar dentro de um comando |
+| *(acréscimo da revisão: a confirmar)* | Meio de saber se a sessão dona de uma frente está viva |
+
+### Registro da frente
+
+`ctx.frente` e cada item de `ctx.frentes()` trazem o registro gravado em `<estado>/frentes/<nome>.json`, congelado (`Object.freeze` em profundidade): uma atribuição a ele não tem efeito no estado, e a escrita da extensão passa por `gravarCampos`. O registro é criado por `novaFrente` (`nucleo/lib/frente.mjs`) no `ah open` e alterado pelo `open` (reserva, retomada), `nota`, `handoff`, `takeover`, `sweep --reparar` e pela herança na continuação de sessão.
+
+| Campo | Tipo e formato | Versão 1 |
+|---|---|---|
+| `esquema` | número; `2` nesta versão do harness (o registro do esquema 1 é migrado na leitura) | estável |
+| `id` | texto `<sigla>-<n>`, como `as-1`; não muda durante a vida da frente | estável |
+| `nome` | texto, `^[a-z0-9][a-z0-9-]{1,48}$`; também é o nome do arquivo do registro | estável |
+| `ramo` | texto, `git.prefixo` + `nome` (`feat/carrinho` com o prefixo padrão) | estável |
+| `worktree` | caminho absoluto da pasta do worktree nesta máquina | estável |
+| `tickets` | lista de números das issues (`[1, 2]`; `[]` sem ticket) | estável |
+| `plano` | texto (caminho dado em `--plano`) ou `null` | estável |
+| `caminhos` | lista de textos (dados em `--caminhos`); `[]` quando não informados | estável |
+| `dona` | id da sessão dona (texto) ou `null` na frente passada | estável |
+| `abertaPor` | login do GitHub de quem abriu (o `login` de `<estado>/maquina.json`) | estável |
+| `abertaEm` | data e hora local com fuso, `AAAA-MM-DDTHH:MM:SS±HH:MM`, no fuso de `fuso` da configuração (`2026-11-13T12:43:33-03:00`); `Date.parse` a lê. Pode ser `null` na frente vinda de outra máquina por passagem sem esse dado | estável |
+| `estado` | `'ativa'`, `'passada'` (sem dona, à espera de `ah open`) ou `'abrindo'` (um `ah open` em curso ou interrompido) | estável |
+| `notas` | lista de `{em, sessao, texto}`, com `em` em UTC (`toISOString`) | estável |
+| `reserva` | `{logins, tickets}` (logins e tickets reservados no GitHub) ou `null` | estável |
+| `extensoes` | objeto `{<extensão>: {…}}`, ausente até a primeira gravação de alguma extensão; a seção de cada extensão tem os campos que ela gravou com `gravarCampos` | estável |
+
+Campos opcionais, gravados pelo núcleo conforme o ciclo e sem garantia de forma na versão 1 (podem mudar sem nova versão da interface): `retomadaEm`, `passadaEm`, `passadaPor`, `passadaDe`, `sessoesAnteriores`, `tomadaEm`, `tomadaDe`, `atribuidaPor`, `reconstruida` e `processo` (só no estado `abrindo`).
+
+`abertaEm` não muda na retomada nem na tomada: `retomarSobTrava` (`nucleo/comandos/open.mjs`) copia o registro e acrescenta `retomadaEm`, em UTC (`toISOString`), e o `ah takeover` acrescenta `tomadaEm`. A idade de uma frente medida por `abertaEm` conta, portanto, desde a primeira abertura, inclusive o tempo em que ela ficou passada.
+
+### Gravação
 
 `gravarCampos(nome, campos)`:
 
@@ -95,7 +124,21 @@ comandos: {
 ```
 
 - Cada entrada vira `ah <nome>`, com os mesmos requisitos e a mesma ajuda (`ah <nome> --help`) dos comandos do núcleo. A ajuda geral (`ah --help`) lista os comandos de extensões na seção "Comandos de extensões", com o nome da extensão.
-- `ctx.frente` é a frente em foco da sessão.
+- `ctx.frente` é a frente em foco da sessão que chamou (o campo `frente` do registro da sessão), ou `null` quando a sessão não tem frente.
+- Os argumentos chegam em `executar(args, ctx)`, sem o nome do comando (`ah idade --x` entrega `['--x']`). O despacho trata `--help` e `-h` antes de chamar `executar`.
+
+### Sessão e as duas recusas sem frente
+
+A sessão vem de `AH_SESSAO` ou, na falta dela, de `CLAUDE_CODE_SESSION_ID` (`idDaSessao`, `nucleo/lib/sessao.mjs`). Dentro de um agente Claude Code, a segunda variável já está definida, de modo que um `tools/ah <comando>` executado pelo agente usa a sessão real dele; num terminal comum, a sessão é informada à mão: `AH_SESSAO=ana-terminal tools/ah idade`.
+
+Há duas recusas distintas para "sem frente":
+
+| Situação | Quem recusa | Saída |
+|---|---|---|
+| Sem sessão (nenhuma das duas variáveis) e `requisitos.sessao` verdadeiro, o padrão | o núcleo, antes de chamar `executar` | `Recusado: não sei qual é a sessão` / `Faça: defina AH_SESSAO ou ligue o adaptador do agente` |
+| Com sessão, mas sem frente em foco | o código da extensão, que confere `ctx.frente` | a recusa que a extensão escrever, por exemplo `Recusado: Esta sessão não tem frente.` / `Faça: abra uma com ah open <nome>` |
+
+Com `requisitos: {sessao: false}`, o comando roda sem sessão (`ctx.sessaoId` e `ctx.frente` valem `null`); a extensão `recursos` usa essa forma para `listar` e recusa ela mesma as ações que gravam.
 - Recusa: `throw new ctx.ErroDeUso('<motivo>\nPróximo passo: <o que fazer>')`. A saída é `Recusado: <motivo>` e `Faça: <o que fazer>`, código 1, e o evento `recusa-de-comando` é registrado.
 - Outro erro lançado vira `Recusado: a extensão <nome> falhou no comando <comando>: <erro>`, com a saída "corrija a extensão ou desligue-a em .harness/config.json".
 
@@ -153,8 +196,17 @@ Cada reação é `async (ctx)`. Em todas, `ctx.frente` é a frente do comando.
 | Função | Uso |
 |---|---|
 | `carregarParaTeste(arquivo, config)` | Carrega o `extensao.mjs` e confere forma e configuração como o núcleo; lança com o motivo da recusa |
-| `ctxFalso({extensao, config, frente, frentes, ...})` | Contexto sem disco; guarda em `saida`, `avisos`, `gravados` e `chamadas` o que a extensão fez |
+| `ctxFalso({extensao, config, frente, frentes, ...})` | Contexto sem disco, para chamar diretamente uma função da extensão (`executar` de um comando, `avaliar` de uma trava, uma reação, `conferir`, `resumo`, `valor` de coluna) |
 | `projetoDeTeste({extensoes, pastas, config})` | Projeto git descartável com o núcleo, as pastas de extensão copiadas e ligadas, estado e gh próprios; `ah(args)`, `gancho(acao)`, `frente(nome)`, `git(args)`, `limpar()` |
+
+`ctxFalso` tem a forma do `ctx` do núcleo, com estes detalhes:
+
+- `frente` (o registro de partida, montado à mão; basta trazer os campos que a função lê) e `frentes` formam o estado em memória; `ctx.frente` sai congelado, como no núcleo.
+- `saida` e `avisos` são listas com cada texto passado a `escrever` e `avisar`, na ordem (`['Frente as-1 carrinho: aberta há 2 h 13 min\n']`); `gravados` lista cada `gravarCampos` como `{frente, secao}`; `chamadas` lista cada `git`/`gh` como `{programa, args, opcoes}`, que respondem `{codigo: 0, saida: '', erro: ''}` salvo funções `git`/`gh` dadas.
+- `ErroDeUso` é a mesma classe do núcleo: `assert.rejects(() => cmd.executar([], ctx), ctx.ErroDeUso)` confere uma recusa.
+- `sessaoId` vale `sessao-teste-0001` por padrão; `env` é `{}`; `dirEstado` é `null`; outros campos (`retomada`, `reparar`, `soLocal`) entram pelo resto do objeto: `ctxFalso({frente, retomada: true})`.
+
+`projetoDeTeste` não usa o estado da máquina: `AH_ESTADO`, `AH_WORKTREES` e `AH_GH` (um `gh` falso que responde o login `ana-souza`) apontam para uma pasta temporária, e `CLAUDE_CODE_SESSION_ID` é removida do ambiente. `p.ah(args)` roda com `AH_SESSAO=sessao-teste-0001`; outra sessão entra por `p.ah(args, {env: {AH_SESSAO: 'sessao-b-0002'}})`. A sigla da máquina é `as`, de modo que a primeira frente aberta é `as-1`. `p.ah` devolve `{codigo, saida, erro}`.
 
 ## Eventos
 

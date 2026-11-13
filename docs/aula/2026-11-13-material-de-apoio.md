@@ -22,7 +22,7 @@ Os exemplos usam um projeto fictício, a `loja` (repositório `exemplo/loja`), e
 8. Gabarito comentado
 9. Glossário
 
-Estado do exemplo: o `agent-harness` descrito aqui foi conferido no código com as fatias 3 e 4 prontas (referência em `docs/referencia/comandos.md` no clone). Fatia 3: fila de trabalho pesado (`pesado`) e trava T6, sem ensaio com agente real nem em Windows ou macOS. Fatia 4: roteiro de adaptação para outros agentes (`docs/agentes/`), com testes de contrato, sem ensaio com o Codex nem com o OpenCode; apenas o Claude Code tem adaptador. Fatia 5: atualização do harness instalado (`tools/ah atualizar --de <clone>`), pronta, sem ensaio com agente real. As peças marcadas **em construção** existem apenas no desenho: os números de uso (`board --numeros`), da fatia 5. Para conferir o que existe em cada cópia: `tools/ah --help`.
+Estado do exemplo: o `agent-harness` descrito aqui foi conferido no código com as fatias 3 a 5 prontas (referência em `docs/referencia/comandos.md` no clone). Fatia 3: fila de trabalho pesado (`pesado`) e trava T6, sem ensaio com agente real nem em Windows ou macOS. Fatia 4: roteiro de adaptação para outros agentes (`docs/agentes/`), com testes de contrato, sem ensaio com o Codex nem com o OpenCode; apenas o Claude Code tem adaptador. Fatia 5 (versão 0.2.0): atualização do harness instalado (`tools/ah atualizar --de <clone>`), sem ensaio com agente real; extensões do projeto em `.harness/extensoes/`, com a extensão `recursos` (portas e bancos por frente) e o guia `docs/extensoes/como-estender.md`, ensaiado por um agente sem contexto; dependências entre tickets (`tools/ah deps`); números de uso (`tools/ah board --numeros`). Para conferir o que existe em cada cópia: `tools/ah --help`.
 
 ---
 
@@ -201,7 +201,7 @@ Na tabela, "custo de adoção" é o que a alternativa exige (tempo, código, inf
 
 **Aplicação.** O agente trabalha e faz commit no worktree. A integração ocorre na pasta principal, na `dev`: `git merge --no-ff feat/carrinho`.
 
-**Limites.** A separação por pasta não impede o acesso à pasta de outra sessão; a questão 5 trata desse impedimento. Cada worktree tem cópia própria de dependências e configuração local. Banco e portas por worktree ficam fora do núcleo.
+**Limites.** A separação por pasta não impede o acesso à pasta de outra sessão; a questão 5 trata desse impedimento. Cada worktree tem cópia própria de dependências e configuração local. Banco e portas por worktree ficam fora do núcleo; a extensão `recursos`, que acompanha o harness, apenas registra qual frente usa cada porta ou banco e recusa o valor já reservado por outra (`tools/ah recursos reservar porta 3001`), sem criar o banco nem subir o serviço.
 
 **Relação com o trabalho final.** Cenário 3: a hipótese "cada um com o seu agente acelera o começo e complica a integração" pode ser medida pela contagem dos locais onde os conflitos apareceram. O worktree reduz a interferência durante o trabalho e concentra o conflito no merge.
 
@@ -589,7 +589,7 @@ Sessões vivas: ana-term (executor, carrinho); carla-te (executor, cupom)
 
 **Solução proposta (método como instrução, sem recusa).** O harness não recusa trabalho por método nem por escolha de modelo; o método permanece como instrução, e o harness torna visível o plano associado a cada trabalho.
 
-**Exemplo de implementação (agent-harness).** O harness nunca recusa por método nem por escolha de modelo. `tools/ah open <nome> --plano docs/plano.md` associa a frente ao plano, que aparece no quadro e no resumo. **Pronto.** Medição de custo por frente (`board --numeros`): **em construção** (fatia 5). O próprio harness foi construído em fatias, cada uma utilizável e testada antes da seguinte, com revisão independente por tarefa.
+**Exemplo de implementação (agent-harness).** O harness nunca recusa por método nem por escolha de modelo. `tools/ah open <nome> --plano docs/plano.md` associa a frente ao plano, que aparece no quadro e no resumo. **Pronto.** Números de uso (`tools/ah board --numeros`): frentes abertas e fechadas, tempo médio e mediano por frente, passagens, sessões por modelo, recusas por trava e espera do trabalho pesado, a partir do registro de eventos da máquina. **Pronto.** O gasto com modelo (tokens) não entra na conta. O próprio harness foi construído em fatias, cada uma utilizável e testada antes da seguinte, com revisão independente por tarefa.
 
 **Relação com o trabalho final.** Cenário 6 (especificação quando o pedido muda); enunciado §4 ("horas e gasto com modelos": o harness não mede gasto, que exige registro manual).
 
@@ -856,7 +856,7 @@ Três práticas independentes do uso do harness:
 2. **"Pronto" com comando e saída.** É a regra da evidência (enunciado §8) aplicada ao código.
 3. **Ambiente descartável.** O ensaio do harness com o agente real ocorreu num repositório descartável, sem remoto. Skills e código de terceiros exigem o mesmo cuidado (enunciado §4).
 
-O harness não mede horas nem gasto com modelo. Se a pergunta do grupo depende desses dados, o registro deve ser manual.
+O harness não mede horas de trabalho nem gasto com modelo: o `tools/ah board --numeros` dá o tempo entre a abertura e o fechamento de cada frente, que inclui as pausas. Se a pergunta do grupo depende desses dados, o registro deve ser manual.
 
 ---
 

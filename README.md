@@ -2,7 +2,7 @@
 
 Harness de programação com vários agentes. Várias sessões de agentes de código trabalham ao mesmo tempo no mesmo repositório, cada uma na própria frente, e um conjunto de comandos coordena os ramos, as travas e o estado local. Requer Node 22 ou mais novo e não tem dependências.
 
-> Situação: as fatias 1 a 4 estão entregues. Da fatia 5, a atualização do harness instalado (`ah atualizar`) está pronta, sem ensaio com agente real; o restante está em construção, e a interface ainda pode mudar.
+> Situação: as fatias 1 a 5 estão entregues (versão 0.2.0). A atualização do harness instalado (`ah atualizar`) e as travas de extensão não foram ensaiadas com agente real; o guia de extensão foi ensaiado por um agente sem contexto (`docs/referencia/ensaio-guia-de-extensao.md`).
 
 ## Entregas da fatia 1
 
@@ -44,6 +44,15 @@ tools/ah atualizar --de <clone>
 
 O primeiro comando apenas lista o que mudaria. O segundo substitui `.harness/nucleo/` pela cópia do clone (montada ao lado e trocada de uma só vez) e reaplica o trecho do harness no `AGENTS.md`; configuração, extensões e estado (frentes, sessões, fila) permanecem inalterados. O `atualizar` recusa a operação quando algum arquivo do núcleo foi alterado à mão no projeto e lista o que se perderia (`--forcar` descarta essas alterações). Também recusa quando não há como fazer essa conferência (manifesto antigo e clone sem o commit instalado) e quando o clone é mais antigo que a cópia instalada, critério avaliado pela versão ou, com git, pela anterioridade do commit do clone em relação ao instalado. Assim como o `init`, o `atualizar` não faz commit e termina com os comandos do commit no ramo base. O `doctor` avisa, no item "Núcleo igual ao clone de origem", quando o clone registrado na máquina tem um núcleo diferente do instalado. Detalhes: `docs/referencia/comandos.md`, seção "atualizar".
 
+## Extensões, dependências e números (fatia 5)
+
+- **Extensões do projeto.** Uma pasta `.harness/extensoes/<nome>/` com `extensao.mjs`, ligada em `extensoes` no `.harness/config.json`, acrescenta comandos (`tools/ah <nome>`), travas avaliadas depois das do núcleo, verificações do `doctor`, reações ao ciclo da frente (inclusive recusar o `close`), linhas no resumo e colunas no quadro, sem alterar o núcleo. Uma extensão que não carrega não derruba os comandos do núcleo, e o `doctor` mostra o motivo. Guia: [`docs/extensoes/como-estender.md`](docs/extensoes/como-estender.md); interface (versão 1): [`docs/extensoes/interface.md`](docs/extensoes/interface.md).
+- **Extensão `recursos`.** Acompanha o harness: `tools/ah recursos reservar porta 3001` registra um recurso (porta, banco) na frente, recusa o valor já reservado por outra frente, aparece no `board` e faz o `close` recusar a frente com recursos ainda reservados.
+- **`tools/ah deps`.** Lê a relação de bloqueio entre as issues no GitHub (API de dependências, ou a linha `Bloqueado por: #N` no corpo) e mostra a árvore de bloqueios e as issues livres para começar; `tools/ah deps <n>` mostra uma issue. Guarda a última leitura para uso sem rede; o `open` avisa quando um ticket da frente está bloqueado.
+- **`tools/ah board --numeros`.** Agrega o registro de eventos da máquina: frentes abertas e fechadas, tempo médio e mediano por frente, passagens, tomadas, sessões por modelo, recusas por trava e trabalho pesado, com período opcional (`--desde`, `--ate`).
+
+Detalhes: `docs/referencia/comandos.md`, seções "Extensões", "recursos", "deps" e "board".
+
 ## Preparação de um projeto pelo agente
 
 Requisitos do projeto: repositório git com pelo menos um commit (sem commit o `init` recusa; num repositório recém-criado, execute antes `git commit --allow-empty -m "começo"`), Node 22 ou mais novo e, para tickets e proteção de ramo, o `gh` autenticado.
@@ -76,13 +85,16 @@ AH_SESSAO=ana-terminal tools/ah close
 - `docs/referencia/comandos.md`: cada comando, as recusas e exemplos; a vida da sessão, os eventos, os limites das travas e o procedimento de publicação.
 - `docs/referencia/capacidades-por-agente.md`: recursos que cada agente de código oferece ao harness.
 - `docs/referencia/ensaio-claude-code.md`: ensaios com o Claude Code 2.1.319.
+- `docs/referencia/ensaio-guia-de-extensao.md`: prova do guia de extensão com um agente sem contexto.
+- `docs/extensoes/`: guia de criação e referência da interface de extensão.
 
 Testes: `node --test teste/`.
 
-## Próximas fatias
+## Pendências
 
-As fatias 3 (trabalho pesado) e 4 (outros agentes, conforme a seção 15 do desenho: roteiro de adaptação em vez de adaptadores prontos) estão entregues.
+As cinco fatias da seção 12.1 do desenho estão entregues (planos em `docs/superpowers/plans/`). Ficam fora, registrados nos planos:
 
-- Fatia 5, em andamento: o `atualizar` está entregue (plano em `docs/superpowers/plans/2026-11-13-nucleo-fatia-5.md`); faltam as extensões do projeto em `.harness/extensoes/` com exemplo e guia, `deps` e números de uso.
-
-A ordem e o escopo ainda podem mudar.
+- a coluna de bloqueios no `board` (exigiria rede ou cache a cada execução);
+- extensões instaladas por pacote ou por URL (só pasta local) e o isolamento da extensão, que roda com os mesmos poderes do `ah`;
+- o ensaio com agente real das travas de extensão e do `atualizar`, e os ensaios em Windows e macOS;
+- as pendências das fatias anteriores, nas seções "Pendências" e nos arquivos `*-pendencias.md` dos planos.

@@ -1,6 +1,6 @@
 # Comandos do harness
 
-Referência dos comandos das fatias 1 a 5 (da fatia 5, por enquanto, o `atualizar`, o `deps` e o `board --numeros`). Os comandos são executados como `tools/ah <comando>` dentro do projeto, com exceção do `init`, executado a partir do clone do agent-harness. Os exemplos usam o projeto fictício `loja`, as pessoas `ana-souza` (sigla `as`) e `carla-dias` (sigla `cd`), os tickets `#1` a `#9` e as sessões `sessao-teste-0001`, `sessao-b-0002` e `sessao-c-0003`. As saídas foram copiadas de um projeto descartável, e `<worktrees>` designa a pasta dos worktrees das frentes.
+Referência dos comandos das fatias 1 a 5, na versão 0.2.0, e das extensões (seção "Extensões", com o comando `recursos` da extensão que acompanha o harness). Os comandos são executados como `tools/ah <comando>` dentro do projeto, com exceção do `init`, executado a partir do clone do agent-harness. Os exemplos usam o projeto fictício `loja`, as pessoas `ana-souza` (sigla `as`) e `carla-dias` (sigla `cd`), os tickets `#1` a `#9` e as sessões `sessao-teste-0001`, `sessao-b-0002` e `sessao-c-0003`. As saídas foram copiadas de um projeto descartável, e `<worktrees>` designa a pasta dos worktrees das frentes.
 
 Toda recusa segue o mesmo formato: o motivo em uma linha e, na linha seguinte, o próximo passo. A recusa de um comando `ah` sai com código 1 (`Recusado: motivo` / `Faça: …`) e também é registrada nos eventos (`recusa-de-comando`); a recusa de uma trava, emitida pelo gancho do agente, sai com código 2 (`Recusado (Tn): motivo` / `Faça: …`).
 
@@ -22,7 +22,7 @@ Nas mensagens, a sessão é identificada pelo id curto, formado pelos 8 primeiro
 
 Do agente, o harness lê `CLAUDE_CODE_SESSION_ID` (id da sessão, na ausência de `AH_SESSAO`) e, no gancho, `CLAUDE_PROJECT_DIR` (um dos locais em que procura o projeto).
 
-Ajuda: `ah --help` (ou `ah` sem argumentos) lista os comandos; `ah <comando> --help` (ou `-h`) mostra a descrição e o uso do comando e sai com código 0, sem executar nada e sem exigir configuração nem sessão. Depois de `--`, `--help` é tratado como argumento comum (`ah nota -- --help` grava a nota "--help").
+Ajuda: `ah --help` (ou `ah` sem argumentos) lista os comandos do núcleo e, numa seção própria, `Comandos de extensões:`, os das extensões ligadas e carregadas, cada um com o nome da extensão (`recursos   reserva, libera e lista recursos por frente (portas, bancos) (extensão recursos)`); `ah <comando> --help` (ou `-h`) mostra a descrição e o uso do comando e sai com código 0, sem executar nada e sem exigir configuração nem sessão. Depois de `--`, `--help` é tratado como argumento comum (`ah nota -- --help` grava a nota "--help").
 
 Recusas comuns a vários comandos:
 
@@ -31,10 +31,10 @@ Recusas comuns a vários comandos:
 | `não sei qual é a sessão` | comandos que exigem sessão, sem `AH_SESSAO` e fora do agente | `defina AH_SESSAO ou ligue o adaptador do agente`: dentro do agente, a sessão é informada pelo gancho; em execução manual, `AH_SESSAO=<nome> tools/ah <comando>` |
 | `este projeto ainda não tem .harness/config.json` | todos, menos `init`, `doctor` e `gancho` | `peça ao agente: prepare meu projeto (ah init)` |
 | `Configuração inválida: <campo> (<motivo>)` | idem, com o arquivo existente mas inválido | corrija `.harness/config.json` (ou rode `ah doctor`) |
-| `comando desconhecido: <nome>` | qualquer nome fora da lista | rode `ah --help` |
+| `comando desconhecido: <nome>` | qualquer nome fora da lista (inclusive comando de extensão desligada ou que não carregou) | rode `ah --help`; para extensão, confira `extensoes` em `.harness/config.json` e o item `Extensão <nome>` do `ah doctor` |
 | `Opção desconhecida: …` / `Argumento a mais: …` | opção ou argumento que o comando não aceita | `use <uso do comando>` |
 
-Exigem sessão: `open`, `nota`, `whoami`, `papel`, `handoff`, `takeover` e `close`. Não exigem: `board`, `deps`, `sweep`, `doctor`, `init`, `pesado` e o `gancho`, que recebe a sessão no evento. Uma sessão ainda sem registro (comandos executados à mão, sem gancho) é registrada com papel `executor` pelo primeiro `open`, `papel`, `whoami` ou `takeover --confirmado` que executar.
+Exigem sessão: `open`, `nota`, `whoami`, `papel`, `handoff`, `takeover` e `close`. Não exigem: `board`, `deps`, `sweep`, `doctor`, `init`, `pesado` e o `gancho`, que recebe a sessão no evento. Um comando de extensão exige sessão salvo quando declara `requisitos: {sessao: false}`; o `recursos` exige sessão apenas em `reservar` e `liberar`. Uma sessão ainda sem registro (comandos executados à mão, sem gancho) é registrada com papel `executor` pelo primeiro `open`, `papel`, `whoami` ou `takeover --confirmado` que executar.
 
 ## init
 
@@ -164,7 +164,7 @@ Faça: leve a mudança para o clone do agent-harness (ou para .harness/extensoes
 ah doctor [--json]
 ```
 
-Confere a preparação do projeto em 23 verificações (a última aparece apenas quando um agente se identifica): Node 22 ou mais recente; git presente; shell POSIX; `.harness/config.json` válido; cópia do núcleo (`MANIFEST.json`); núcleo igual ao clone de origem; arquivos de estado legíveis (incluindo o esquema: registro gravado por um harness mais novo falha com "atualize o harness"); sigla sem conflito; `gh` presente e autenticado; ramo base e ramos protegidos; ganchos do Claude Code instalados; harness no ramo base (`tools/ah` e `.harness/config.json` commitados na `dev`); gancho responde (o `doctor` provoca uma recusa T5 real); hora de início do processo; gancho recusa troca de ramo (o `doctor` provoca uma recusa T1); ganchos vigiam a edição (o seletor do `PreToolUse` inclui `Edit`, `Write` e `NotebookEdit`; sem eles, a T4 não detecta a edição); comentários pendentes; frentes órfãs; proteção no servidor (uma linha por ramo protegido); CI com comando de teste; frentes com worktree (incluindo as de abertura parada); fila de pesado (configuração da máquina legível, estado em versão conhecida, senhas de processo morto); adaptador do agente em uso. Cada item recebe o estado `ok`, `aviso` (algo a melhorar, com a ação indicada) ou `FALHOU` (algo que impede o uso). O código de saída é 0 quando não há falha; avisos não alteram o código. `--json` imprime `{"itens":[{"item","estado","fazer"}],"falhas","avisos"}`.
+Confere a preparação do projeto em 23 verificações do núcleo (a última aparece apenas quando um agente se identifica), seguidas dos itens das extensões (tabela abaixo): Node 22 ou mais recente; git presente; shell POSIX; `.harness/config.json` válido; cópia do núcleo (`MANIFEST.json`); núcleo igual ao clone de origem; arquivos de estado legíveis (incluindo o esquema: registro gravado por um harness mais novo falha com "atualize o harness"); sigla sem conflito; `gh` presente e autenticado; ramo base e ramos protegidos; ganchos do Claude Code instalados; harness no ramo base (`tools/ah` e `.harness/config.json` commitados na `dev`); gancho responde (o `doctor` provoca uma recusa T5 real); hora de início do processo; gancho recusa troca de ramo (o `doctor` provoca uma recusa T1); ganchos vigiam a edição (o seletor do `PreToolUse` inclui `Edit`, `Write` e `NotebookEdit`; sem eles, a T4 não detecta a edição); comentários pendentes; frentes órfãs; proteção no servidor (uma linha por ramo protegido); CI com comando de teste; frentes com worktree (incluindo as de abertura parada); fila de pesado (configuração da máquina legível, estado em versão conhecida, senhas de processo morto); adaptador do agente em uso. Cada item recebe o estado `ok`, `aviso` (algo a melhorar, com a ação indicada) ou `FALHOU` (algo que impede o uso). O código de saída é 0 quando não há falha; avisos não alteram o código. `--json` imprime `{"itens":[{"item","estado","fazer"}],"falhas","avisos"}`.
 
 ```
 $ tools/ah doctor
@@ -193,6 +193,28 @@ Itens acrescentados na fatia 2:
 | Comentários pendentes | aviso com `N operação(ões) na fila (#n, …)`; e um aviso `linha ilegível em pendentes: linha N de <arquivo>` por linha quebrada, com o conserto | `rode ah sweep --reparar com rede`; enquanto um ticket tem operação na fila, o `ah open` não o reserva |
 | Frentes órfãs | um aviso por frente ativa sem dona viva (falha, com o que fazer, se a pasta `frentes/` não se lê) | `ah takeover <nome> com a ordem do executivo` |
 | Frentes com worktree | um aviso por frente (ativa ou passada, o mesmo filtro do `sweep`) cujo worktree não existe mais e por registro em abertura parada; um arquivo de frente ilegível não esconde as outras; falha, com o que fazer, se a pasta `frentes/` não se lê | `ah close <nome>` (ou recrie o worktree); `ah open <nome>` para terminar a abertura, ou `ah close <nome>` para desistir |
+
+Itens das extensões (fatia 5), depois dos itens do núcleo:
+
+| Item | Aviso ou falha | Faça |
+|---|---|---|
+| `Extensões (nenhuma ligada)` | sempre `ok`; aparece quando `extensoes` não liga nenhuma extensão | nenhuma ação |
+| `Extensão <nome> (projeto)` ou `Extensão <nome> (harness)` | um item por extensão ligada, com a origem. Falha (`FALHOU  Extensão <nome>: <motivo>; <conserto>`) quando a extensão não carregou: pasta ou `extensao.mjs` ausente, erro de sintaxe, campo desconhecido no `export default`, versão da interface diferente de 1, configuração recusada por `validarConfig`, comando com nome já usado. Aviso quando a do projeto sombreia a do harness com o mesmo nome | o conserto da linha; ou desligar a extensão com `"<nome>": false` |
+| `<item> (<extensão>)` | as verificações que a extensão declara (`verificacoes`), com `ok`, `aviso` ou `FALHOU`; erro lançado pela verificação vira falha | o que a linha indica |
+| `Recursos sem conflito (recursos)` | da extensão `recursos`, quando ligada: falha quando o mesmo recurso (tipo e valor) está em duas frentes, caso que só ocorre com o estado editado à mão | `libere numa delas: ah recursos liberar <tipo> <valor> --frente <nome>` |
+
+```
+$ tools/ah doctor
+…
+ok      Extensão recursos (harness)
+FALHOU  Recursos sem conflito (recursos): banco loja_cupom em as-2 cupom e as-3 frete; libere numa delas: ah recursos liberar banco loja_cupom --frente <nome>
+1 falha(s), 3 aviso(s).
+```
+
+```
+FALHOU  Extensão idade: versão 2 da interface; o núcleo espera a 1; atualize a extensão para a versão 1 da interface (docs/extensoes/interface.md) ou desligue-a em .harness/config.json
+aviso   Extensão recursos (projeto): a extensão recursos de .harness/extensoes/ sombreia a que acompanha o harness; renomeie a do projeto se a do harness era a desejada
+```
 
 Item da fatia 3: **Fila de pesado** falha quando o `config.json` ou o `fila.json` da pasta da fila não pode ser lido ou tem versão desconhecida para este harness (`corrija o arquivo (ou apague-o para voltar aos padrões)`; `atualize o harness deste projeto`), e avisa sobre senhas de processo morto (`saem sozinhas na próxima chamada de ah pesado`).
 
@@ -327,6 +349,14 @@ Mostra as frentes do estado em tabela e, abaixo dela, as sessões vivas. Sem fre
 
 Depois da tabela, a saída traz: `Sobreposições:`, com cada arquivo e as frentes que o alteraram (até 20); `Sessões vivas: <id curto> (<papel>, <frente em foco>); …`, com `, sem processo` ao fim do parêntese da sessão sem pid gravado (sessão de um `ah` executado à mão, sem `AH_PID_AGENTE`, que vive apenas pelo sinal; a regra de vida é a mesma); `Sessões ilegíveis: …`, quando há registro de sessão ilegível; e, quando a fila de pesado da máquina não está vazia, `Fila de pesado (N vaga(s)):`, com uma linha por senha: `rodando` ou `esperando`, a senha, a classe, o tempo decorrido (desde o início ou, para quem espera, desde a chegada), o projeto e a pasta do worktree, `(processo morto)` ou `(comando órfão: sendo morto)` quando for o caso, e o comando. A fila pertence à máquina, de modo que o quadro de qualquer projeto mostra as senhas de todos os projetos. Um arquivo de frente ilegível não impede a exibição do quadro e gera um aviso na saída de erro. `--json` imprime `{"frentes","sessoes","sessoesIlegiveis","sobreposicoes","sobreposicaoIncompleta","fila"}` (`fila`: `dir`, `vagas`, `memoriaLivreMinimaMb`, `erro` e `entradas`, cada uma com o registro mais `estado`, `desde`, `haMs`, `morta` e `orfa`), cada sessão com `semProcesso`, cada frente com o registro inteiro mais `donaViva`, `donaIlegivel`, `sobrepoe`, `sobreposicaoConferida` e, em abertura, `aberturaParada`.
 
+Cada extensão ligada pode acrescentar colunas à direita (`colunas` da interface), com o valor cortado em 30 caracteres, `—` quando vazio e `!` quando a extensão falha. No `--json`, os valores vão em `colunas: {<extensão>: {<título>: valor}}` de cada frente; o campo `extensoes` da frente é o estado gravado pelas extensões. Com a extensão `recursos` ligada:
+
+```
+ID    NOME      DONA      ESTADO  TICKETS  SOBREPÕE  PLANO  ÚLTIMA NOTA  RECURSOS
+as-1  carrinho  ana-term  ativa   —        —         —      —            porta 3001
+as-2  cupom     carla-te  ativa   —        —         —      —            banco loja_cupom
+```
+
 ```
 $ tools/ah board
 ID    NOME      DONA      ESTADO  TICKETS  SOBREPÕE  PLANO  ÚLTIMA NOTA
@@ -385,7 +415,7 @@ Pesado: 2 execuções; espera média 2 s, máxima 3 s; duração média 1 min 30
 Linhas ilegíveis em eventos.jsonl: 1 (fora da conta)
 ```
 
-O exemplo corresponde ao registro de teste `teste/eventos-de-exemplo/eventos.jsonl`.
+O exemplo corresponde ao registro de teste `teste/eventos-de-exemplo/eventos.jsonl`. A trava `recursos/porta` desse registro é fictícia e serve para mostrar o formato `<extensão>/<id>`: a extensão `recursos` que acompanha o harness não declara travas.
 
 ## deps
 
@@ -449,6 +479,83 @@ Bloqueia: nada
 ```
 
 **Limites.** Sem argumento, o comando faz uma chamada por página da lista e uma por issue com bloqueio; com ticket, uma por issue visitada na cascata. O quadro (`board`) não mostra bloqueios, porque isso exigiria rede ou cache a cada execução (pendência registrada no plano da fatia 5b).
+
+## Extensões
+
+Uma extensão acrescenta comandos, travas, verificações do `doctor`, reações ao ciclo de vida, linhas no resumo e colunas no quadro sem alterar o núcleo. A interface está em `docs/extensoes/interface.md`, e o passo a passo de criação, em `docs/extensoes/como-estender.md`. As do projeto ficam em `.harness/extensoes/<nome>/extensao.mjs`; as que acompanham o harness, em `.harness/nucleo/extensoes/<nome>/` (nesta versão, só a `recursos`).
+
+**Configuração.** Uma extensão só carrega quando a chave dela existe em `extensoes`, no `.harness/config.json` (padrão: `{}`, nenhuma ligada):
+
+```json
+"extensoes": { "recursos": { "tipos": ["porta", "banco"] }, "revisao": true, "antiga": false }
+```
+
+| Valor | Efeito |
+|---|---|
+| `true` | ligada, com configuração vazia (`{}`) |
+| objeto | ligada, com o objeto como configuração, conferido pela própria extensão (`validarConfig`) |
+| `false` | desligada, como a ausência da chave |
+
+O nome casa com `^[a-z][a-z0-9-]*$`; outro valor ou outro nome invalida a configuração (`Configuração inválida: extensoes (…)`). Com o mesmo nome no projeto e no harness, vale a do projeto, e o `doctor` avisa da sombra.
+
+**Carga.** A extensão que não carrega (arquivo ausente, erro de sintaxe, forma inválida, versão da interface diferente de 1, configuração recusada, comando com nome já usado) fica de fora sem derrubar os comandos do núcleo: o `doctor` mostra a falha no item `Extensão <nome>`; `open`, `close`, `handoff`, `sweep`, `board` e o despacho de comando avisam uma vez por processo, na saída de erro (`Aviso: a extensão idade não carregou (versão 2 da interface; o núcleo espera a 1); rode ah doctor.`); o gancho segue só com as travas do núcleo.
+
+**Comandos de extensão.** Viram `ah <nome>`, com a mesma ajuda (`ah <nome> --help`) e os mesmos requisitos dos comandos do núcleo. A recusa da extensão segue o formato comum (`Recusado: …` / `Faça: …`, código 1, evento `recusa-de-comando`). Um erro que não é recusa sai como `Recusado: a extensão <nome> falhou no comando <comando>: <erro>`, com `Faça: corrija a extensão ou desligue-a em .harness/config.json`.
+
+**Travas de extensão.** São avaliadas depois das travas T0 a T6 e recusam como elas, com código 2: `Recusado (<extensão>/<id>): <motivo>` / `Faça: …`. `AH_GUARD=off` libera a trava de extensão num comando de shell quando todo comando simples da linha, fora o `cd`, traz o prefixo; na edição de arquivo, não há liberação.
+
+**Fechamento.** A reação `antesDeFechar` de uma extensão pode recusar o `close` (ver "close"); as demais reações não recusam, e um erro nelas vira `Aviso: extensão <nome> falhou em <reação>: …`.
+
+## recursos
+
+```
+ah recursos reservar <tipo> <valor> [--frente <nome>]
+ah recursos liberar <tipo> <valor>|--todos [--frente <nome>]
+ah recursos listar [--json]
+```
+
+Comando da extensão `recursos`, que acompanha o harness e só existe com `"recursos"` ligada em `extensoes`. Registra recursos por frente (tipo e valor, como `porta 3001` ou `banco loja_frete`) em `frente.extensoes.recursos.itens`, para que duas frentes não usem o mesmo recurso. A configuração opcional `{"tipos": [...]}` limita os tipos aceitos; sem ela, vale qualquer tipo com minúsculas, números e hífen, começando por letra. O valor tem de 1 a 100 caracteres, sem espaço.
+
+- **`reservar`.** Grava o recurso na frente da sessão (ou na dada em `--frente`, por nome ou id). A conferência e a gravação ocorrem sob a trava das frentes; um valor já reservado por outra frente do estado (ativa, passada ou abrindo) é recusado com o nome dela. Reservar de novo o mesmo recurso na mesma frente não muda nada.
+- **`liberar`.** Retira um recurso, ou todos com `--todos`. `--frente` permite liberar os recursos de uma frente de outra sessão, por exemplo antes de fechar uma frente órfã ou passada.
+- **`listar`.** Mostra os recursos de cada frente que tem algum, com o estado da frente quando não é `ativa`. `--json` imprime `{"recursos":[{"id","frente","estado","tipo","valor","em"}]}`, com `em` em UTC.
+- **Sessão.** `reservar` e `liberar` exigem sessão; `listar` não.
+- **Ciclo.** O `close` recusa a frente que ainda tem recursos e indica o `liberar --todos`. O `handoff` não libera: a frente passada continua dona dos recursos.
+- **Quadro e doctor.** A coluna `RECURSOS` do `board` lista os recursos de cada frente; o item `Recursos sem conflito (recursos)` do `doctor` acusa o mesmo recurso em duas frentes.
+
+| Recusa | Faça |
+|---|---|
+| `Falta o subcomando.` / `Subcomando desconhecido: …` | use `ah recursos reservar <tipo> <valor> [--frente <nome>] \| liberar <tipo> <valor>\|--todos [--frente <nome>] \| listar [--json]` |
+| `não sei qual é a sessão` (em `reservar` e `liberar`) | defina AH_SESSAO ou ligue o adaptador do agente |
+| `Esta sessão não tem frente.` | abra uma com ah open <nome>, ou diga qual com --frente <nome> |
+| `Não achei a frente <nome>.` | rode ah board para ver as frentes abertas |
+| `Faltam ou sobram argumentos.` / `Opção desconhecida: …` / `Argumento a mais: …` / `A opção --frente precisa do nome da frente.` | use o uso acima |
+| `Tipo inválido: …` | use minúsculas, números e hífen, começando por letra (ex.: porta) |
+| `Valor inválido: precisa ter de 1 a 100 caracteres, sem espaço.` | escreva o valor sem espaço (ex.: 3001) |
+| `Tipo fila fora de extensoes.recursos.tipos (porta, banco).` | use um desses tipos ou acrescente fila em .harness/config.json |
+| `porta 3001 já está reservado pela frente as-1 carrinho.` | escolha outro valor (ah recursos listar mostra os reservados) ou combine com a dona da frente carrinho |
+| `porta 9999 não está reservado pela frente as-1 carrinho.` | ah recursos listar mostra o que cada frente tem |
+| `Com --todos não vão tipo nem valor.` | use o uso acima |
+
+```
+$ AH_SESSAO=ana-terminal tools/ah recursos reservar porta 3001
+Reservado: porta 3001 para a frente as-1 carrinho.
+$ AH_SESSAO=carla-terminal tools/ah recursos reservar porta 3001
+Recusado: porta 3001 já está reservado pela frente as-1 carrinho.
+Faça: escolha outro valor (ah recursos listar mostra os reservados) ou combine com a dona da frente carrinho
+$ AH_SESSAO=carla-terminal tools/ah recursos reservar banco loja_cupom
+Reservado: banco loja_cupom para a frente as-2 cupom.
+$ tools/ah recursos listar
+as-1 carrinho: porta 3001
+as-2 cupom: banco loja_cupom
+$ AH_SESSAO=ana-terminal tools/ah close
+Recusado: a extensão recursos não deixa fechar a frente as-1 carrinho: a frente ainda tem recursos reservados: porta 3001
+Faça: libere com ah recursos liberar --todos --frente carrinho e rode ah close de novo
+$ AH_SESSAO=ana-terminal tools/ah recursos liberar --todos
+Liberados 1 recurso(s) da frente as-1 carrinho.
+$ AH_SESSAO=ana-terminal tools/ah close
+Frente as-1 carrinho fechada.
+```
 
 ## whoami
 
@@ -567,7 +674,7 @@ Trabalhe em: <worktrees>/carrinho
 ah sweep [--reparar] [--json]
 ```
 
-Lista o que está fora do lugar no estado desta máquina, sem usar a rede: uma linha por achado, no formato `- <tipo>: <detalhe>. Faça: <saída>`, ou `Nada fora do lugar.`. Sai sempre com código 0. `--json` imprime `{"reparos":[…],"achados":[{"tipo","detalhe","saida"}]}`.
+Lista o que está fora do lugar no estado desta máquina, sem usar a rede: uma linha por achado, no formato `- <tipo>: <detalhe>. Faça: <saída>`, ou `Nada fora do lugar.`. Sai sempre com código 0. `--json` imprime `{"reparos":[…],"achados":[{"tipo","detalhe","saida"}]}`. Extensões com a reação `noSweep` acrescentam linhas `- <extensão>: <linha>` e, no `--json`, o campo `extensoes: {<extensão>: [linhas]}` (ausente quando nenhuma extensão ligada tem `noSweep`); com `--reparar`, a extensão também conserta o que é dela.
 
 | Achado | Quando | Faça |
 |---|---|---|
@@ -650,6 +757,7 @@ A linha `Falta: git push …` aparece apenas quando o projeto tem remoto. O `clo
 | `Não fechei carrinho: há operações desta máquina na fila para #1 que precisam sair antes.` | tente de novo com rede; nada foi apagado |
 | `Não fechei carrinho: preciso do GitHub para confirmar que ninguém retomou carrinho (…).` | tente de novo com rede; nada foi apagado |
 | `Não consegui conferir …` | resolva o que o git descreve; nada foi apagado |
+| `a extensão <nome> não deixa fechar a frente as-1 carrinho: <motivo>` | o `Faça:` da extensão (na `recursos`: `libere com ah recursos liberar --todos --frente carrinho e rode ah close de novo`); a reação `antesDeFechar` roda depois da primeira conferência de perda de trabalho, e nada foi apagado |
 | `O git não removeu o worktree <wt>: … (apareceu alteração ou arquivo novo depois da conferência?)` | confira o que apareceu (`git -C <wt> status`), guarde ou apague e rode `ah close` de novo; nada foi apagado |
 
 ## pesado
@@ -808,9 +916,9 @@ O gancho e os comandos acrescentam uma linha JSON a `<estado>/eventos.jsonl` a c
 | `frente-solta` | `sessao` (a velha), `frente`, `por`, `motivo` (`continuacao-sem-vinculo` no começo novo; `destino-ja-tem-frente` na continuação para executora que já tem frente) | gancho, começo |
 | `pid-instavel` | `sessao`, `pid` | gancho |
 | `estado-ilegivel` | `sessao`, `caminhos` | gancho (T4) |
-| `recusa` | `sessao`, `trava`, `comando` (até 500 caracteres) ou `ferramenta` e `caminho` (edição) | gancho |
-| `liberacao` | `sessao`, `trava`, `comando` | gancho (`AH_GUARD=off`) |
-| `recusa-de-comando` | `comando`, `sessao`, `motivo` | todo comando que recusa |
+| `recusa` | `sessao`, `trava`, `comando` (até 500 caracteres) ou `ferramenta` e `caminho` (edição); na trava de extensão, `trava` é `<extensão>/<id>` e vem também `extensao` | gancho |
+| `liberacao` | `sessao`, `trava`, `comando`; na trava de extensão, também `extensao` | gancho (`AH_GUARD=off`) |
+| `recusa-de-comando` | `comando` (inclusive o nome de um comando de extensão), `sessao`, `motivo` | todo comando que recusa |
 | `pesado` | `sessao`, `senha`, `classe`, `esperaMs`, `duracaoMs`, `codigo` | `pesado`, ao terminar o comando |
 | `atualizacao` | `sessao` (ou `null` no terminal), `de` e `para` (versões), `deCommit`, `paraCommit`, `novos`, `alterados`, `removidos` (contagens), `forcado` | `atualizar` |
 | `papel` | `sessao`, `papel`, `anterior` | `papel` |
