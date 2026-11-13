@@ -405,12 +405,15 @@ test('T6: a saída repete o comando', () => {
   assert.equal(av6('npm run build:prod --x').saida, 'tools/ah pesado -- npm run build:prod --x');
   assert.equal(av6(`bash -c 'tsc -p "a b"'`).saida, `tools/ah pesado -- tsc -p 'a b'`);
 });
+test('T6: o prefixo AH_PESADO_ANINHADO no texto não libera (só AH_GUARD=off)', () => {
+  assert.equal(av6('AH_PESADO_ANINHADO=3 npm run build').trava, 'T6');
+  assert.equal(av6('export AH_PESADO_ANINHADO=1; npm run build').trava, 'T6');
+});
 test('T6 passa: pela fila, liberada, aninhada, sem classes, comando que não casa', () => {
   assert.ok(av6('tools/ah pesado -- npm run build').permite);
   assert.ok(av6(`./tools/ah pesado -- bash -c 'npm run e2e'`).permite);
   assert.ok(av6('tools/ah pesado --classe npm run build').permite);
   assert.equal(av6('AH_GUARD=off npm run build').liberada, 'T6');
-  assert.ok(av6('AH_PESADO_ANINHADO=3 npm run build').permite);
   assert.ok(av6('npm run build', { aninhado: true }).permite);
   assert.ok(avaliar({ tipo: 'comando', comando: 'npm run build', cwd: '/w' }, ctx).permite);
   assert.ok(av6('npm test && npm run lint && echo npm run build').permite);

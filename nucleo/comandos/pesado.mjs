@@ -3,10 +3,10 @@
 import os from 'node:os';
 import { ErroDeUso } from '../lib/caminhos.mjs';
 import { topoDe } from '../lib/git.mjs';
-import { iniciar, matarArvore } from '../lib/arvore.mjs';
+import { grupoDo, iniciar, matarArvore, sinalNoGrupo } from '../lib/arvore.mjs';
 import {
   dirDaFila, lerConfigDaMaquina, classeDoComando, entrarNaFila, tentarComecar, sairDaFila, sairDaFilaSinc,
-  memoriaLivreMb, vagasEfetivas, textoDoArgv,
+  memoriaLivreMb, vagasEfetivas, textoDoArgv, marcarGrupo, aninhamentoConferido,
 } from '../lib/fila.mjs';
 import { inicioDoProcesso } from '../lib/vida.mjs';
 import { registrarEvento } from '../lib/estado.mjs';
@@ -23,7 +23,7 @@ export const uso = `ah pesado -- <comando>        espera a vez, roda e devolve a
   de estado do harness), criado com os padrões na primeira chamada.
   Ao lado de outro trabalho, só com a memória livre mínima e sendo de outro worktree.
   Interrompido (Ctrl-C, SIGTERM), mata a árvore do comando antes de soltar a vaga.
-  Dentro de um comando da fila (AH_PESADO_ANINHADO definida), roda direto.`;
+  Dentro de um comando da fila (AH_PESADO_ANINHADO com a senha de um comando que está rodando), roda direto.`;
 export const requisitos = { config: true, sessao: false, repositorio: true };
 
 const MARCADOR = 'AH_PESADO_ANINHADO';
@@ -84,9 +84,10 @@ export async function executar(args, amb) {
     amb.escrever(`${classe.nome} (${vagas}; ${comoCaiu})\n`);
     return 0;
   }
-  if (amb.env[MARCADOR]) return rodarDireto(comando, amb);
-
   const dir = dirDaFila(amb.env);
+  // Aninhada só conferida: a senha do marcador está rodando na fila, com o `ah` dela vivo. Senão, entra na fila.
+  if (amb.env[MARCADOR] && aninhamentoConferido(dir, amb.env[MARCADOR])) return rodarDireto(comando, amb);
+
   const maquina = lerConfigDaMaquina(dir);
   const pausaMs = Number(amb.env.AH_FILA_PAUSA_MS) > 0 ? Number(amb.env.AH_FILA_PAUSA_MS) : PAUSA_PADRAO_MS;
   const worktree = topoDe(amb.cwd, amb.env) ?? amb.cwd;
@@ -125,7 +126,14 @@ export async function executar(args, amb) {
     let ultimoMotivo = null;
     const desde = Date.now();
     for (;;) {
-      const r = await tentarComecar(dir, senha, { vagas: maquina.vagas, memoriaLivreMb: memoriaLivreMb(amb.env), memoriaLivreMinimaMb: maquina.memoriaLivreMinimaMb });
+      let r;
+      try {
+        r = await tentarComecar(dir, senha, { vagas: maquina.vagas, memoriaLivreMb: memoriaLivreMb(amb.env), memoriaLivreMinimaMb: maquina.memoriaLivreMinimaMb });
+      } catch (e) {
+        // Trava presa (um `ah` vivo demorando): para quem espera, é só mais espera.
+        if (!e?.travaPresa) throw e;
+        r = { pode: false, motivo: 'a trava da fila está presa' };
+      }
       if (saindo) return new Promise(() => {});
       if (r.pode) break;
       if (r.motivo !== ultimoMotivo) {
@@ -139,8 +147,14 @@ export async function executar(args, amb) {
     const vagas = vagasEfetivas(classe.vagas, maquina.vagas);
     if (ultimoMotivo !== null || amb.env.AH_PESADO_VERBOSO) amb.avisar(`ah pesado: rodando (classe ${classe.nome}, ${vagas} de ${maquina.vagas} vaga(s))\n`);
     filho = iniciar(comando, { cwd: amb.cwd, env: { ...amb.env, [MARCADOR]: String(senha) }, stdio: STDIO() });
-    const fim = await esperarFim(filho);
+    const terminou = esperarFim(filho);
+    const grupo = grupoDo(filho);
+    // O grupo na entrada: se este `ah` morrer sem poder matar a árvore (SIGKILL), quem vier depois mata o órfão.
+    if (grupo != null) { try { await marcarGrupo(dir, senha, grupo); } catch { /* sem o grupo, vale o pid do ah */ } }
+    const fim = await terminou;
     if (saindo) return new Promise(() => {});
+    // Netos deixados em segundo plano pelo comando saem com ele.
+    sinalNoGrupo(grupo, 'SIGTERM');
     if (fim.erro) throw new ErroDeUso(`Não consegui rodar o comando: ${fim.erro.message}\nPróximo passo: confira o nome do programa e o PATH`);
     // Para medir (12.5): quanto esperou, quanto rodou. Falhar aqui não muda o resultado do comando.
     try {
@@ -149,8 +163,9 @@ export async function executar(args, amb) {
     return fim.codigo;
   } finally {
     if (!saindo) {
-      for (const s of SINAIS) process.off(s, aoSinal);
+      // Os tratadores saem só depois da vaga: um sinal no meio da saída ainda é tratado.
       try { await sairDaFila(dir, senha); } catch { /* sai no exit */ }
+      for (const s of SINAIS) process.off(s, aoSinal);
       process.off('exit', aoSair);
     }
   }

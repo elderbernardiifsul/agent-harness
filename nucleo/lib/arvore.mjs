@@ -19,7 +19,9 @@ export function iniciar(comando, { cwd, env, plataforma = process.platform, stdi
   return Array.isArray(comando) ? spawn(comando[0], comando.slice(1), opcoes) : spawn('/bin/sh', ['-c', comando], opcoes);
 }
 
-function grupoExiste(pgid) {
+// O grupo de processos `pgid` ainda tem algum processo? (POSIX; no Windows, sempre false.)
+export function grupoExiste(pgid, plataforma = process.platform) {
+  if (plataforma === 'win32' || !Number.isInteger(pgid) || pgid <= 0) return false;
   try {
     process.kill(-pgid, 0);
     return true;
@@ -28,9 +30,13 @@ function grupoExiste(pgid) {
   }
 }
 
-function sinalNoGrupo(pgid, sinal) {
+export function sinalNoGrupo(pgid, sinal, plataforma = process.platform) {
+  if (plataforma === 'win32' || !Number.isInteger(pgid) || pgid <= 0) return;
   try { process.kill(-pgid, sinal); } catch { /* o grupo já acabou */ }
 }
+
+// Grupo do filho (POSIX: o pid dele, porque nasce líder do próprio grupo); null no Windows.
+export const grupoDo = (filho, plataforma = process.platform) => (plataforma === 'win32' || !filho?.pid ? null : filho.pid);
 
 // Mata a árvore do filho e só resolve quando ela acabou (ou depois do SIGKILL). `graçaMs`: quanto o
 // SIGTERM tem antes do SIGKILL.

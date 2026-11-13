@@ -8,6 +8,7 @@ import { ErroDeUso, baseDeEstado } from './caminhos.mjs';
 import { comTrava, comTravaSinc, gravarJson } from './estado.mjs';
 import { comandosSimples, ErroDeShell } from './shell.mjs';
 import { inicioDoProcesso, processoExiste } from './vida.mjs';
+import { grupoExiste, sinalNoGrupo } from './arvore.mjs';
 
 export const VERSAO_DA_FILA = 1;
 export const VERSAO_DA_CONFIG_DA_FILA = 1;
@@ -163,19 +164,48 @@ export function lerEstadoDaFila(dir) {
   return obj;
 }
 
-// A entrada é de um processo morto (pid que não existe, ou reaproveitado: hora de início diferente)?
-export function entradaMorta(e, { existe = processoExiste, inicio = inicioDoProcesso } = {}) {
+// O `ah pesado` da entrada morreu (pid que não existe, ou reaproveitado: hora de início diferente)?
+export function ahMorto(e, { existe = processoExiste, inicio = inicioDoProcesso } = {}) {
   if (!existe(e.pid)) return true;
   if (e.inicio == null) return false;
   const atual = inicio(e.pid);
   return atual != null && atual !== e.inicio;
 }
 
-export function separarMortas(estado, opcoes) {
+const grupoVivo = (e, opcoes = {}) => e.grupo != null && (opcoes.grupoExiste ?? grupoExiste)(e.grupo);
+
+// Morta: o `ah` morreu e o grupo do comando (quando gravado) também. `ah` morto com o grupo de pé é órfã.
+export const entradaMorta = (e, opcoes = {}) => ahMorto(e, opcoes) && !grupoVivo(e, opcoes);
+export const entradaOrfa = (e, opcoes = {}) => ahMorto(e, opcoes) && grupoVivo(e, opcoes);
+
+// Quanto o SIGTERM tem antes do SIGKILL no grupo órfão.
+export const GRACA_DO_ORFAO_MS = 3000;
+
+// Tira as mortas. Órfã (o `ah` morreu, por exemplo com SIGKILL, e o comando segue) continua ocupando a vaga:
+// o grupo recebe SIGTERM na primeira passagem (`terminadoEm`) e SIGKILL depois da graça; a entrada sai quando
+// o grupo acabar. `alterou` diz que alguma órfã foi marcada (precisa gravar).
+export function separarMortas(estado, opcoes = {}) {
+  const sinal = opcoes.sinalNoGrupo ?? sinalNoGrupo;
+  const agora = opcoes.agora ?? Date.now();
   const vivas = [];
   const mortas = [];
-  for (const e of estado.entradas) (entradaMorta(e, opcoes) ? mortas : vivas).push(e);
-  return { estado: { ...estado, entradas: vivas }, mortas };
+  const orfas = [];
+  let alterou = false;
+  for (const e of estado.entradas) {
+    if (!ahMorto(e, opcoes)) { vivas.push(e); continue; }
+    if (!grupoVivo(e, opcoes)) { mortas.push(e); continue; }
+    orfas.push(e);
+    const desde = Date.parse(e.terminadoEm ?? '');
+    if (!Number.isFinite(desde)) {
+      sinal(e.grupo, 'SIGTERM');
+      vivas.push({ ...e, terminadoEm: new Date(agora).toISOString() });
+      alterou = true;
+    } else {
+      if (agora - desde >= GRACA_DO_ORFAO_MS) sinal(e.grupo, 'SIGKILL');
+      vivas.push(e);
+    }
+  }
+  return { estado: { ...estado, entradas: vivas }, mortas, orfas, alterou };
 }
 
 // Pode a entrada `senha` começar agora? {pode, motivo}. Fila estrita: só o primeiro da espera começa
@@ -208,10 +238,10 @@ export async function naFila(dir, fn, opcoes = {}) {
   fs.mkdirSync(dir, { recursive: true });
   return comTrava(dir, 'fila', () => {
     const lido = lerEstadoDaFila(dir);
-    const { estado, mortas } = separarMortas(lido, opcoes);
+    const { estado, mortas, orfas, alterou } = separarMortas(lido, opcoes);
     const r = fn(estado) ?? {};
-    if (r.gravar || mortas.length) gravarJson(arquivoDoEstado(dir), r.estado ?? estado);
-    return { ...r, mortas };
+    if (r.gravar || mortas.length || alterou) gravarJson(arquivoDoEstado(dir), r.estado ?? estado);
+    return { ...r, mortas, orfas };
   }, TRAVA);
 }
 
@@ -233,6 +263,21 @@ export async function tentarComecar(dir, senha, maquina, opcoes) {
     const entradas = estado.entradas.map(e => (e.senha === senha ? { ...e, rodandoDesde: new Date().toISOString() } : e));
     return { ...r, gravar: true, estado: { ...estado, entradas } };
   }, opcoes);
+}
+
+// Grava o grupo de processos do comando na entrada (para matar um órfão se o `ah` morrer).
+export async function marcarGrupo(dir, senha, grupo, opcoes) {
+  return naFila(dir, estado => ({ gravar: true, estado: { ...estado, entradas: estado.entradas.map(e => (e.senha === senha ? { ...e, grupo } : e)) } }), opcoes);
+}
+
+// O marcador de aninhamento (`AH_PESADO_ANINHADO=<senha>`) só vale conferido: a senha está na fila, rodando,
+// e o `ah` dela está vivo. Sem trava (só leitura); fila ilegível ou de versão desconhecida: não confere.
+export function aninhamentoConferido(dir, valor, opcoes = {}) {
+  if (typeof valor !== 'string' || !/^[1-9]\d{0,15}$/.test(valor)) return false;
+  let estado;
+  try { estado = lerEstadoDaFila(dir); } catch { return false; }
+  const e = estado.entradas.find(x => x.senha === Number(valor));
+  return Boolean(e && e.rodandoDesde && !ahMorto(e, opcoes));
 }
 
 export async function sairDaFila(dir, senha, opcoes) {
@@ -268,7 +313,7 @@ export function retratoDaFila(dir, { agora = Date.now(), existe, inicio } = {}) 
     r.entradas = [...estado.entradas].sort((a, b) => a.senha - b.senha).map(e => {
       const desde = e.rodandoDesde ?? e.chegou ?? null;
       const ms = Date.parse(desde);
-      return { ...e, estado: e.rodandoDesde ? 'rodando' : 'esperando', desde, haMs: Number.isFinite(ms) ? Math.max(0, agora - ms) : null, morta: entradaMorta(e, opcoes) };
+      return { ...e, estado: e.rodandoDesde ? 'rodando' : 'esperando', desde, haMs: Number.isFinite(ms) ? Math.max(0, agora - ms) : null, morta: entradaMorta(e, opcoes), orfa: entradaOrfa(e, opcoes) };
     });
   } catch (e) {
     if (!(e instanceof ErroDeUso)) throw e;

@@ -674,11 +674,12 @@ function travaT4Edicao(acao, ctx) {
 // ---------------------------------------------------------------- T6
 
 // O comando casa com uma classe pesada e não roda pelo `ah pesado` (o `ah` é o programa, então ele e o que
-// vem depois do `--` não casam). Chamada aninhada (AH_PESADO_ANINHADO no prefixo ou no ambiente do gancho,
-// `ctx.aninhado`) passa. Sem classes, nada.
+// vem depois do `--` não casam). Chamada aninhada passa só conferida por quem monta o ctx (`ctx.aninhado`:
+// a senha do ambiente do gancho está rodando na fila); o prefixo `AH_PESADO_ANINHADO=…` no texto não libera.
+// Sem classes, nada.
 function travaT6(cmd, ctx) {
   const classes = ctx.config?.pesado?.classes;
-  if (!classes || ctx.aninhado || cmd.env?.AH_PESADO_ANINHADO) return null;
+  if (!classes || ctx.aninhado) return null;
   const classe = classeQueCasa(cmd.argv, classes);
   if (!classe) return null;
   return recusa('T6', `${cmd.argv[0]} é trabalho pesado (classe ${classe}) e roda fora da fila; vários juntos esgotam a memória da máquina`,

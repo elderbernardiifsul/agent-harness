@@ -44,7 +44,7 @@ function linhasDaFila(fila, amb) {
   amb.escrever(`Fila de pesado${fila.vagas ? ` (${fila.vagas} vaga(s))` : ''}:\n`);
   for (const e of fila.entradas) {
     const onde = `${linhaUnica(e.projeto ?? '?', 20)}, ${linhaUnica(path.basename(e.worktree ?? '?'), 30)}`;
-    amb.escrever(`  ${e.estado.padEnd(9)} senha ${e.senha}  ${linhaUnica(e.classe ?? '?', 20)}  há ${duracaoCurta(e.haMs)}  ${onde}${e.morta ? '  (processo morto)' : ''}  ${linhaUnica(e.comando ?? '', 60)}\n`);
+    amb.escrever(`  ${e.estado.padEnd(9)} senha ${e.senha}  ${linhaUnica(e.classe ?? '?', 20)}  há ${duracaoCurta(e.haMs)}  ${onde}${e.morta ? '  (processo morto)' : e.orfa ? '  (comando órfão: sendo morto)' : ''}  ${linhaUnica(e.comando ?? '', 60)}\n`);
   }
 }
 

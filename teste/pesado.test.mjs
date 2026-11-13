@@ -174,14 +174,73 @@ test('senha de processo morto não prende a fila', t => {
   assert.equal(estadoDaFila(p.fila).proximaSenha, 9);
 });
 
-test('chamada aninhada roda direto; o comando recebe o marcador', t => {
+test('marcador de aninhamento só vale conferido: sem a senha rodando, entra na fila', t => {
   const p = projeto(t);
-  fs.writeFileSync(path.join(p.fila, 'fila.json'), JSON.stringify({ versao: 99 }));
-  const r = p.ah(['pesado', '--', NODE, '-e', 'console.log(process.env.AH_PESADO_ANINHADO)'], { env: { AH_PESADO_ANINHADO: '5' } });
+  const eco = ['pesado', '--', NODE, '-e', 'console.log(process.env.AH_PESADO_ANINHADO)'];
+  // senha 5 não está na fila: entra (e o comando recebe a própria senha, 1)
+  let r = p.ah(eco, { env: { AH_PESADO_ANINHADO: '5' } });
   assert.equal(r.codigo, 0, r.erro);
-  assert.equal(r.saida, '5\n');
-  fs.rmSync(path.join(p.fila, 'fila.json'));
-  assert.equal(p.ah(['pesado', '--', NODE, '-e', 'console.log(process.env.AH_PESADO_ANINHADO)']).saida, '1\n');
+  assert.equal(r.saida, '1\n');
+  assert.equal(p.ah(eco, { env: { AH_PESADO_ANINHADO: 'qualquer' } }).saida, '2\n');
+  // senha na fila, rodando, mas com o ah morto: não confere
+  fs.writeFileSync(path.join(p.fila, 'fila.json'), JSON.stringify({ versao: 1, proximaSenha: 8, entradas: [
+    { senha: 7, pid: 999999, worktree: '/x', vagas: 1, chegou: new Date().toISOString(), rodandoDesde: new Date().toISOString() }] }));
+  assert.equal(p.ah(eco, { env: { AH_PESADO_ANINHADO: '7' } }).saida, '8\n');
+  // fila de versão desconhecida: o marcador não a contorna
+  fs.writeFileSync(path.join(p.fila, 'fila.json'), JSON.stringify({ versao: 99 }));
+  r = p.ah(eco, { env: { AH_PESADO_ANINHADO: '5' } });
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /formato 99/);
+});
+
+test('chamada aninhada de verdade roda direto, mesmo com a única vaga ocupada pelo de fora', t => {
+  const p = projeto(t, { maquina: { vagas: 1 } });
+  const ah = path.join(path.dirname(path.dirname(new URL(import.meta.url).pathname)), 'nucleo', 'bin', 'ah.mjs');
+  const dentro = `const r = require('node:child_process').spawnSync(process.execPath, [${JSON.stringify(ah)}, 'pesado', '--', process.execPath, '-e', 'console.log("dentro", process.env.AH_PESADO_ANINHADO)'], { encoding: 'utf8', timeout: 8000 }); process.stdout.write(r.stdout); process.exit(r.status ?? 9);`;
+  const r = p.ah(['pesado', '--', NODE, '-e', dentro]);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.equal(r.saida, 'dentro 1\n');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(p.fila, 'fila.json'), 'utf8')).proximaSenha, 2, 'a de dentro não pegou senha');
+});
+
+test('SIGKILL no ah: o comando órfão é morto antes de a vaga passar adiante', { skip: POSIX }, async t => {
+  const p = projeto(t, { maquina: { vagas: 1 } });
+  const pids = p.sinal('pids.json');
+  const a = p.ahAoFundo(['pesado', '--', NODE, '-e', SCRIPT_PAI_E_NETO, pids]);
+  await esperar(() => fs.existsSync(pids) && fs.readFileSync(pids, 'utf8').length > 0 && estadoDaFila(p.fila).entradas[0]?.grupo != null);
+  const { filho, neto } = JSON.parse(fs.readFileSync(pids, 'utf8'));
+  // O fim pelo `exit`: o `close` esperaria o órfão, que herdou a saída.
+  const saiu = new Promise(r => a.processo.once('exit', r));
+  a.processo.kill('SIGKILL');
+  await saiu;
+  assert.ok(processoExiste(filho), 'o órfão segue de pé depois do SIGKILL');
+  const confere = `const v = p => { try { process.kill(p, 0); return 'vivo'; } catch { return 'morto'; } }; console.log(v(${filho}), v(${neto}));`;
+  const b = p.ah(['pesado', '--', NODE, '-e', confere]);
+  assert.equal(b.codigo, 0, b.erro);
+  assert.equal(b.saida, 'morto morto\n');
+  assert.deepEqual(estadoDaFila(p.fila).entradas, []);
+});
+
+test('trava da fila com dono morto não derruba quem espera', async t => {
+  const p = projeto(t, { maquina: { vagas: 1 } });
+  const travar = () => {
+    const trava = path.join(p.fila, 'travas', 'fila');
+    fs.mkdirSync(trava, { recursive: true });
+    fs.writeFileSync(path.join(trava, 'dono.json'), JSON.stringify({ pid: 999999, em: new Date().toISOString(), marca: 'x' }));
+  };
+  travar();
+  const inicio = Date.now();
+  assert.equal(p.ah(['pesado', '--', NODE, '-e', 'process.exit(0)']).codigo, 0);
+  assert.ok(Date.now() - inicio < 5000);
+  const h = segura(p, 'h');
+  await esperar(() => comecou(p, 'h'));
+  const w = segura(p, 'w');
+  await esperar(() => esperando(p.fila, 1));
+  travar();
+  soltar(p, 'h');
+  await esperar(() => comecou(p, 'w'));
+  soltar(p, 'w');
+  assert.deepEqual((await Promise.all([h.fim, w.fim])).map(f => f.codigo), [0, 0]);
 });
 
 test('estado da fila com versão desconhecida para e pede atualização', t => {
@@ -234,8 +293,26 @@ test('T6 pelo gancho: recusa com a saída e registra; pela fila e aninhada passa
   assert.equal(r.codigo, 2);
   assert.match(r.erro, /Recusado \(T6\): .*classe grande.*\nFaça: tools\/ah pesado -- npm run build$/m);
   assert.equal(ganchoPre(q, { command: 'tools/ah pesado -- npm run build' }).codigo, 0);
-  assert.equal(ganchoPre(q, { command: 'npm run build' }, 'Bash', { env: { AH_PESADO_ANINHADO: '4' } }).codigo, 0);
+  // Aninhada só conferida: a senha 4 precisa estar rodando na fila, com o ah vivo.
+  const fila = path.join(path.dirname(q.raiz), 'fila');
+  fs.mkdirSync(fila, { recursive: true });
+  const env = { AH_PESADO_ANINHADO: '4', AH_FILA: fila };
+  assert.equal(ganchoPre(q, { command: 'npm run build' }, 'Bash', { env }).codigo, 2);
+  assert.equal(ganchoPre(q, { command: 'AH_PESADO_ANINHADO=4 npm run build' }).codigo, 2);
+  fs.writeFileSync(path.join(fila, 'fila.json'), JSON.stringify({ versao: 1, proximaSenha: 5, entradas: [
+    { senha: 4, pid: process.pid, worktree: '/x', vagas: 1, chegou: new Date().toISOString(), rodandoDesde: new Date().toISOString() }] }));
+  assert.equal(ganchoPre(q, { command: 'npm run build' }, 'Bash', { env }).codigo, 0);
+  assert.equal(ganchoPre(q, { command: 'AH_PESADO_ANINHADO=4 npm run build' }, 'Bash', { env: { AH_FILA: fila } }).codigo, 2, 'o prefixo não libera');
   const recusas = lerEventos(dirDoTeste(q)).filter(e => e.tipo === 'recusa' && e.trava === 'T6');
-  assert.equal(recusas.length, 1);
+  assert.equal(recusas.length, 4);
   assert.equal(recusas[0].comando, 'cd sub && npm run build');
+});
+
+test('no fim normal, o neto deixado em segundo plano recebe SIGTERM', { skip: POSIX }, async t => {
+  const p = projeto(t);
+  const pid = p.sinal('neto.pid');
+  const script = `const n = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1e6)'], { stdio: 'ignore' }); require('node:fs').writeFileSync(${JSON.stringify(pid)}, String(n.pid)); n.unref();`;
+  assert.equal(p.ah(['pesado', '--', NODE, '-e', script]).codigo, 0);
+  const neto = Number(fs.readFileSync(pid, 'utf8'));
+  await esperar(() => !processoExiste(neto), 3000);
 });

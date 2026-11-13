@@ -22,6 +22,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { avaliar } from '../lib/travas.mjs';
+import { aninhamentoConferido, dirDaFila } from '../lib/fila.mjs';
 import { textoDaRecusa } from '../lib/recusa.mjs';
 import { comandosSimples } from '../lib/shell.mjs';
 import { registrarEvento, comTrava, lerJson, gravarJson } from '../lib/estado.mjs';
@@ -132,7 +133,7 @@ function contextoDasTravas(amb, sessao) {
     normalizar: c => normalizarCaminho(c),
     config: amb.config,
     raiz: amb.raiz,
-    aninhado: Boolean(amb.env?.AH_PESADO_ANINHADO),
+    aninhado: Boolean(amb.env?.AH_PESADO_ANINHADO) && aninhamentoConferido(dirDaFila(amb.env), amb.env.AH_PESADO_ANINHADO),
     topoDe: amb.topoDe ?? (c => topoDe(c, amb.env)),
     ramoAtual: amb.ramoAtual ?? (c => ramoAtual(c, amb.env)),
     baseDoPr: amb.baseDoPr ?? baseDoPrPeloGh(amb.env, amb.tempoDoGhMs ?? TEMPO_DO_GH_MS),
