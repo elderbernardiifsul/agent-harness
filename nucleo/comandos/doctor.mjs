@@ -17,6 +17,7 @@ import { existeRamo, git } from '../lib/git.mjs';
 import { gh, protecaoDoRamo, repoAtual } from '../lib/github.mjs';
 import { mesclarGanchos } from './init.mjs';
 import { ADAPTADORES, O_QUE_SE_PERDE, agenteEmUso } from '../adaptadores/registro.mjs';
+import { dirDaFila, retratoDaFila } from '../lib/fila.mjs';
 
 export const descricao = 'confere se o projeto está bem preparado';
 export const uso = 'ah doctor [--json]';
@@ -407,6 +408,21 @@ export const VERIFICACOES = [
       ...sumidas.map(f => aviso(`Frente ${nomeNoItem(f)}`, `o worktree ${f.worktree} não existe; recrie-o ou encerre a frente com ah close ${f.nome}`)),
       ...paradas.map(f => aviso(`Frente ${nomeNoItem(f)} em abertura parada`, `um ah open parou no meio (sessão ${f.dona ?? 'sem dona'}${f.processo ? `, processo ${f.processo.pid} morto` : ''}); rode ah open ${f.nome} para terminar, ou ah close ${f.nome} para desistir`)),
     ];
+  }),
+
+  // A fila de pesado é da máquina (config.json e fila.json na pasta dela): legível, versão conhecida, sem senha morta.
+  verificacao('Fila de pesado', amb => {
+    const nome = 'Fila de pesado';
+    const f = retratoDaFila(dirDaFila(amb.env));
+    if (f.erro) {
+      const [motivo, proximo] = f.erro.split('\n');
+      return falha(nome, `${motivo}; ${proximo.replace(/^Próximo passo:\s*/, '')}`);
+    }
+    const mortas = f.entradas.filter(e => e.morta);
+    if (mortas.length) {
+      return aviso(nome, `senha(s) de processo morto: ${mortas.map(e => `${e.senha} (pid ${e.pid})`).join(', ')}; saem sozinhas na próxima chamada de ah pesado (ou rode ah pesado -- true)`);
+    }
+    return ok(nome);
   }),
 
   // Fatia 4: o agente em uso (AH_AGENTE ou as variáveis que ele põe no ambiente) tem adaptador?

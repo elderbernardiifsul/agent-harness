@@ -4,6 +4,7 @@ import { listarFrentesTolerante } from '../lib/frente.mjs';
 import { arquivosDaFrenteOuNulo, contaNaSobreposicao, sobreposicoes as calcularSobreposicoes } from '../lib/sobreposicao.mjs';
 import { idCurto, listarSessoes } from '../lib/sessao.mjs';
 import { aberturaParada, frenteOrfa, vidaDaDona } from '../lib/vida.mjs';
+import { dirDaFila, duracaoCurta, retratoDaFila } from '../lib/fila.mjs';
 
 export const descricao = 'mostra as frentes abertas e as sessões vivas';
 export const uso = 'ah board [--json]';
@@ -33,6 +34,20 @@ function estadoNoQuadro(f, vida) {
   return f.estado ?? '—';
 }
 
+// Quem roda e quem espera na fila de pesado; nada quando a fila está vazia.
+function linhasDaFila(fila, amb) {
+  if (fila.erro) {
+    amb.escrever(`Fila de pesado: ${linhaUnica(fila.erro.split('\n')[0], 200)} (rode ah doctor)\n`);
+    return;
+  }
+  if (!fila.entradas.length) return;
+  amb.escrever(`Fila de pesado${fila.vagas ? ` (${fila.vagas} vaga(s))` : ''}:\n`);
+  for (const e of fila.entradas) {
+    const onde = `${linhaUnica(e.projeto ?? '?', 20)}, ${linhaUnica(path.basename(e.worktree ?? '?'), 30)}`;
+    amb.escrever(`  ${e.estado.padEnd(9)} senha ${e.senha}  ${linhaUnica(e.classe ?? '?', 20)}  há ${duracaoCurta(e.haMs)}  ${onde}${e.morta ? '  (processo morto)' : ''}  ${linhaUnica(e.comando ?? '', 60)}\n`);
+  }
+}
+
 export async function executar(args, amb) {
   let json = false;
   for (const arg of args) {
@@ -41,6 +56,8 @@ export async function executar(args, amb) {
     else throw new ErroDeUso(`Argumento a mais: ${arg.slice(0, 40)}\nPróximo passo: use ${uso}`);
   }
   const dirEstado = amb.dirEstado;
+  // A fila de pesado é da máquina: aparece no quadro de todo projeto.
+  const fila = retratoDaFila(dirDaFila(amb.env));
   // Arquivo de frente que não se lê não derruba o quadro: vira aviso e as outras frentes seguem.
   const { frentes, ilegiveis } = listarFrentesTolerante(dirEstado);
   for (const nome of ilegiveis) {
@@ -103,7 +120,7 @@ export async function executar(args, amb) {
       ...f, donaViva: donaViva(f), donaIlegivel: donaIlegivel(f), sobrepoe: sobrepoe(f), sobreposicaoConferida: conferida(f),
       ...(f.estado === 'abrindo' ? { aberturaParada: aberturaParada(f, donaViva(f)) } : {}),
     }));
-    amb.escrever(`${JSON.stringify({ frentes: lista, sessoes, sessoesIlegiveis, sobreposicoes, sobreposicaoIncompleta })}\n`);
+    amb.escrever(`${JSON.stringify({ frentes: lista, sessoes, sessoesIlegiveis, sobreposicoes, sobreposicaoIncompleta, fila })}\n`);
     return 0;
   }
   const linhaDasSessoes = () => {
@@ -112,6 +129,7 @@ export async function executar(args, amb) {
     if (sessoesIlegiveis.length) {
       amb.escrever(`Sessões ilegíveis: ${sessoesIlegiveis.map(id => linhaUnica(idCurto(id), 8)).join('; ')} (rode ah doctor)\n`);
     }
+    linhasDaFila(fila, amb);
   };
   const rotuloDaDona = f => {
     if (!f.dona) return '—';

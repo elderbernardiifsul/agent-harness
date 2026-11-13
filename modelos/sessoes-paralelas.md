@@ -26,10 +26,11 @@ O gancho do agente lê cada comando (e cada edição de arquivo) antes de ele ro
 - T3: no checkout principal, `git reset --hard`, `git clean -f`, `git checkout .`, `git restore .`, `git stash` e `git rebase`, que descartam ou escondem trabalho de outra sessão.
 - T4: escrever no worktree ou no ramo da frente de outra sessão viva (git, `rm`, `mv`, `cp`, `sed -i`, redirecionamento, edição de arquivo). Peça à dona um `handoff`, ou, se ela morreu, `takeover`.
 - T5: push para `stage` ou `main` (com destino explícito, sem destino com o ramo protegido em uso, depois de um `git checkout`/`git switch` para ele, `--all`, `--mirror`) e `gh pr merge` cuja base é protegida.
+- T6: comando de uma classe de trabalho pesado (`pesado.classes` no `.harness/config.json`) fora da fila. Rode `tools/ah pesado -- <comando>`; sem classes configuradas, nada é recusado.
 
-As travas pegam engano, não má-fé: programa que escreve por conta própria (`find -delete`, um script) passa. Gravar arquivo fora do worktree da própria frente (no checkout principal, por exemplo) não é recusado quando o lugar não é worktree de outra sessão viva. Rodar trabalho pesado (build, testes ponta a ponta) fora de uma fila também não: a fila e a trava dela ficam para a próxima versão.
+As travas pegam engano, não má-fé: programa que escreve por conta própria (`find -delete`, um script) passa. Gravar arquivo fora do worktree da própria frente (no checkout principal, por exemplo) não é recusado quando o lugar não é worktree de outra sessão viva. Um script que chama o comando pesado por dentro passa pela T6.
 
-Cada recusa diz o motivo e o próximo passo. `AH_GUARD=off` no começo do comando libera T1 a T5 só para aquele comando, e a liberação fica registrada; a T0 nunca é liberada. Use só com a ordem de quem decide.
+Cada recusa diz o motivo e o próximo passo. `AH_GUARD=off` no começo do comando libera T1 a T6 só para aquele comando, e a liberação fica registrada; a T0 nunca é liberada. Use só com a ordem de quem decide.
 
 ## Fluxo de ramos
 

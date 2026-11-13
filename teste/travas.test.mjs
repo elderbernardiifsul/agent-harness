@@ -389,3 +389,29 @@ test('T4: recusa própria para git branch sobre o ramo de frente alheia', () => 
     'Recusado (T4): o ramo feat/frete é da frente cd-1 frete, da sessão outra, que está viva; apagar, renomear ou mover o ramo tira o trabalho dela do lugar\n'
     + 'Faça: deixe o ramo feat/frete como está; para mexer nele, peça à sessão outra (ah handoff) ou, se ela morrer, ah takeover frete');
 });
+
+// ---- T6
+const CLASSES_T6 = { exclusivo: { vagas: 'todas', padroes: ['npm run e2e*'] }, grande: { vagas: 1, padroes: ['npm run build*', 'tsc'] } };
+const ctxT6 = { ...ctx, config: aplicarPadroes({ pesado: { classes: CLASSES_T6 } }) };
+const av6 = (comando, extra = {}) => avaliar({ tipo: 'comando', comando, cwd: '/w' }, { ...ctxT6, ...extra });
+for (const c of ['npm run build', 'npm run build:prod -- --x', 'echo a && npm run e2e', '(cd sub && npm run build)', `bash -c 'npm run build'`,
+  'env CI=1 npm run build', 'cd /w && tsc', 'true; /usr/bin/npm run e2e', `sh -c "echo; npm run build"`, 'time npm run build', 'npm run build | tee log'])
+  test(`T6 recusa: ${c}`, () => {
+    const r = av6(c);
+    assert.equal(r.trava, 'T6', c);
+    assert.match(r.saida, /^tools\/ah pesado -- /);
+  });
+test('T6: a saída repete o comando', () => {
+  assert.equal(av6('npm run build:prod --x').saida, 'tools/ah pesado -- npm run build:prod --x');
+  assert.equal(av6(`bash -c 'tsc -p "a b"'`).saida, `tools/ah pesado -- tsc -p 'a b'`);
+});
+test('T6 passa: pela fila, liberada, aninhada, sem classes, comando que não casa', () => {
+  assert.ok(av6('tools/ah pesado -- npm run build').permite);
+  assert.ok(av6(`./tools/ah pesado -- bash -c 'npm run e2e'`).permite);
+  assert.ok(av6('tools/ah pesado --classe npm run build').permite);
+  assert.equal(av6('AH_GUARD=off npm run build').liberada, 'T6');
+  assert.ok(av6('AH_PESADO_ANINHADO=3 npm run build').permite);
+  assert.ok(av6('npm run build', { aninhado: true }).permite);
+  assert.ok(avaliar({ tipo: 'comando', comando: 'npm run build', cwd: '/w' }, ctx).permite);
+  assert.ok(av6('npm test && npm run lint && echo npm run build').permite);
+});

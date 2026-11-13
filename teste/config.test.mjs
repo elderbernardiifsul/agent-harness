@@ -63,3 +63,29 @@ test('o modelo de configuração traz a seção sessoes e passa na validação',
   assert.equal(modelo.versaoDoEsquema, 1);
   assert.equal(validarConfig({ ...modelo, projeto: 'loja' }).ok, true);
 });
+
+test('pesado.classes: vagas de 1 a 64 ou "todas", padrões não vazios; `_` em pesado é comentário', () => {
+  assert.deepEqual(aplicarPadroes({ projeto: 'loja' }).pesado, { classes: {} });
+  const ok = { exclusivo: { vagas: 'todas', padroes: ['npm run e2e*'] }, grande: { vagas: 1, padroes: ['npm run build*', 'tsc'] } };
+  assert.equal(validarConfig({ projeto: 'loja', pesado: { classes: ok, _exemplo: { qualquer: 'coisa' }, _leia: 'x' } }).ok, true);
+  const campos = pesado => validarConfig({ projeto: 'loja', pesado }).erros.map(e => e.campo);
+  assert.deepEqual(campos({ classes: { g: { vagas: 0, padroes: ['x'] } } }), ['pesado.classes.g.vagas']);
+  assert.deepEqual(campos({ classes: { g: { vagas: 'tudo', padroes: ['x'] } } }), ['pesado.classes.g.vagas']);
+  assert.deepEqual(campos({ classes: { g: { vagas: 65, padroes: ['x'] } } }), ['pesado.classes.g.vagas']);
+  assert.deepEqual(campos({ classes: { g: { vagas: 1, padroes: [] } } }), ['pesado.classes.g.padroes']);
+  assert.deepEqual(campos({ classes: { g: { vagas: 1, padroes: ['  '] } } }), ['pesado.classes.g.padroes']);
+  assert.deepEqual(campos({ classes: { g: { vagas: 1 } } }), ['pesado.classes.g.padroes']);
+  assert.deepEqual(campos({ classes: { g: { vagas: 1, padroes: ['x'], cor: 1 } } }), ['pesado.classes.g.cor']);
+  assert.deepEqual(campos({ classes: { 'G R': { vagas: 1, padroes: ['x'] } } }), ['pesado.classes.G R']);
+  assert.deepEqual(campos({ classes: [] }), ['pesado.classes']);
+  assert.deepEqual(campos({ vagas: 2 }), ['pesado.vagas']);
+  const c = aplicarPadroes({ projeto: 'loja', pesado: { classes: ok, _exemplo: {} } });
+  assert.deepEqual(Object.keys(c.pesado.classes), ['exclusivo', 'grande']);
+});
+
+test('o modelo de configuração traz pesado com classes vazias e um exemplo que valida', () => {
+  const modelo = JSON.parse(fs.readFileSync(new URL('../modelos/config.json', import.meta.url), 'utf8'));
+  assert.deepEqual(modelo.pesado.classes, {});
+  assert.ok(Object.keys(modelo.pesado._exemplo).length >= 2);
+  assert.equal(validarConfig({ ...modelo, projeto: 'loja', pesado: { classes: modelo.pesado._exemplo } }).ok, true);
+});

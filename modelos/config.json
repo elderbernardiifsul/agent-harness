@@ -9,5 +9,14 @@
   "agentes": ["claude-code"],
   "extensoes": {},
   "fuso": "America/Sao_Paulo",
-  "sessoes": { "prazoDoSinalMin": 120 }
+  "sessoes": { "prazoDoSinalMin": 120 },
+  "pesado": {
+    "_leia": "Classes de trabalho pesado (ah pesado e trava T6). Vazio: a T6 não recusa nada. Para ligar, copie de _exemplo para classes os padrões que valem neste projeto. Vagas e memória mínima são da máquina (ah pesado --help).",
+    "classes": {},
+    "_exemplo": {
+      "exclusivo": { "vagas": "todas", "padroes": ["npm run e2e*", "npx playwright*"] },
+      "grande": { "vagas": 1, "padroes": ["npm run build*", "npx next build*"] },
+      "leve": { "vagas": 1, "padroes": ["npm test*", "npm run test*"] }
+    }
+  }
 }

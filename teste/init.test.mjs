@@ -22,6 +22,10 @@ test('init cria a estrutura e não faz commit', () => {
     assert.ok(fs.existsSync(path.join(p.raiz, f)), f);
   }
   assert.equal(JSON.parse(ler(p, '.harness/config.json')).projeto, 'loja');
+  // Classes de pesado só como exemplo: a T6 começa desligada.
+  const pesado = JSON.parse(ler(p, '.harness/config.json')).pesado;
+  assert.deepEqual(pesado.classes, {});
+  assert.ok(pesado._exemplo.exclusivo);
   const manifesto = JSON.parse(ler(p, '.harness/nucleo/MANIFEST.json'));
   assert.equal(manifesto.versao, VERSAO);
   assert.match(manifesto.commit, /^[0-9a-f]{40}$/);
@@ -298,11 +302,11 @@ test('C1: já no ramo base o init não manda trocar; commit na main é acusado p
 const MODELOS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'modelos');
 test('I2: sessoes-paralelas.md descreve só as travas que existem nesta fatia', () => {
   const t = fs.readFileSync(path.join(MODELOS, 'sessoes-paralelas.md'), 'utf8');
-  for (const trava of ['T0', 'T1', 'T2', 'T3', 'T4', 'T5']) assert.ok(t.includes(trava), trava);
-  assert.ok(!t.includes('T6'), 'a T6 é da fatia 3');
+  for (const trava of ['T0', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6']) assert.ok(t.includes(trava), trava);
+  assert.ok(!t.includes('T7'));
+  assert.match(t, /tools\/ah pesado -- <comando>/);
   assert.doesNotMatch(t, /não grava arquivos fora do worktree da própria frente|só por uma vez|pull request: `feat/);
   assert.match(t, /git merge --no-ff feat\/<nome>/);
-  assert.match(t, /próxima versão/);
   assert.match(t, /a T0 nunca é liberada/);
 });
 test('M3: o cabeçalho do histórico descreve a linha que o close grava, sem confundir o doctor', async () => {

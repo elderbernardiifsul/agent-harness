@@ -12,7 +12,10 @@ const SEM_SESSAO = { env: { AH_SESSAO: '' } };
 test('board lista a frente; vazio diz que não há', () => {
   const vazio = criarProjeto();
   assert.match(vazio.ah(['board']).saida, /Nenhuma frente aberta\./);
-  assert.deepEqual(JSON.parse(vazio.ah(['board', '--json']).saida), { frentes: [], sessoes: [], sessoesIlegiveis: [], sobreposicoes: [], sobreposicaoIncompleta: false });
+  const { fila, ...resto } = JSON.parse(vazio.ah(['board', '--json']).saida);
+  assert.deepEqual(resto, { frentes: [], sessoes: [], sessoesIlegiveis: [], sobreposicoes: [], sobreposicaoIncompleta: false });
+  assert.deepEqual([fila.entradas, fila.erro], [[], null]);
+  assert.doesNotMatch(vazio.ah(['board']).saida, /Fila de pesado/);
   vazio.limpar();
 
   const p = criarProjeto();
@@ -127,4 +130,27 @@ test('sessão sem pid (ah rodado à mão) aparece viva marcada "sem processo"; c
   assert.match(r.saida, /sessao-b \(executor, —\)(;|$)/m);
   const d = JSON.parse(p.ah(['board', '--json']).saida);
   assert.deepEqual(d.sessoes.map(s => [s.curto, s.semProcesso]).sort(), [['sessao-b', false], ['sessao-t', true]]);
+});
+
+test('board mostra a fila de pesado: quem roda, quem espera, classe e há quanto tempo', t => {
+  const p = criarProjeto();
+  t.after(() => p.limpar());
+  const dir = path.join(path.dirname(p.raiz), 'fila');
+  fs.mkdirSync(dir, { recursive: true });
+  const ha = min => new Date(Date.now() - min * 60000).toISOString();
+  fs.writeFileSync(path.join(dir, 'fila.json'), JSON.stringify({ versao: 1, proximaSenha: 4, entradas: [
+    { senha: 3, pid: 999999, inicio: null, projeto: 'loja', worktree: '/wt/frete', comando: 'npm run e2e', classe: 'exclusivo', vagas: 'todas', chegou: ha(2), rodandoDesde: null },
+    { senha: 2, pid: process.pid, inicio: null, projeto: 'loja', worktree: '/wt/carrinho', comando: 'npm run build', classe: 'grande', vagas: 1, chegou: ha(10), rodandoDesde: ha(5) },
+  ] }));
+  const env = { env: { AH_FILA: dir } };
+  const r = p.ah(['board'], env);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /^Fila de pesado \(2 vaga\(s\)\):\n {2}rodando +senha 2 {2}grande {2}há 5 min {2}loja, carrinho {2}npm run build\n {2}esperando senha 3 {2}exclusivo {2}há 2 min {2}loja, frete {2}\(processo morto\) {2}npm run e2e$/m);
+  const j = JSON.parse(p.ah(['board', '--json'], env).saida).fila;
+  assert.deepEqual(j.entradas.map(e => [e.senha, e.estado, e.classe, e.morta]), [[2, 'rodando', 'grande', false], [3, 'esperando', 'exclusivo', true]]);
+  assert.ok(j.entradas[0].haMs >= 5 * 60000);
+  fs.writeFileSync(path.join(dir, 'fila.json'), JSON.stringify({ versao: 7 }));
+  const v = p.ah(['board'], env);
+  assert.equal(v.codigo, 0);
+  assert.match(v.saida, /Fila de pesado: O estado da fila tem formato 7.*\(rode ah doctor\)/);
 });
