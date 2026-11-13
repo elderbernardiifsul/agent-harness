@@ -4,8 +4,9 @@
 //   <!-- ah:<tipo> id=<id> nome=<nome> ramo=<ramo> estado=<ativa|passada|livre> login=<login> ... v=1 -->
 // O último marcador de uma frente diz o estado dela no ticket; na corrida decide a ordem do servidor em cada
 // ticket (o número do comentário): fica só quem tem o primeiro marcador em todos os seus tickets.
+import { createHash } from 'node:crypto';
 import { comentar, criarRotulo, editarTicket, gh } from './github.mjs';
-import { ENVIADO, NA_FILA, PERDIDO, comentarOuEnfileirar, editarOuEnfileirar, pendentesDoTicket } from './pendentes.mjs';
+import { ENVIADO, NA_FILA, PERDIDO, comentarOuEnfileirar, editarOuEnfileirar } from './pendentes.mjs';
 import { idCurto } from './sessao.mjs';
 
 const ORDEM = ['id', 'nome', 'ramo', 'estado', 'login', 'sessao', 'tickets', 'plano', 'abertaPor', 'abertaEm'];
@@ -129,10 +130,22 @@ const camposDaFrente = (frente, estado, login, sessao) => ({
   id: frente.id, nome: frente.nome, ramo: frente.ramo, estado, login, sessao: sessao ? idCurto(sessao) : null,
 });
 
+// Identificador da sessão inteira no marcador: os 16 primeiros hex do sha256 do id. Vai nos marcadores que seguram
+// a frente (frente, retomada, tomada): é por ele que uma sessão reconhece o que é dela (a `sessao` curta não basta).
+export const sidDe = sessao => createHash('sha256').update(String(sessao)).digest('hex').slice(0, 16);
+
+// O marcador é desta sessão? Pelo `sid`; marcador antigo, sem `sid`, por login e sessão curta.
+export function marcadorDaSessao(m, { login, sessao }) {
+  if (!m) return false;
+  if (m.campos.sid) return m.campos.sid === sidDe(sessao);
+  return (m.campos.login ?? m.autor) === login && m.campos.sessao === idCurto(sessao);
+}
+
 // Com o que outra máquina precisa para reconstruir a frente (a passagem e a retomada levam tudo).
 const camposCompletos = (frente, estado, login, sessao) => ({
   ...camposDaFrente(frente, estado, login, sessao),
   tickets: (frente.tickets ?? []).join(','), plano: frente.plano, abertaPor: frente.abertaPor, abertaEm: frente.abertaEm,
+  ...(estado === 'ativa' && sessao ? { sid: sidDe(sessao) } : {}),
 });
 
 const SAIDA_SEM_REDE = 'tente de novo com rede, ou abra sem --tickets (sem reserva)';
@@ -247,6 +260,7 @@ export function reservar({ tickets, frente, login, sessao, para = null, rotulo, 
   const marcador = montarMarcador('frente', {
     ...camposDaFrente(frente, 'ativa', login, sessao),
     tickets: (frente.tickets ?? tickets).join(','), plano: frente.plano, abertaPor: frente.abertaPor, abertaEm: frente.abertaEm,
+    ...(sessao ? { sid: sidDe(sessao) } : {}),
   });
   const corpo = `Frente ${frente.id} (${frente.nome}) aberta por @${login}${paraQuem(para)}.\n\n${marcador}\n`;
   const tocados = [];
@@ -470,32 +484,32 @@ export function acharPassagem({ nome, tickets = [], rotulo }, o = {}) {
     const m = s.segura ?? s.ultimo;
     return {
       ok: true, passagem: null,
-      ativa: { id, login: loginDo(m), sessao: m.campos.sessao ?? null, numero: m.ordem, frente: dadosDoMarcador(m, id, nome, ondeApareceu(m.tipo)), logins: s.logins },
+      ativa: { id, login: loginDo(m), sessao: m.campos.sessao ?? null, sid: m.campos.sid ?? null, numero: m.ordem, frente: dadosDoMarcador(m, id, nome, ondeApareceu(m.tipo)), logins: s.logins },
     };
   }
   if (s.estado !== 'passada') return { ok: true, passagem: null };
   return { ok: true, passagem: { ...dadosDoMarcador(s.ultimo, id, nome, ondeApareceu('passagem')), logins: s.logins, login: loginDo(s.ultimo) } };
 }
 
-// A passagem desta frente ainda na fila desta máquina (o GitHub não a mostra): então nenhuma outra máquina pode
-// tê-la retomado, porque lá a frente ainda aparece ativa com quem a passou.
-export function passagemNaFila(dirEstado, frente) {
-  return (frente.tickets ?? []).some(n => pendentesDoTicket(dirEstado, n)
-    .some(op => op.tipo === 'comentario' && lerMarcadores(op.corpo).some(m => m.tipo === 'passagem' && m.campos.id === frente.id)));
-}
+// Quem segura a frente (o `ativa` de acharPassagem) é esta sessão? Pelo `sid`; sem ele, login e sessão curta.
+export const ativaDaSessao = (ativa, { login, sessao }) => Boolean(ativa)
+  && marcadorDaSessao({ campos: { sid: ativa.sid ?? undefined, login: ativa.login, sessao: ativa.sessao } }, { login, sessao });
 
 // Antes de retomar ou fechar uma frente `passada` local com tickets: quem está com ela no GitHub. Devolve
-// `{situacao}`: 'na-fila' (a passagem desta máquina ainda não saiu), 'passada' (a passagem dela é a última),
+// `{situacao}`: 'passada' (a passagem dela é a última),
 // 'propria' (esta sessão a segura: retomada que parou no meio; `proprios` = número do comentário), 'outra'
 // (`login`, `id`: ativa com outro), 'solta' (fechada ou sem marcador dela), 'sem-rede' (`motivo`) ou
 // 'nao-achei' (`ticket`).
-export function quemTemAFrente({ frente, login, sessao, rotulo, dirEstado }, o = {}) {
-  if (passagemNaFila(dirEstado, frente)) return { situacao: 'na-fila' };
+// 'daqui' (quem a segura é outra sessão desta máquina, `sessoesDaqui`: a frente ficou passada aqui sem passagem
+// nos tickets, como na continuação sem vínculo; a retomada vai como `tomada`).
+// A fila desta máquina para os tickets da frente é conferida por quem chama, antes (a releitura não a vê).
+export function quemTemAFrente({ frente, login, sessao, rotulo, sessoesDaqui = [] }, o = {}) {
   const a = acharPassagem({ nome: frente.nome, tickets: frente.tickets ?? [], rotulo }, o);
   if (!a.ok) return a.naoAchei ? { situacao: 'nao-achei', ticket: a.naoAchei } : { situacao: 'sem-rede', motivo: a.motivo };
   if (a.passagem) return a.passagem.id === frente.id ? { situacao: 'passada', passagem: a.passagem } : { situacao: 'outra', login: a.passagem.login, id: a.passagem.id, passada: true };
   if (a.ativa) {
-    if (a.ativa.id === frente.id && a.ativa.login === login && a.ativa.sessao === idCurto(sessao)) return { situacao: 'propria', proprios: [a.ativa.numero] };
+    if (a.ativa.id === frente.id && ativaDaSessao(a.ativa, { login, sessao })) return { situacao: 'propria', proprios: [a.ativa.numero] };
+    if (a.ativa.id === frente.id && sessoesDaqui.some(id => id && ativaDaSessao(a.ativa, { login: a.ativa.login, sessao: id }))) return { situacao: 'daqui' };
     return { situacao: 'outra', login: a.ativa.login, id: a.ativa.id };
   }
   return { situacao: 'solta' };
@@ -508,18 +522,21 @@ export function quemTemAFrente({ frente, login, sessao, rotulo, dirEstado }, o =
 // fila: comentário sem marcador (não muda o estado da frente) e sai de responsável. Quem falha sem perder relê:
 // se ainda segura a frente, comenta de novo a `passagem` (com os dados da frente) para ela voltar a passada.
 // Devolve {ok: true, logins} | {ok: false, vencedor?: {login}, motivo, como}.
-export function confirmarRetomada({ frente, login, sessao, para = null, rotulo, dirEstado, proprios = [], esperaMs = ESPERA_DA_RELEITURA_MS }, o = {}) {
+// `tipo`: 'retomada' ou 'tomada' (quando quem segura a frente nos tickets é outra sessão desta máquina).
+export function confirmarRetomada({ frente, login, sessao, para = null, rotulo, dirEstado, proprios = [], tipo = 'retomada', esperaMs = ESPERA_DA_RELEITURA_MS }, o = {}) {
   const tickets = frente.tickets ?? [];
   const reservaTickets = frente.reserva?.tickets ?? tickets;
   const antes = frente.reserva?.logins ?? [];
   const entra = !antes.includes(login);
-  const corpo = corpoDaMarcacao({ frente, tipo: 'retomada', texto: `Frente ${frente.id} (${frente.nome}) retomada por @${login}${paraQuem(para)}.`, login, sessao });
+  const corpo = corpoDaMarcacao({ frente, tipo, texto: `Frente ${frente.id} (${frente.nome}) ${tipo === 'tomada' ? 'tomada' : 'retomada'} por @${login}${paraQuem(para)}.`, login, sessao });
   const meus = new Set(proprios);
   let semUrl = false;
   const comentados = [];
   const editados = [];
-  const eMeu = m => Boolean(m) && m.tipo === 'retomada'
-    && (meus.has(m.ordem) || (semUrl && loginDo(m) === login && m.campos.sessao === idCurto(sessao)));
+  // Meu: o número do comentário; senão o `sid` (desta sessão, inclusive de uma retomada anterior); marcador
+  // antigo sem `sid`, só sem url, por login e sessão curta.
+  const eMeu = m => Boolean(m) && (m.tipo === 'retomada' || m.tipo === 'tomada')
+    && (meus.has(m.ordem) || (m.campos.sid ? m.campos.sid === sidDe(sessao) : semUrl && marcadorDaSessao(m, { login, sessao })));
   // Situação relida e se algum marcador desta retomada já aparece.
   const reler = () => {
     const lidos = lerOsTickets(tickets, o);

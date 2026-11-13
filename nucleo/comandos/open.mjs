@@ -7,7 +7,7 @@ import { frentesDa, gravarFrente, lerFrente, listarFrentes, listarFrentesToleran
 import { existeRamo, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
 import { reenviarComAviso, reenviarPendentes, temDoTicket } from '../lib/pendentes.mjs';
-import { acharPassagem, confirmarRetomada, desfazerReserva, marcarTickets, paraQuem, quemTemAFrente, reservar } from '../lib/reserva.mjs';
+import { acharPassagem, ativaDaSessao, confirmarRetomada, desfazerReserva, marcarTickets, paraQuem, quemTemAFrente, reservar } from '../lib/reserva.mjs';
 import { arquivosDaFrente, caminhosEmComum, tocaOsCaminhos } from '../lib/sobreposicao.mjs';
 import { ESQUEMA_DO_ESTADO, gravarSessao, idCurto, lerSessao, listarSessoes, registrarSessao, resolverSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
 import { avisarDaMarcacao, recusaDoWorktree } from './handoff.mjs';
@@ -232,8 +232,8 @@ export async function executar(args, amb) {
         throw recusa(`A frente ${existente.id} ${o.nome} mudou enquanto eu conferia o GitHub.`, `rode ah open ${o.nome} de novo`);
       }
       const retomada = retomarSobTrava(existente, { amb, cfg, login, plano, caminhos, remoto, dona, destino });
-      // Com a passagem ainda na fila desta máquina, a retomada vai atrás dela pela fila (ninguém mais a viu).
-      return { retomada, remota: precisa && !conferida.fila ? { proprios: conferida.proprios, anterior: existente } : null };
+      // Frente com tickets: sempre pelo servidor, com a corrida decidida (confirmarRetomada).
+      return { retomada, remota: precisa ? { proprios: conferida.proprios, tipo: conferida.tipo, anterior: existente } : null };
     }
     if (!existente && passagem && !existeRamo(amb.raiz, ramo, { env: amb.env })) {
       const retomada = retomarSobTrava(frenteDaPassagem(passagem, { amb, cfg, ramo }), { amb, cfg, login, plano, caminhos, remoto, dona, destino });
@@ -405,7 +405,7 @@ async function terminarRetomada(frente, { amb, login, oGh, rotulo, remota = null
         throw recusa(`Não retomei a frente ${frente.id} ${frente.nome}: há operações desta máquina na fila para ${ainda.map(n => `#${n}`).join(', ')} que precisam sair antes (aqui: ${local}).`,
           `tente de novo com rede: ah open ${frente.nome}`);
       }
-      r = confirmarRetomada({ frente, login, sessao: dona, para: destino, rotulo, dirEstado: amb.dirEstado, proprios: remota.proprios }, oGh);
+      r = confirmarRetomada({ frente, login, sessao: dona, para: destino, rotulo, dirEstado: amb.dirEstado, proprios: remota.proprios, tipo: remota.tipo }, oGh);
       if (!r.ok) {
         const local = await desfazerRetomada(frente, amb, remota.anterior, dona);
         const qual = `${frente.id} ${frente.nome}`;
@@ -472,15 +472,22 @@ function avancarDoRemoto(f, wt, sujos, { amb, remoto }) {
 }
 
 // Fora da trava, antes de retomar uma frente passada desta máquina que tem tickets: confere no GitHub que ninguém a
-// retomou. Devolve {fila: true} (a passagem ainda está na fila daqui) ou {proprios}; senão recusa.
+// retomou. Operação desta máquina ainda na fila para um dos tickets (o open já tentou o reenvio) recusa: o GitHub
+// ainda não mostra o que esta máquina fez. Devolve {proprios}; senão recusa.
 function conferirAntesDeRetomar(local, { amb, login, rotulo, oGh, dona = amb.sessaoId }) {
   const nome = local.nome;
-  const q = quemTemAFrente({ frente: local, login, sessao: dona, rotulo, dirEstado: amb.dirEstado }, oGh);
+  const presos = local.tickets.filter(n => temDoTicket(amb.dirEstado, n));
+  if (presos.length) {
+    throw recusa(`Não retomei a frente ${local.id} ${nome}: há operações desta máquina na fila para ${presos.map(n => `#${n}`).join(', ')} que precisam sair antes.`,
+      `tente de novo com rede: ah open ${nome}`);
+  }
+  const sessoesDaqui = [...listarSessoes(amb.dirEstado).sessoes.map(x => x.id), local.passadaPor];
+  const q = quemTemAFrente({ frente: local, login, sessao: dona, rotulo, sessoesDaqui }, oGh);
   const fechar = `o registro desta máquina ficou velho: ah close ${nome} o tira (só o worktree e o registro daqui; os tickets não mudam)`;
   switch (q.situacao) {
-    case 'na-fila': return { fila: true, proprios: [] };
-    case 'passada': return { fila: false, proprios: [] };
-    case 'propria': return { fila: false, proprios: q.proprios };
+    case 'passada': return { proprios: [] };
+    case 'daqui': return { proprios: [], tipo: 'tomada' };
+    case 'propria': return { proprios: q.proprios };
     case 'outra':
       throw recusa(`Não retomei ${nome}: a frente ${q.id} está ativa com @${q.login} em outra máquina.`, `combine com @${q.login}; ${fechar}`);
     case 'solta':
@@ -511,7 +518,7 @@ function procurarPassagem({ amb, nome, ramo, remoto, tickets, rotulo, oGh, login
       `tente de novo com rede; se ${nome} não é uma frente passada, escolha outro nome`);
   }
   // Retomada desta mesma sessão que parou no meio (o registro local se perdeu): continua de onde parou.
-  if (a.ativa && a.ativa.login === login && a.ativa.sessao === idCurto(dona)) {
+  if (a.ativa && ativaDaSessao(a.ativa, { login, sessao: dona })) {
     return { ...a.ativa.frente, logins: a.ativa.logins.filter(l => l !== login), login, proprios: [a.ativa.numero] };
   }
   if (a.ativa) {

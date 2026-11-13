@@ -5,9 +5,9 @@ import { comTrava, registrarEvento } from '../lib/estado.mjs';
 import { frentesDa, gravarFrente, lerFrente, linhaDoHistorico, listarFrentesTolerante, nomeValido, removerFrente } from '../lib/frente.mjs';
 import { existeRamo, ramoAtual, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
-import { reenviarComAviso } from '../lib/pendentes.mjs';
-import { desfazerAbertura, liberarTickets, quemTemAFrente } from '../lib/reserva.mjs';
-import { gravarSessao, idCurto, lerSessao, tocarSinal } from '../lib/sessao.mjs';
+import { reenviarComAviso, temDoTicket } from '../lib/pendentes.mjs';
+import { confirmarRetomada, desfazerAbertura, liberarTickets, quemTemAFrente } from '../lib/reserva.mjs';
+import { gravarSessao, idCurto, lerSessao, listarSessoes, tocarSinal } from '../lib/sessao.mjs';
 import { aberturaParada, prazoMs, vidaDaSessao } from '../lib/vida.mjs';
 
 export const descricao = 'fecha a frente da sessão sem perder trabalho';
@@ -225,19 +225,33 @@ export async function executar(args, amb) {
     const primeiros = conferir();
     if (primeiros.length) recusarProblemas(primeiros);
 
-    // Frente passada com tickets: outra máquina pode tê-la retomado. Então este close só tira o registro e o
-    // worktree daqui; comentar o fechamento soltaria a reserva de quem está com ela.
+    // Frente passada com tickets: outra máquina pode tê-la retomado, ou retomá-la enquanto este close comenta.
+    // Então este close primeiro toma a frente pela mesma corrida da retomada (marcador `retomada` desta sessão) e
+    // só então a fecha como própria; se outra a tem (ou ganha a corrida), tira só o registro e o worktree daqui.
     let soLocal = null;
     if (frente.estado === 'passada' && (frente.tickets ?? []).length && !frente.fechamentoComentado) {
       const oGh = { cwd: raiz, env, avisar: amb.avisar };
-      const login = loginAtual(oGh) ?? frente.abertaPor ?? 'local';
-      const q = quemTemAFrente({ frente, login, sessao: amb.sessaoId, rotulo: cfg.github.rotuloDeReserva, dirEstado }, oGh);
-      if (q.situacao === 'sem-rede') {
-        throw recusa(`Não fechei ${frente.nome}: preciso do GitHub para confirmar que ninguém retomou ${frente.nome} (${q.motivo}).`,
+      const presos = frente.tickets.filter(n => temDoTicket(dirEstado, n));
+      if (presos.length) {
+        throw recusa(`Não fechei ${frente.nome}: há operações desta máquina na fila para ${presos.map(n => `#${n}`).join(', ')} que precisam sair antes.`,
           `tente de novo com rede: ah close ${frente.nome}; nada foi apagado`);
       }
+      const login = loginAtual(oGh) ?? frente.abertaPor ?? 'local';
+      const rotulo = cfg.github.rotuloDeReserva;
+      const semRede = motivo => recusa(`Não fechei ${frente.nome}: preciso do GitHub para confirmar que ninguém retomou ${frente.nome} (${motivo}).`,
+        `tente de novo com rede: ah close ${frente.nome}; nada foi apagado`);
+      const sessoesDaqui = [...listarSessoes(dirEstado).sessoes.map(x => x.id), frente.passadaPor];
+      const q = quemTemAFrente({ frente, login, sessao: amb.sessaoId, rotulo, sessoesDaqui }, oGh);
+      if (q.situacao === 'sem-rede') throw semRede(q.motivo);
       if (q.situacao === 'outra') soLocal = `a frente ${q.id} está ativa com @${q.login} em outra máquina`;
       if (q.situacao === 'solta') soLocal = `nos tickets a frente ${frente.id} já não está passada (fechada em outra máquina)`;
+      if (['passada', 'propria', 'daqui'].includes(q.situacao)) {
+        const tipo = q.situacao === 'daqui' ? 'tomada' : 'retomada';
+        const r = confirmarRetomada({ frente, login, sessao: amb.sessaoId, rotulo, dirEstado, proprios: q.proprios ?? [], tipo }, oGh);
+        if (!r.ok && r.vencedor) soLocal = `a frente ${frente.id} foi retomada antes por @${r.vencedor.login} em outra máquina (${r.como})`;
+        else if (!r.ok) throw semRede(`${r.motivo}; ${r.como}`);
+        else frente.reserva = { ...(frente.reserva ?? { tickets: [...frente.tickets] }), logins: r.logins };
+      }
     }
 
     // Resumo: o que o usuário deu, ou o título do último commit do ramo.

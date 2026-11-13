@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { criarProjeto, dirDoTeste, outraMaquina } from './apoio/repo.mjs';
 import { acharPassagem, montarMarcador } from '../nucleo/lib/reserva.mjs';
+import { reenviarPendentes } from '../nucleo/lib/pendentes.mjs';
 
 const lerFrenteDoTeste = (p, nome) => JSON.parse(fs.readFileSync(path.join(dirDoTeste(p), 'frentes', `${nome}.json`), 'utf8'));
 const temFrente = (p, nome) => fs.existsSync(path.join(dirDoTeste(p), 'frentes', `${nome}.json`));
@@ -380,4 +381,135 @@ test('item 6: ticket de --tickets que não existe tem erro próprio', t => {
   assert.equal(r.codigo, 1);
   assert.match(r.erro, /Não achei o ticket #9/);
   assert.doesNotMatch(r.erro, /preciso do GitHub/);
+});
+
+// ---- Consertos da revisão da tarefa 8, rodada 2 ----
+
+const esperarArquivo = async (arquivo, ms = 15000) => {
+  const ate = Date.now() + ms;
+  while (!fs.existsSync(arquivo)) {
+    if (Date.now() > ate) throw new Error(`não apareceu: ${arquivo}`);
+    await new Promise(r => setTimeout(r, 25));
+  }
+};
+// Roda `ah <args>` em `p` ao fundo, parado no comentário cujo corpo tem `texto`. Devolve o fim e o soltar.
+async function paradoNoComentario(t, p, args, texto, extra = {}) {
+  const pausa = path.join(path.dirname(dirDoTeste(p)), `pausa-${texto.replace(/\W/g, '')}`);
+  const h = p.ahAoFundo(args, { env: { ...extra, GH_FALSO_PAUSA_COMENTARIO: pausa, GH_FALSO_PAUSA_TEXTO: texto } });
+  t.after(() => { h.processo.kill('SIGKILL'); try { fs.writeFileSync(`${pausa}.solta`, ''); } catch { /* pasta já limpa */ } });
+  await esperarArquivo(`${pausa}.chegou`);
+  return { soltar: async () => { fs.writeFileSync(`${pausa}.solta`, ''); return h.fim; } };
+}
+
+test('Q1: retomada local parada no comentário enquanto outra máquina retoma: só uma fica', async t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  const a = await paradoNoComentario(t, p, ['open', 'carrinho'], 'ah:retomada', { AH_SESSAO: 'sessao-b-0002' });
+  const rq = q.ah(['open', 'carrinho']);
+  const ra = await a.soltar();
+  const ficaram = [rq.codigo, ra.codigo].filter(c => c === 0).length;
+  assert.equal(ficaram, 1, `q: ${rq.erro}\np: ${ra.erro}`);
+  // q comentou primeiro (p estava parado antes de gravar): q fica, p desfaz e volta a passada.
+  assert.equal(rq.codigo, 0, rq.erro);
+  assert.match(ra.erro, /retomada antes por @carla-dias/);
+  assert.deepEqual([lerFrenteDoTeste(p, 'carrinho').estado, lerFrenteDoTeste(p, 'carrinho').dona], ['passada', null]);
+});
+
+test('Q1: não existe mais o atalho da fila: passagem na fila recusa a retomada local', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff'], { env: { GH_FALSO_FORA: '1' } }).codigo, 0);
+  const r = p.ah(['open', 'carrinho'], { env: { AH_SESSAO: 'sessao-b-0002', GH_FALSO_FORA: '1' } });
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /há operações desta máquina na fila para #1 que precisam sair antes/);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'passada');
+});
+
+test('Q2: close parado no comentário de fechamento: a outra máquina não retoma (o close tomou antes)', async t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  const a = await paradoNoComentario(t, p, ['close', 'carrinho'], 'ah:fechamento', { AH_SESSAO: 'sessao-b-0002' });
+  const rq = q.ah(['open', 'carrinho']);
+  const ra = await a.soltar();
+  assert.equal(rq.codigo, 1, rq.saida);
+  assert.match(rq.erro, /ativa com @ana-souza em outra máquina/);
+  assert.equal(ra.codigo, 0, ra.erro);
+  assert.match(ra.saida, /Frente as-1 carrinho fechada\./);
+  assert.deepEqual(tiposNoTicket(p, 1).slice(-2), ['retomada', 'fechamento']);
+  assert.equal(temFrente(q, 'carrinho'), false);
+});
+
+test('Q2: close parado na própria retomada enquanto outra máquina retoma: fecha só o local', async t => {
+  const { p, wt } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  const a = await paradoNoComentario(t, p, ['close', 'carrinho'], 'ah:retomada', { AH_SESSAO: 'sessao-b-0002' });
+  const rq = q.ah(['open', 'carrinho']);
+  const ra = await a.soltar();
+  assert.equal(rq.codigo, 0, rq.erro);
+  assert.equal(ra.codigo, 0, ra.erro);
+  assert.match(ra.saida, /Registro local da frente as-1 carrinho fechado: a frente as-1 foi retomada antes por @carla-dias/);
+  assert.ok(!tiposNoTicket(p, 1).includes('fechamento'));
+  assert.ok(p.ghTicket(1).assignees.includes('carla-dias'));
+  assert.equal(fs.existsSync(wt), false);
+});
+
+test('item 4: mesmo login e mesmo prefixo de sessão em outra máquina não é "a mesma sessão"', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  assert.equal(q.ah(['open', 'carrinho']).codigo, 0);
+  const c = maquina(t, p, { sessao: 'sessao-c-0004', login: 'carla-dias', sigla: 'cd' });
+  const r = c.ah(['open', 'carrinho']);
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /ativa com @carla-dias em outra máquina/);
+  assert.equal(temFrente(c, 'carrinho'), false);
+});
+
+test('item 4: quem passou não retoma o que a mesma pessoa retomou em outra máquina com sessão de mesmo prefixo', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const m = maquina(t, p, { sessao: 'sessao-teste-0009', login: 'ana-souza', sigla: 'as' });
+  assert.equal(m.ah(['open', 'carrinho']).codigo, 0);
+  const r = p.ah(['open', 'carrinho']);
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /ativa com @ana-souza em outra máquina/);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'passada');
+});
+
+test('item 4: os marcadores que seguram a frente levam sid; a passagem não', t => {
+  const { p } = comFrente(t);
+  assert.match(p.ghTicket(1).comments[0].body, /<!-- ah:frente .* sid=[0-9a-f]{16} v=1 -->/);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  assert.doesNotMatch(p.ghTicket(1).comments.at(-1).body, /sid=/);
+  assert.equal(p.ah(['open', 'carrinho'], B).codigo, 0);
+  assert.match(p.ghTicket(1).comments.at(-1).body, /<!-- ah:retomada .* sid=[0-9a-f]{16} v=1 -->/);
+});
+
+test('frente passada aqui sem passagem nos tickets (continuação sem vínculo): retoma como tomada', t => {
+  const { p } = comFrente(t);
+  const f = lerFrenteDoTeste(p, 'carrinho');
+  fs.writeFileSync(path.join(dirDoTeste(p), 'frentes', 'carrinho.json'), JSON.stringify({ ...f, estado: 'passada', dona: null, passadaPor: 'continuacao-sem-vinculo' }));
+  const r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.equal(tiposNoTicket(p, 1).at(-1), 'tomada');
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').dona, 'sessao-b-0002');
+});
+
+test('Q1 (reprodução da revisão): handoff parado na passagem, retomada local e outra máquina: nunca duas ativas', async t => {
+  const { p } = comFrente(t);
+  const h = await paradoNoComentario(t, p, ['handoff'], 'ah:passagem');
+  const ra = p.ah(['open', 'carrinho'], B); // a passagem ainda na fila, com o reenvio preso no handoff
+  const fim = await h.soltar();
+  assert.equal(fim.codigo, 0, fim.erro);
+  const q = maquina(t, p);
+  const rq = q.ah(['open', 'carrinho']);
+  // O que a retomada local deixou na fila sai agora (como sairia no próximo comando).
+  await reenviarPendentes(dirDoTeste(p), { cwd: p.raiz, env: p.env });
+  const ativas = [ra.codigo === 0 && lerFrenteDoTeste(p, 'carrinho').estado === 'ativa', rq.codigo === 0].filter(Boolean).length;
+  assert.equal(ativas, 1, `p: ${ra.codigo} ${ra.erro}\nq: ${rq.codigo} ${rq.erro}`);
+  assert.equal(ra.codigo, 1);
+  assert.match(ra.erro, /na fila para #1 que precisam sair antes/);
+  assert.equal(rq.codigo, 0, rq.erro);
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { criarProjeto, dirDoTeste, envelhecerSinal, outraMaquina } from './apoio/repo.mjs';
-import { contarPendentes, enfileirar, reenviarPendentes } from '../nucleo/lib/pendentes.mjs';
+import { contarPendentes, enfileirar } from '../nucleo/lib/pendentes.mjs';
 
 const arquivoDaFrente = (p, nome) => path.join(dirDoTeste(p), 'frentes', `${nome}.json`);
 const lerFrenteDoTeste = (p, nome) => JSON.parse(fs.readFileSync(arquivoDaFrente(p, nome), 'utf8'));
@@ -253,23 +253,32 @@ test('gh lento na passagem: a retomada no meio comenta atrás dela', async t => 
   const { p } = comFrente(t);
   const { soltar } = await handoffParado(t, p);
   assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'passada');
-  const r = p.ah(['open', 'carrinho'], B);
-  assert.equal(r.codigo, 0, r.erro);
+  // Com a passagem ainda na fila (e o reenvio preso no handoff), a retomada recusa (rodada 2 da tarefa 8).
+  let r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /na fila para #1 que precisam sair antes/);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'passada');
   const fim = await soltar();
   assert.equal(fim.codigo, 0, fim.erro);
-  await reenviarPendentes(dirDoTeste(p), { cwd: p.raiz, env: p.env });
+  r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 0, r.erro);
   assert.deepEqual(tiposNoTicket(p, 1), ['frente', 'passagem', 'retomada']);
 });
 
 test('gh lento na passagem: o close no meio comenta atrás dela', async t => {
   const { p } = comFrente(t);
   const { soltar } = await handoffParado(t, p);
-  const r = p.ah(['close', 'carrinho'], B);
-  assert.equal(r.codigo, 0, r.erro);
+  // Com a passagem ainda na fila, o close de frente passada recusa sem apagar nada (rodada 2 da tarefa 8).
+  let r = p.ah(['close', 'carrinho'], B);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /na fila para #1 que precisam sair antes/);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'passada');
   const fim = await soltar();
   assert.equal(fim.codigo, 0, fim.erro);
-  await reenviarPendentes(dirDoTeste(p), { cwd: p.raiz, env: p.env });
-  assert.deepEqual(tiposNoTicket(p, 1), ['frente', 'passagem', 'fechamento']);
+  r = p.ah(['close', 'carrinho'], B);
+  assert.equal(r.codigo, 0, r.erro);
+  // O close toma a frente pela corrida da retomada e então a fecha.
+  assert.deepEqual(tiposNoTicket(p, 1), ['frente', 'passagem', 'retomada', 'fechamento']);
   assert.deepEqual(p.ghTicket(1).assignees, []);
 });
 
