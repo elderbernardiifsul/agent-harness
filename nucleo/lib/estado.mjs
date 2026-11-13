@@ -42,10 +42,24 @@ export function gravarJson(arquivo, obj) {
 
 const dormir = ms => new Promise(r => setTimeout(r, ms));
 
+// O pid do dono não existe mais (EPERM conta como existe). Pid ausente ou inválido: não se sabe (false).
+function donoMorto(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (e) {
+    return e.code === 'ESRCH';
+  }
+}
+
+// Vencida: o dono morreu (vence na hora), ou passou de `venceMs` desde o `em` do dono (ou da data da pasta).
 function travaVencida(pasta, venceMs) {
   let em = null;
   try {
-    em = Date.parse(JSON.parse(fs.readFileSync(path.join(pasta, 'dono.json'), 'utf8')).em);
+    const dono = JSON.parse(fs.readFileSync(path.join(pasta, 'dono.json'), 'utf8'));
+    if (donoMorto(dono?.pid)) return true;
+    em = Date.parse(dono.em);
   } catch { /* sem dono legível: vale a data da pasta */ }
   if (!Number.isFinite(em)) {
     try { em = fs.statSync(pasta).mtimeMs; } catch { return false; }
@@ -99,8 +113,8 @@ function prepararTrava(dir, nome) {
   return { pasta, marca: randomUUID() };
 }
 
-const travaPresa = (nome, pasta, esperaMs, venceMs) => new ErroDeEstado(`Esperei ${esperaMs} ms pela trava "${nome}" e ela não foi solta`, pasta,
-  `se outro ah está rodando, espere ele terminar e repita; uma trava esquecida vence sozinha em até ${Math.ceil(venceMs / 1000)} s (a trava é a pasta ${pasta})`);
+const travaPresa = (nome, pasta, esperaMs, venceMs) => Object.assign(new ErroDeEstado(`Esperei ${esperaMs} ms pela trava "${nome}" e ela não foi solta`, pasta,
+  `se outro ah está rodando, espere ele terminar e repita; uma trava esquecida vence sozinha em até ${Math.ceil(venceMs / 1000)} s (a trava é a pasta ${pasta})`), { travaPresa: true });
 
 const marcarDono = (pasta, marca) => fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ pid: process.pid, em: new Date().toISOString(), marca }));
 

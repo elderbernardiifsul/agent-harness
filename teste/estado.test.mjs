@@ -126,3 +126,17 @@ test('M1: esperar demais pela trava diz em quanto tempo ela vence e onde está',
     return true;
   });
 });
+
+test('trava de dono morto vence na hora; de dono vivo, não', async t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  fs.mkdirSync(pasta, { recursive: true });
+  fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ pid: 999999, em: new Date().toISOString(), marca: 'morta' }));
+  assert.equal(await comTrava(d, 'x', () => 'entrou', { venceMs: 60000, esperaMs: 500 }), 'entrou');
+  fs.mkdirSync(pasta, { recursive: true });
+  fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ pid: process.pid, em: new Date().toISOString(), marca: 'viva' }));
+  await assert.rejects(comTrava(d, 'x', () => 1, { venceMs: 60000, esperaMs: 80 }), e => e.name === 'ErroDeEstado' && e.travaPresa === true);
+  // sem dono legível, vale a data da pasta (como antes)
+  fs.rmSync(path.join(pasta, 'dono.json'));
+  await assert.rejects(comTrava(d, 'x', () => 1, { venceMs: 60000, esperaMs: 80 }), e => e.travaPresa === true);
+});
