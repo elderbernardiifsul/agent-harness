@@ -150,12 +150,13 @@ export function lerCache(dirEstado) {
 // Cache gravado antes do campo `parcial`: o de `ah deps <n>` sem lista guardada ficava com `completa: null`.
 const cacheParcial = c => c.parcial ?? c.completa == null;
 
-// Data e hora (AAAA-MM-DD HH:MM) no fuso da configuração.
+// Data e hora (AAAA-MM-DD HH:MM) no fuso da configuração, seguidas do nome do fuso: a tela diz em que fuso
+// está a hora (os registros guardam UTC).
 export function quando(iso, fuso) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
     timeZone: fuso, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).formatToParts(new Date(iso)).map(x => [x.type, x.value]));
-  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute} ${fuso}`;
 }
 
 // --- Montagem ---
