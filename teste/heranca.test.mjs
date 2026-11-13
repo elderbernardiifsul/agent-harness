@@ -258,3 +258,22 @@ test('fim com outro motivo continua encerrando a sessão', async () => {
     assert.deepEqual([Boolean(s.fim), s.motivoFim, s.aguardandoContinuacao], [true, 'fim', undefined], String(motivo));
   }
 });
+
+// ---- Segunda onda: a frente muda de dona antes de a sessão velha ser encerrada (a T4 nunca vê dona encerrada)
+for (const origem of ['continuacao', 'novo']) {
+  test(`continuarSessao (${origem}) grava a frente antes da sessão velha`, async t => {
+    registrarSessao(dir, { id: 's-a', agente: 'claude', pid: proc.pid, pidInicio: '100' });
+    registrarSessao(dir, { id: 's-b', agente: 'claude', pid: proc.pid, pidInicio: '100' });
+    gravarFrente(dir, frenteDe('s-a'));
+    const ordem = [];
+    const original = fs.renameSync;
+    fs.renameSync = (de, para) => { ordem.push(path.relative(dir, String(para))); return original(de, para); };
+    t.after(() => { fs.renameSync = original; });
+    await continuarSessao(dir, { sessao: 's-b', pid: proc.pid, pidInicio: '100', origem });
+    fs.renameSync = original;
+    const iFrente = ordem.indexOf(path.join('frentes', 'carrinho.json'));
+    const iVelha = ordem.indexOf(path.join('sessoes', 's-a.json'));
+    assert.ok(iFrente >= 0 && iVelha >= 0, ordem.join(', '));
+    assert.ok(iFrente < iVelha, ordem.join(', '));
+  });
+}

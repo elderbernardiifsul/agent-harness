@@ -24,9 +24,13 @@ export function continuarSessao(dirEstado, { sessao, pid, pidInicio = null, orig
     const agora = new Date().toISOString();
     for (const velha of velhas) {
       const daVelha = frentesDa(frentes, velha.id);
-      gravarSessao(dirEstado, { ...velha, fim: agora, motivoFim: 'substituida', frente: null, aguardandoContinuacao: undefined });
-      registrarEvento(dirEstado, { tipo: 'substituida', de: velha.id, por: sessao });
-      resultado.substituidas.push(velha.id);
+      // As frentes mudam de dona (ou ficam soltas) antes de a sessão velha ser encerrada: a T4 não vê, nem por um
+      // instante, frente ativa com dona encerrada.
+      const encerrarVelha = () => {
+        gravarSessao(dirEstado, { ...velha, fim: agora, motivoFim: 'substituida', frente: null, aguardandoContinuacao: undefined });
+        registrarEvento(dirEstado, { tipo: 'substituida', de: velha.id, por: sessao });
+        resultado.substituidas.push(velha.id);
+      };
       const vinculo = origem === 'continuacao';
       if (vinculo) {
         // `sessoesAnteriores`: as sessões substituídas que foram donas (os marcadores nos tickets podem ser delas).
@@ -36,6 +40,7 @@ export function continuarSessao(dirEstado, { sessao, pid, pidInicio = null, orig
           nova.frente = velha.frente ?? nova.frente;
           novaMudou = true;
         }
+        encerrarVelha();
         const nomes = daVelha.map(f => f.nome);
         resultado.herdadas.push(...nomes);
         registrarEvento(dirEstado, { tipo: 'heranca', de: velha.id, sessao, frentes: nomes });
@@ -46,6 +51,7 @@ export function continuarSessao(dirEstado, { sessao, pid, pidInicio = null, orig
           resultado.soltas.push(f.nome);
           registrarEvento(dirEstado, { tipo: 'frente-solta', sessao: velha.id, frente: f.nome, por: sessao, motivo: 'continuacao-sem-vinculo' });
         }
+        encerrarVelha();
       }
     }
     if (novaMudou) gravarSessao(dirEstado, nova);
