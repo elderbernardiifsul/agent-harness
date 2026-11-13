@@ -557,7 +557,7 @@ Trabalhe em: ~/.cache/…/wt/carrinho</pre>
       <p class="pequeno">Paga: uma pasta a mais por trabalho, e o conflito fica para o merge.</p>
     </div>
   </div>
-  <aside class="notas">Worktree: uma segunda pasta de trabalho do mesmo repositório, com o seu próprio ramo. É a junção de "ramo por pessoa" com "pasta por pessoa", sem copiar o histórico. A pasta principal vira o lugar de integrar. Se perguntarem "e o que impede alguém de mexer na pasta principal ou na pasta do outro?": é a questão 5; anote e siga. Diga com todas as letras: hoje, a separação é só por pasta. Custo: cada pasta tem a sua cópia de dependências.</aside>
+  <aside class="notas">Worktree: uma segunda pasta de trabalho do mesmo repositório, com o seu próprio ramo. É a junção de "ramo por pessoa" com "pasta por pessoa", sem copiar o histórico. A pasta principal vira o lugar de integrar. Se perguntarem "e o que impede alguém de mexer na pasta principal ou na pasta do outro?": é a questão 5; anote e siga. Custo: cada pasta tem a sua cópia de dependências.</aside>
 </section>
 
 <!-- Q3 -->
@@ -711,30 +711,45 @@ Faça: combine com @carla-dias, …</pre>
     <tr><td>T0</td><td>comando com git que não dá para ler</td><td><span class="tag pronto">pronto</span></td></tr>
     <tr><td>T2</td><td>"adicionar tudo" na pasta principal</td><td><span class="tag pronto">pronto</span></td></tr>
     <tr><td>T5</td><td>enviar para ramo protegido, em qualquer forma</td><td><span class="tag pronto">pronto</span></td></tr>
-    <tr><td>T1 · T3 · T4</td><td>trocar ramo · descartar · pasta de outro</td><td><span class="tag construcao">em construção</span></td></tr>
-    <tr><td>T6</td><td>trabalho pesado fora da fila</td><td><span class="tag depois">depois</span></td></tr>
+    <tr><td>T1 · T3</td><td>trocar o ramo · descartar trabalho, na pasta principal</td><td><span class="tag pronto">pronto</span></td></tr>
+    <tr><td>T4</td><td>escrever na pasta ou no ramo de outra conversa viva</td><td><span class="tag pronto">pronto</span></td></tr>
+    <tr><td>T6</td><td>trabalho pesado fora da fila</td><td><span class="tag construcao">em construção</span></td></tr>
   </table>
   <p class="pequeno">Das propostas: "conferir antes" mais "proteger no GitHub". Gancho que quebra <b>recusa</b>.</p>
-  <aside class="notas">Juntou "conferir o comando antes" com "proteger no GitHub": a barreira de verdade fica no servidor (proteção de ramo); a trava local avisa antes e diz a saída. Paga: a trava lê texto e sempre há forma que escapa. Regra geral do harness: só recusa o que protege o trabalho dos outros e a máquina; método (plano, teste antes) nunca é motivo de recusa. Desvio: AH_GUARD=off no começo do comando, por ordem do executivo, libera T2 e T5 e fica registrado; nunca libera T0. Volte à questão 2: hoje, git switch main e git reset --hard na pasta principal passam (T1 e T3 em construção); a pasta do outro só é protegida pela separação (T4 em construção).</aside>
+  <aside class="notas">Juntou "conferir o comando antes" com "proteger no GitHub": a barreira de verdade fica no servidor (proteção de ramo); a trava local avisa antes e diz a saída. Paga: a trava lê texto e sempre há forma que escapa. Regra geral do harness: só recusa o que protege o trabalho dos outros e a máquina; método (plano, teste antes) nunca é motivo de recusa. Desvio: AH_GUARD=off no começo do comando, por ordem do executivo, libera T1 a T5 naquele comando e fica registrado; nunca libera T0. Volte à questão 2: T1 e T3 guardam a pasta principal; T4 guarda a pasta e o ramo da frente de outra conversa viva, por comando e por edição de arquivo. No worktree da própria frente, a conversa é livre.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questão 5 · ao vivo</p>
   <pre><span class="cmd">$ echo '{… "command":"git add -A"}' | tools/ah gancho claude-code</span>
-<span class="rec">Recusado (T2): git add com tudo (-A, ., -u, *, a raiz) no checkout principal leva junto o trabalho de outras frentes</span>
+<span class="rec">Recusado (T2): git add com tudo … leva junto o trabalho de outras frentes</span>
 Faça: git add &lt;caminhos&gt; com só os arquivos que você mudou …
 <span class="cmd">$ echo $?</span>
 2
 
-<span class="cmd">$ … "command":"git checkout main &amp;&amp; git push" …</span>
-<span class="rec">Recusado (T5): push sem destino explícito com o ramo protegido main em uso</span>
+<span class="cmd">$ … "command":"git push origin dev:main" …</span>
+<span class="rec">Recusado (T5): push para o ramo protegido main</span>
 
 <span class="cmd">$ … "command":"G=git; $G push" …</span>
 <span class="rec">Recusado (T0): o nome do comando vem de uma variável e o texto menciona git ou gh</span>
 
-<span class="cmd">$ … "command":"git switch main" …</span>          <span class="sub"># passa hoje (T1 em construção)</span></pre>
+<span class="cmd">$ … "command":"git switch main" …</span>
+<span class="rec">Recusado (T1): trocar o ramo do checkout principal muda o chão das outras sessões</span>
+
+<span class="cmd">$ … Carla edita …/wt/carrinho/src/total.js …</span>
+<span class="rec">Recusado (T4): … está no worktree da frente as-1 carrinho, da sessão ana-term, que está viva</span></pre>
   <p class="pequeno">Toda recusa diz o motivo e o que fazer no lugar.</p>
-  <aside class="notas">Demonstração do roteiro do professor, passo 3. Mostre que git switch main passa: é a diferença entre o desenho e o código de hoje. Limites para citar: find | xargs git add passa; apelido do git passa; há falso positivo (switch main, pull, switch dev, push é recusado).</aside>
+  <aside class="notas">Demonstração do roteiro do professor, passo 3; a linha da T4 precisa de duas frentes abertas e roda ao vivo na demonstração do ciclo (passo 5): aqui, só leia. O "dev:main" é a outra forma de enviar para a main que ninguém tinha escrito, e a T5 pega. git switch main agora é recusado pela T1 (antes do dia 13 passava). A T4 recusa a conversa da Carla editando a pasta da frente da Ana. Os limites vêm no próximo slide.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 5 · com honestidade</p>
+  <h2>As travas pegam engano, não má-fé</h2>
+  <p>Passam, mesmo na pasta de outra conversa viva:</p>
+  <p class="mono">python -c "…" · find &lt;pasta&gt; -delete · … | xargs rm</p>
+  <p class="pequeno">Elas leem o texto do comando; não veem o que um programa faz por conta própria.</p>
+  <p class="pergunta">Vale o custo de fechar essas brechas? Quanto custa não fechar?</p>
+  <aside class="notas">Fonte: docs/referencia/comandos.md, seção Limites. Leve à balança: fechar as brechas pede caixa de areia (contêiner, usuário sem permissão), que custa infraestrutura e atrapalha o trabalho normal; não fechar custa pouco enquanto o risco é engano do agente, e muito se o risco for ataque (cenário 4, a portaria das skills). Por isso a barreira de verdade é o servidor. Também passam: apelido do git, find | xargs git add, gh api …/merge.</aside>
 </section>
 
 <!-- Q6 -->
@@ -744,7 +759,7 @@ Faça: git add &lt;caminhos&gt; com só os arquivos que você mudou …
   <p>A conversa de Ana trava às 16h com o carrinho pela metade.</p>
   <p>No dia seguinte, o quadro ainda diz "carrinho: Ana, em andamento".</p>
   <p>Carla quer continuar. Ana, no notebook, quer retomar o que deixou no laboratório.</p>
-  <aside class="notas">Na aula 1, pule daqui para o slide 36 (digite 36 e Enter). A aula 2 começa neste slide.</aside>
+  <aside class="notas">Na aula 1, pule daqui para o slide 37 (digite 37 e Enter). A aula 2 começa neste slide.</aside>
 </section>
 
 <section class="slide">
@@ -782,7 +797,7 @@ Para retomar: tools/ah open cupom
     <li>Viva = o processo existe e deu sinal há menos de 120 min; senão, "órfã" no quadro <span class="tag pronto">pronto</span></li>
     <li><span class="mono">handoff</span> envia o ramo e escreve o bilhete no ticket <span class="tag pronto">pronto</span></li>
     <li><span class="mono">takeover</span>: tomar a frente de quem morreu, com confirmação humana <span class="tag pronto">pronto</span></li>
-    <li><span class="mono">sweep</span>: listar o que ficou fora do lugar <span class="tag construcao">em construção</span></li>
+    <li><span class="mono">sweep</span>: listar e reparar o que ficou fora do lugar <span class="tag pronto">pronto</span></li>
   </ul>
   <aside class="notas">Das propostas: junta "prazo automático" (sinal de vida) com "bilhete combinado" (handoff) e "alguém assume" só com confirmação humana (takeover sem --confirmado mostra a dona, o motivo e recusa até o executivo confirmar). Paga: uma sessão morta parece viva por até duas horas. O comentário de passagem traz a nota, os últimos commits, o plano e o comando para retomar. Compare com os bilhetes da turma. Retomar em outra máquina usa o ramo no remoto e a passagem no ticket, com o mesmo ID. Frente sem ticket só se retoma na mesma máquina.</aside>
 </section>
@@ -860,18 +875,26 @@ Para retomar: tools/ah open cupom
   <div class="duas">
     <div>
       <p><span class="tag pronto">pronto</span></p>
-      <p class="mono pequeno">init · doctor · open · nota · board · whoami · papel · handoff · takeover · close · gancho</p>
-      <p class="pequeno">Travas T0, T2, T5 · adaptador do Claude Code · fila de comentários sem rede</p>
+      <p class="mono pequeno">init · doctor · open · nota · board · whoami · papel · handoff · takeover · sweep · close · gancho</p>
+      <p class="pequeno">Travas T0 a T5 · adaptador do Claude Code, ensaiado · comentários pendentes sem rede</p>
     </div>
     <div>
       <p><span class="tag construcao">em construção</span></p>
-      <p class="mono pequeno">sweep · T1 · T3 · T4</p>
-      <p><span class="tag depois">depois</span></p>
-      <p class="pequeno">fila de trabalho pesado e T6 · roteiro e testes para outros agentes · atualizar o harness instalado</p>
+      <p class="pequeno">fila de trabalho pesado e T6 · adaptadores do Codex e do OpenCode · atualizar o harness instalado</p>
     </div>
   </div>
-  <p class="pequeno sub">Conferido no código em 12/11/2026. Confiram com <span class="mono">tools/ah --help</span>, não no slide.</p>
+  <p class="pequeno sub">Conferido no código em 13/11/2026. Confiram com <span class="mono">tools/ah --help</span>, não no slide.</p>
   <aside class="notas">Node 22, sem dependências. Construído em fatias: cada uma utilizável e testada antes da seguinte. open aceita --tickets, --plano, --caminhos e --para. Se o repositório estiver publicado: github.com/elderbernardiifsul/agent-harness; se não, só demonstração.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Como sabemos que funciona</p>
+  <h2>O defeito que os testes não pegaram</h2>
+  <p>Os testes simulavam o agente. Todos passavam.</p>
+  <p>No ensaio com o agente de verdade: no <span class="mono">/clear</span>, o aviso de fim da conversa velha chega <b>antes</b> do aviso de começo da nova.</p>
+  <p>A frente ficava sem dona.</p>
+  <p class="pequeno destaque">Teste simulado prova a lógica; só o ensaio com o agente real prova o que supomos sobre ele.</p>
+  <aside class="notas">Fonte: docs/referencia/ensaio-claude-code.md, seção da fatia 2 (Claude Code 2.1.319). O harness supunha que fim e começo viriam na ordem "natural". Conserto: um fim por /clear ou resume não encerra a sessão; ela espera a continuação. Confira na referência se o conserto já foi reensaiado com o agente. Ligue ao trabalho final (enunciado §8): o que o artigo afirma precisa aparecer no registro; "pronto" é comando e saída, de preferência na situação real.</aside>
 </section>
 
 <section class="slide">
@@ -900,7 +923,7 @@ Para retomar: tools/ah open cupom
     <li>Escreve testes e roda <span class="mono">node --test teste/</span></li>
     <li>Prova com o agente real: pede um envio para a main e mostra a recusa</li>
   </ol>
-  <p class="pequeno"><span class="tag depois">depois</span> roteiro oficial e testes de contrato · hoje: roteiro do material, não ensaiado</p>
+  <p class="pequeno"><span class="tag construcao">em construção</span> adaptadores e roteiro oficial · hoje: roteiro do material, não ensaiado</p>
   <aside class="notas">O OpenCode recusa por exceção num plugin (execute.before); não tem evento de começo nem de fim de sessão. O Codex só roda ganchos do projeto depois de confiados. Isto é a prática da aula 2.</aside>
 </section>
 

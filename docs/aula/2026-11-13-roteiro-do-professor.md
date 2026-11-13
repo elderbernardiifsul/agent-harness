@@ -1,6 +1,6 @@
 # Roteiro do professor · aula de 13/11/2026
 
-Vários agentes no mesmo repositório. Slides: `2026-11-13-apresentacao.html` (44 slides; N mostra as notas, T troca o tema, número + Enter pula para o slide). Tópicos detalhados: `2026-11-13-topicos.md`.
+Vários agentes no mesmo repositório. Slides: `2026-11-13-apresentacao.html` (46 slides; N mostra as notas, T troca o tema, número + Enter pula para o slide). Tópicos detalhados: `2026-11-13-topicos.md`.
 
 ## Cronograma (180 min)
 
@@ -14,15 +14,15 @@ Vários agentes no mesmo repositório. Slides: `2026-11-13-apresentacao.html` (4
 | 68–83 | 15 | 18–21 | Questão 3, onde anotar quem faz o quê |
 | 83–93 | 10 | — | Intervalo. Antes de sair, deixe o terminal da demonstração pronto (abaixo, passos 1 e 2) |
 | 93–110 | 17 | 22–25 | Questão 4, reserva e corrida |
-| 110–133 | 23 | 26–30 | Questão 5, regra escrita × regra que recusa, com a demonstração das recusas (passo 3) |
-| 133–148 | 15 | 36–37 | Visão geral do harness como uma alternativa (3 min); turma dita a sequência de passos (2 min); demonstração do ciclo (passos 4 a 7) |
-| 148–153 | 5 | 38–40 | O que existe hoje; como aplicar; OpenCode e Codex |
-| 153–172 | 19 | 41–43 | Trabalho final: as duas tabelas "decisão do harness × cenário × o que aproveitar" (10 min, uma linha por vez, perguntando qual grupo pensa num cenário parecido); cada grupo escreve curiosidade, cenário e uma decisão que tomaria diferente (3 min); duas leituras em voz alta e recolher (6 min) |
-| 172–180 | 8 | 44 | Próximos passos e tarefa |
+| 110–133 | 23 | 26–31 | Questão 5, regra escrita × regra que recusa, com a demonstração das recusas (passo 3) e os limites ditos com honestidade (slide 31: engano, não má-fé) |
+| 133–148 | 15 | 37–38 | Visão geral do harness como uma alternativa (3 min); turma dita a sequência de passos (2 min); demonstração do ciclo (passos 4 a 7, com a recusa T4 no passo 5) |
+| 148–155 | 7 | 39–42 | O que existe hoje; o defeito que só o ensaio com o agente real achou (slide 40, 2 min); como aplicar; OpenCode e Codex |
+| 155–172 | 17 | 43–45 | Trabalho final: as duas tabelas "decisão do harness × cenário × o que aproveitar" (9 min, uma linha por vez, perguntando qual grupo pensa num cenário parecido); cada grupo escreve curiosidade, cenário e uma decisão que tomaria diferente (3 min); duas leituras em voz alta e recolher (5 min) |
+| 172–180 | 8 | 46 | Próximos passos e tarefa |
 
-Soma: 5 + 20 + 10 + 15 + 18 + 15 + 10 + 17 + 23 + 15 + 5 + 19 + 8 = 180 min.
+Soma: 5 + 20 + 10 + 15 + 18 + 15 + 10 + 17 + 23 + 15 + 7 + 17 + 8 = 180 min.
 
-Os slides 31 a 35 (questão 6 e as perguntas da aula 2) ficam para a aula 2: depois do 30, digite `36` e Enter. Se atrasar, corte nesta ordem: slides 39–40 (estão no material de apoio), depois a demonstração do ciclo (vira o começo da aula 2; o slide 36, da visão geral, fica). Não corte os slides 41 a 44.
+Os slides 32 a 36 (questão 6 e as perguntas da aula 2) ficam para a aula 2: depois do 31, digite `37` e Enter. Se atrasar, corte nesta ordem: slides 41–42 (estão no material de apoio), depois a demonstração do ciclo (vira o começo da aula 2; o slide 37, da visão geral, fica, e a T4 fica só no texto do slide 30). Não corte os slides 43 a 46.
 
 ## Como conduzir cada rodada (questões 1 a 5)
 
@@ -31,7 +31,7 @@ Os slides 31 a 35 (questão 6 e as perguntas da aula 2) ficam para a aula 2: dep
 3. **Balança** (5 min). Para cada linha do quadro, pergunte à turma: "o que custa adotar?", "o que custa não ter?", "quando quebra?". Os slides de balança trazem as propostas típicas; use-os para completar o que a turma não disse, nunca antes de ela falar. Feche com a linha "Não resolver custa" do slide: pergunte antes à turma quanto custa deixar o problema como está.
 4. **Solução existente** (3 a 5 min). Apresente o harness como mais uma linha da balança, não como a resposta: "de qual proposta de vocês ele está mais perto, e o que ele paga por isso?". Cada slide de solução traz uma linha "Das propostas: … Paga: …".
 
-Não antecipe mecanismo: antes da rodada de uma questão, não fale de worktree (questão 2), estado fora do git (3), reserva (4), gancho e trava (5). A primeira vez que o harness aparece (slide 13), apresente-o só como "um conjunto de comandos feito pelo professor a partir de um projeto real"; a visão geral fica para o slide 36.
+Não antecipe mecanismo: antes da rodada de uma questão, não fale de worktree (questão 2), estado fora do git (3), reserva (4), gancho e trava (5). A primeira vez que o harness aparece (slide 13), apresente-o só como "um conjunto de comandos feito pelo professor a partir de um projeto real"; a visão geral fica para o slide 37.
 
 | Questão | O que a turma costuma propor | Como ligar à balança | Não resolver custa | A que o harness se parece |
 |---|---|---|---|---|
@@ -72,10 +72,13 @@ tools/ah doctor        # espere: 0 falha(s), 4 aviso(s) (sem gh e sem CI)
 ev() { printf '{"session_id":"abc","hook_event_name":"PreToolUse","cwd":"%s","tool_name":"Bash","tool_input":{"command":"%s"}}' "$PWD" "$1" | tools/ah gancho claude-code; echo "código $?"; }
 ev "git add -A"                      # Recusado (T2) … código 2
 ev "git push origin main"            # Recusado (T5): push para o ramo protegido main … código 2
-ev "git checkout main && git push"   # Recusado (T5): push sem destino explícito com o ramo protegido main em uso
+ev "git push origin dev:main"        # Recusado (T5): push para o ramo protegido main (a "outra forma" da história)
 ev 'G=git; $G push'                  # Recusado (T0): o nome do comando vem de uma variável …
-ev "git switch main"                 # código 0: passa hoje (T1 em construção). Diga isso.
+ev "git switch main"                 # Recusado (T1): trocar o ramo do checkout principal muda o chão das outras sessões … código 2
+ev "git reset --hard"                # Recusado (T3): git reset --hard no checkout principal descarta ou esconde trabalho …
 ```
+
+Fala: até a véspera, `git switch main` passava (T1 em construção); hoje recusa. Logo depois, mostre o slide 31: o que as travas **não** pegam (`python -c`, `find -delete`, `xargs rm`).
 
 **4. Abrir e trabalhar:**
 
@@ -96,6 +99,15 @@ echo "// cupom" >> $D/wt/cupom/src/total.js
 tools/ah board                                         # SOBREPÕE as-2 / as-1; "Sobreposições: src/total.js: as-1, as-2"
 ```
 
+**5b. A conversa da Carla tenta editar a pasta da Ana** (T4; rode neste mesmo terminal, que é o processo da sessão `ana-terminal` e a mantém viva):
+
+```
+printf '{"session_id":"carla-terminal","hook_event_name":"PreToolUse","cwd":"%s","tool_name":"Edit","tool_input":{"file_path":"%s/wt/carrinho/src/total.js","old_string":"a","new_string":"b"}}' "$PWD" "$D" | tools/ah gancho claude-code; echo "código $?"
+# Recusado (T4): …/wt/carrinho/src/total.js está no worktree da frente as-1 carrinho, da sessão ana-term, que está viva
+# Faça: escreva só no worktree da sua frente; para mexer em carrinho, peça à sessão ana-term (ah handoff) ou, se ela morrer, ah takeover carrinho
+# código 2
+```
+
 **6. Passagem de bastão** (opcional, se houver tempo):
 
 ```
@@ -114,24 +126,25 @@ AH_SESSAO=ana-terminal tools/ah close --resumo "frete no total"   # Frente as-1 
 git log --oneline | head -3                            # docs(frentes): fecha as-1 carrinho
 ```
 
-Ensaiado em 12/11/2026 à noite, primeiro com o commit `5f146ed` e de novo com o `bcfd668` (ramo `dev` do harness), nesta mesma sequência: as saídas acima são as que apareceram nas duas vezes. Naquela noite ainda entravam `sweep` e as travas T1, T3 e T4; **ensaie de novo de manhã** e confira as linhas. Se a T1 já estiver pronta, `git switch main` no passo 3 passa a ser recusado: troque a fala por "acabou de ficar pronta".
+Ensaiado em 12/11/2026 à noite (commits `5f146ed` e `bcfd668`) e de novo com a fatia 2 pronta, já com T1, T3, T4 e `sweep`: as saídas acima são as que apareceram, e o `doctor` do passo 2 mostrou 20 linhas de item, com 0 falha(s) e 4 aviso(s). Outro agente ainda consertava código no mesmo ramo; **ensaie de novo de manhã** e confira as linhas.
 
 ## Plano B
 
 - **Comando falhou ou a saída mudou:** não conserte ao vivo. Use o slide 30 (recusas) e as saídas da seção 4 do material de apoio, que vieram de uma execução real. Diga à turma o que falhou: é um bom exemplo de "pronto com prova".
 - **Node antigo na máquina da sala:** `node --version` antes da aula; precisa ser 22 ou mais novo. Sem ele, só slides e material.
 - **Projetor ilegível:** T troca o tema; o slide 30 tem as recusas em texto grande.
-- **Rodadas demoraram mais:** corte a demonstração do ciclo (passos 4 a 7) e mostre só as recusas (passo 3). Não corte as tabelas do trabalho final (slides 41 e 42).
+- **Rodadas demoraram mais:** corte a demonstração do ciclo (passos 4 a 7) e mostre só as recusas (passo 3). Não corte as tabelas do trabalho final (slides 43 e 44).
 
 ## Para a aula seguinte
 
 - Ler a seção 1 do material de apoio ("O mínimo de git e GitHub") e fazer os exercícios 1 a 3.
-- Escolher uma das sete perguntas do slide 35 e trazer uma proposta escrita (três linhas: proposta, custo, onde quebra).
+- Escolher uma das sete perguntas do slide 36 e trazer uma proposta escrita (três linhas: proposta, custo, onde quebra).
 - Trazer o OpenCode instalado e um repositório descartável no GitHub, para a prática do roteiro da seção 5 do material.
-- Grupos: a curiosidade escrita no slide 43 entra na conversa da proposta do trabalho final; a tabela completa de decisões × cenários está na seção 6 do material de apoio.
+- Grupos: a curiosidade escrita no slide 45 entra na conversa da proposta do trabalho final; a tabela completa de decisões × cenários está na seção 6 do material de apoio.
 
 ## Conferir antes da aula
 
-- `tools/ah --help` (no clone do harness: `node ~/projetos/agent-harness/nucleo/bin/ah.mjs --help`): confira se `sweep` apareceu e se as travas T1, T3 e T4 ficaram prontas; se sim, troque "em construção" por "pronto" nos slides 29, 34 e 38 (e nas questões 2, 5 e 6 dos tópicos e do material).
+- `tools/ah --help` (no clone do harness: `node ~/projetos/agent-harness/nucleo/bin/ah.mjs --help`): devem aparecer 12 comandos, `sweep` entre eles. Continuam em construção a fila de trabalho pesado (`pesado`, T6), a atualização do harness instalado e os adaptadores do Codex e do OpenCode (slides 29, 39 e 42).
+- `docs/referencia/ensaio-claude-code.md`, seção da fatia 2: confira se o conserto do `/clear` (slide 40) já foi reensaiado com o agente real; se não, diga isso à turma.
 
 Conferir antes da aula: `tools/ah --help`.
