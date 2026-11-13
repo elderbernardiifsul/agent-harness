@@ -106,3 +106,33 @@ Cada tarefa: testes primeiro, suíte inteira verde, `node ferramentas/varre-term
 - Isolamento da extensão (decisão 11).
 - Ensaio com agente real das travas de extensão; Windows e macOS.
 - As demais pendências das fatias anteriores (`*-pendencias.md` e seções "Pendências").
+
+## Decisões da execução
+
+Tomadas nas tarefas 2 e 3, onde o plano deixava escolha ou não batia com o código.
+
+### Interface de extensão (tarefa 2)
+
+1. **Configuração.** `config.mjs` valida `extensoes`: nome com `^[a-z][a-z0-9-]*$` e valor `true`, `false` (desligada) ou objeto. A seção de cada extensão continua validada pela própria extensão, na carga.
+2. **Forma estrita.** Chave fora da lista da decisão 1 no `export default` impede a carga (`campo desconhecido`), para acusar erros de digitação como `reacao`.
+3. **Travas síncronas.** `avaliar()` do núcleo é síncrona; a trava de extensão também. A que devolve promessa recusa como trava quebrada. A ação recebida traz `comandos` (os comandos simples lidos: `argv`, `cwd`, `env`).
+4. **`AH_GUARD=off` na trava de extensão.** A trava julga a ação inteira e não diz qual comando a ofendeu; por isso libera só quando todo comando simples da linha, fora o `cd`, traz a variável. Na edição de arquivo não há liberação, como na T4.
+5. **Evento.** `recusa` e `liberacao` de trava de extensão levam também `extensao`.
+6. **`antesDeFechar` que lança recusa** (não vira aviso): fechar sem a conferência da extensão poderia perder o que ela guarda. Roda logo depois da primeira conferência de perda de trabalho, sob a trava das frentes; o que a reação gravou volta ao objeto que o close grava depois.
+7. **`depoisDeAbrir` também na retomada**, com `ctx.retomada`. **`depoisDeFechar`** recebe `ctx.soLocal`.
+8. **`gravarCampos` aceita uma função** `(seçãoAtual, {frentes}) => campos`, chamada sob a trava das frentes, para conferir e gravar sem corrida (a extensão `recursos` precisa disso).
+9. **Contexto.** Além da decisão 10, o `ctx` traz `cwd` e `env`. Nas travas e no resumo, `escrever` e `avisar` não mostram nada (a saída do gancho é do agente).
+10. **Aviso de carga.** Comandos que usam extensões (`open`, `close`, `handoff`, `sweep`, `board` e o despacho de comando desconhecido) avisam uma vez por processo da extensão que não carregou; o `doctor` mostra o item e o gancho fica calado.
+11. **Erro em comando de extensão** que não é `ErroDeUso` vira recusa com o nome da extensão e a saída "corrija a extensão ou desligue-a".
+12. **Resumo.** Se não couber em `LIMITE_RESUMO`, saem primeiro as outras frentes e depois as linhas das extensões, das últimas para as primeiras. Extensão cujo `resumo` lança fica de fora e entra um aviso curto.
+13. **`board --json`.** Os valores das colunas vão em `colunas.<extensão>.<título>` de cada frente, e não em `extensoes.<extensão>.<título>`: a frente já traz `extensoes` com o estado gravado pelas extensões, e misturar os dois confundiria campo gravado com coluna.
+14. **`sweep --json`** ganha `extensoes: {<nome>: [linhas]}` só quando alguma extensão ligada tem `noSweep` (a saída sem extensões não muda).
+15. **Itens do `doctor`.** `Extensão <nome> (projeto|harness)` por extensão ligada (falha com motivo e conserto; aviso na sombra); sem nenhuma, `Extensões (nenhuma ligada)`. As verificações saem como `<item> (<extensão>)`.
+
+### Extensão `recursos` e guia (tarefa 3)
+
+16. **Conflito** conta toda frente do estado (ativa, passada ou abrindo), porque a frente passada continua dona dos recursos. A conferência e a gravação ficam sob a trava (decisão 8 desta seção).
+17. **`--frente <nome>`** em `reservar` e `liberar`, para quem fecha a frente de outra sessão (órfã ou passada) conseguir liberar; a saída da recusa do close usa essa forma.
+18. **Sem `aoPassar`:** não há o que fazer na passagem. A verificação "Recursos sem conflito" acusa como falha.
+19. **`projetoDeTeste` não roda o `init`**, que só roda a partir do clone: copia o núcleo de onde o auxiliar está (clone ou cópia instalada), grava a configuração, um `tools/ah` mínimo e empurra os ramos para um remoto local. Também exporta `carregarParaTeste` e `ctxFalso`.
+20. **Exemplo do guia:** a extensão `revisao` (comando `ah revisao`, trava `revisao/gerados` e recusa no `antesDeFechar`). `teste/guia-de-extensao.test.mjs` grava os arquivos completos do guia num projeto descartável e roda os testes deles, para o guia não envelhecer sem aviso.

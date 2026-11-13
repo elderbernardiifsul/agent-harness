@@ -26,6 +26,8 @@ const ok = r => { assert.equal(r.codigo, 0, r.erro); return r; };
 
 test('reservar, listar e liberar; a coluna RECURSOS no quadro', t => {
   const p = projeto(t);
+  // O init leva a extensão para a cópia instalada.
+  assert.ok(fs.existsSync(path.join(p.raiz, '.harness', 'nucleo', 'extensoes', 'recursos', 'extensao.mjs')));
   ok(p.ah(['open', 'carrinho']));
   assert.equal(ok(p.ah(['recursos', 'reservar', 'porta', '3001'])).saida, 'Reservado: porta 3001 para a frente as-1 carrinho.\n');
   ok(p.ah(['recursos', 'reservar', 'banco', 'loja_carrinho']));
