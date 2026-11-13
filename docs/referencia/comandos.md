@@ -343,7 +343,7 @@ Mostra as frentes do estado em tabela e, abaixo dela, as sessões vivas. Sem fre
 |---|---|
 | ID, NOME | o id (`as-1`) e o nome da frente |
 | DONA | id curto da sessão dona; `(morta)` se ela não está viva, `(ilegível)` se o registro dela não se lê; `—` sem dona |
-| ESTADO | `ativa`; `órfã` (ativa sem dona viva: `ah takeover`; a mesma regra do `sweep`, e dona com registro ilegível não conta como órfã); `passada` (sem dona: `ah open`); `abrindo` (um `ah open` em curso); `abrindo (parada)` (o processo do `open` morreu); `fechando` (um `ah close` em curso, na fase de rede) |
+| ESTADO | `ativa`; `órfã` (ativa sem dona viva: `ah takeover`; a mesma regra do `sweep`, e dona com registro ilegível não conta como órfã); `passada` (sem dona: `ah open`); `abrindo` (um `ah open` em curso); `abrindo (parada)` (o processo do `open` morreu); `fechando` (um `ah close` em curso, na fase de rede); `fechamento parado` (um `close` comentou o fechamento nos tickets e parou depois, por recusa ou interrupção: `ah close <nome>` termina sem comentar de novo) |
 | TICKETS | `#1,#2` ou `—` |
 | SOBREPÕE | IDs das outras frentes (ativas ou passadas) que mudaram algum arquivo em comum, pelo ramo desde a base e pelo worktree; `?` quando o git excedeu o prazo total (3 s) antes de conferir a frente |
 | PLANO, ÚLTIMA NOTA | o plano e a última nota, cortados |
@@ -769,7 +769,8 @@ A linha `Falta: git push …` aparece apenas quando o projeto tem remoto. O `clo
 | `Não fechei carrinho: preciso do GitHub para confirmar que ninguém retomou carrinho (…).` | tente de novo com rede; nada foi apagado |
 | `Não consegui conferir …` | resolva o que o git descreve; nada foi apagado |
 | `a extensão <nome> não deixa fechar a frente as-1 carrinho: <motivo>` | o `Faça:` da extensão (na `recursos`: `libere com ah recursos liberar --todos --frente carrinho e rode ah close de novo`); a reação `antesDeFechar` roda depois da primeira conferência de perda de trabalho, e nada foi apagado |
-| `O git não removeu o worktree <wt>: … (apareceu alteração ou arquivo novo depois da conferência?)` | confira o que apareceu (`git -C <wt> status`), guarde ou apague e rode `ah close` de novo; nada foi apagado |
+| `O worktree <wt> está trancado no git (<motivo>); o git não o remove.` | se ninguém mais o usa, `git worktree unlock <wt>` e rode `ah close` de novo; a conferência ocorre antes de mexer nos tickets, e nada foi apagado |
+| `O git não removeu o worktree <wt>: … (apareceu alteração ou arquivo novo depois da conferência?)` | confira o que apareceu (`git -C <wt> status`), guarde ou apague e rode `ah close` de novo. Com tickets, a recusa informa que eles já receberam o comentário de fechamento: a frente fica como `fechamento parado` no quadro, e o `close` seguinte termina sem comentar de novo |
 
 ## pesado
 

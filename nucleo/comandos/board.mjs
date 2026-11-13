@@ -29,9 +29,11 @@ function linhaUnica(texto, limite) {
 
 // Órfã pela mesma regra do sweep e do takeover (frenteOrfa): ativa sem dona viva; dona ilegível não é órfã.
 // Em abertura com o processo do open morto (ou, sem processo no registro, sem dona viva) é um open que parou
-// no meio: outro `ah open <nome>` o toma. Um `ah close` entre as fases (rede) aparece como `fechando`.
+// no meio: outro `ah open <nome>` o toma. Um `ah close` entre as fases (rede) aparece como `fechando`; o que
+// parou depois de comentar o fechamento nos tickets, como `fechamento parado` (o próximo close termina).
 function estadoNoQuadro(f, vida) {
   if (fechamentoEmCurso(f)) return 'fechando';
+  if (f.fechamentoComentado) return 'fechamento parado';
   if (frenteOrfa(f, vida)) return 'órfã';
   if (f.estado === 'abrindo') return aberturaParada(f, vida?.estado === 'viva') ? 'abrindo (parada)' : 'abrindo';
   return f.estado ?? '—';

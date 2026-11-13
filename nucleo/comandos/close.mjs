@@ -138,6 +138,19 @@ export async function executar(args, amb) {
     const corpo = problemas.map(([t, l]) => [`- ${t}`, ...l].join('\n')).join('\n');
     throw new ErroDeUso(`Fechar a frente ${frente.id} ${frente.nome} perderia trabalho.\nPróximo passo: ${corpo}${depois}`);
   };
+  // Worktree trancado (`git worktree lock`): o remove simples recusa sempre; melhor saber antes de mexer nos tickets.
+  const trancado = wt => {
+    const l = g(['worktree', 'list', '--porcelain']);
+    if (l.codigo !== 0) throw falhou('os worktrees do git', l);
+    for (const bloco of l.saida.split(/\n\s*\n/)) {
+      const linhas = bloco.split('\n');
+      const caminho = linhas.find(x => x.startsWith('worktree '))?.slice(9);
+      if (!caminho || !mesmoCaminho(caminho, wt)) continue;
+      const lk = linhas.find(x => x === 'locked' || x.startsWith('locked '));
+      return lk === undefined ? null : (lk.slice(7).trim() || 'sem motivo');
+    }
+    return null;
+  };
   const linhaJaGravada = frente => {
     try {
       return fs.readFileSync(path.join(raiz, ...ARQUIVO_DO_HISTORICO.split('/')), 'utf8').split('\n')
@@ -259,6 +272,11 @@ export async function executar(args, amb) {
     const refs = lerRefs(frente);
     const primeiros = conferir(frente, refs);
     if (primeiros.length) recusarProblemas(frente, primeiros);
+    const tranca = refs.temWt ? trancado(refs.wt) : null;
+    if (tranca !== null) {
+      throw recusa(`O worktree ${refs.wt} está trancado no git (${tranca.slice(0, 120)}); o git não o remove.`,
+        `se ninguém mais o usa, destranque com git worktree unlock ${refs.wt} e rode ah close de novo; nada foi apagado`);
+    }
     // As extensões conferem o que é delas (antesDeFechar) antes de qualquer mudança; a que recusa (ou falha) para
     // o close aqui. O que ela gravou na frente volta para o objeto que o close grava adiante.
     const daExtensao = await recusaAntesDeFechar(amb, { frente, dentroDaTrava: true });
@@ -373,13 +391,15 @@ export async function executar(args, amb) {
   }, { venceMs: 120000 });
 
   async function fecharSobTrava() {
-    const depois = '; nada foi apagado';
+    // Recusa daqui em diante: os tickets já podem ter o comentário de fechamento; o close seguinte não comenta de novo.
+    const jaComentado = Boolean(frente.fechamentoComentado) && temTickets && !soLocal;
+    const depois = jaComentado ? `; ${JA_COMENTADO}` : '; nada foi apagado';
     if (ramoAtual(raiz, env) !== base) throw foraDaBase(depois);
     // 4. Reconfere (os comentários demoram) e remove o worktree: depois daqui o que falhar vira aviso.
     const refs = lerRefs(frente);
     const { wt, temWt, refRamo, refRemoto, temRamo, temRamoRemoto, soNoRemoto } = refs;
     const novos = conferir(frente, refs);
-    if (novos.length) recusarProblemas(frente, novos);
+    if (novos.length) recusarProblemas(frente, novos, jaComentado ? `\n(${JA_COMENTADO})` : '');
     if (temWt) {
       // Nunca com --force: o remove simples já apaga os ignorados, e só falha com alteração ou arquivo novo, que
       // pode ser trabalho escrito depois da reconferência.

@@ -651,3 +651,41 @@ test('close com o push que apaga o ramo remoto demorando: a trava fica livre', {
   assert.equal(r.codigo, 0, r.erro);
   assert.equal(temRamoNoRemoto(p, 'feat/carrinho'), false);
 });
+
+test('worktree trancado: close recusa antes de mexer nos tickets', t => {
+  const { p, wt } = comFrente();
+  t.after(() => p.limpar());
+  mescla(p);
+  assert.equal(p.git(['worktree', 'lock', '--reason', 'teste', wt]).codigo, 0);
+  const antes = comentarios(p).length;
+  const r = p.ah(['close']);
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /^Recusado: O worktree .* está trancado no git \(teste\); o git não o remove\.\nFaça: .*git worktree unlock /);
+  assert.equal(comentarios(p).length, antes);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').fechamentoComentado, undefined);
+  assert.equal(p.git(['worktree', 'unlock', wt]).codigo, 0);
+  const c = p.ah(['close']);
+  assert.equal(c.codigo, 0, c.erro);
+});
+
+test('remoção do worktree recusada depois do comentário: o quadro mostra e o segundo close termina sem comentar de novo',
+  { skip: process.platform === 'win32' ? 'embrulho do git em sh' : false }, t => {
+    const { p, wt } = comFrente();
+    t.after(() => p.limpar());
+    mescla(p);
+    const gitReal = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+    const dirBin = path.join(path.dirname(p.raiz), 'bin-embrulho');
+    fs.mkdirSync(dirBin, { recursive: true });
+    fs.writeFileSync(path.join(dirBin, 'git'), `#!/bin/sh\ncase "$*" in *"worktree remove"*) eval "ult=\\\${$#}"; echo novo > "$ult/novo.txt";; esac\nexec "${gitReal}" "$@"\n`);
+    fs.chmodSync(path.join(dirBin, 'git'), 0o755);
+    const r = p.ah(['close'], { env: { PATH: `${dirBin}${path.delimiter}${p.env.PATH ?? process.env.PATH}` } });
+    assert.equal(r.codigo, 1, r.saida + r.erro);
+    assert.match(r.erro, /^Recusado: O git não removeu o worktree .*\nFaça: .*; os tickets já receberam o comentário de fechamento, e o próximo ah close não comenta de novo/m);
+    assert.equal(comentarios(p).length, 2);
+    assert.match(p.ah(['board']).saida, /carrinho .*fechamento parado/);
+    fs.rmSync(path.join(wt, 'novo.txt'));
+    const c = p.ah(['close']);
+    assert.equal(c.codigo, 0, c.erro);
+    assert.equal(comentarios(p).length, 2);
+    assert.ok(!fs.existsSync(wt));
+  });
