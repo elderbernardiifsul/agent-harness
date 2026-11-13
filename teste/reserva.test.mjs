@@ -677,7 +677,7 @@ test('ticket com operação desta máquina na fila não é reservado: a desistê
   assert.equal(p.ghTicket(1).comments.length, antes);
   // o doctor mostra a fila
   const d = p.ah(['doctor']);
-  assert.match(d.saida + d.erro, /Fila de pendentes: \d+ operaç(ão|ões) \(#1/);
+  assert.match(d.saida + d.erro, /Comentários pendentes: \d+ operaç(ão|ões) na fila \(#1/);
   // com rede, a fila sai antes e o open reserva de novo, agora sobre o ticket já livre
   const c = p.ah(['open', 'frete', '--tickets', '1']);
   assert.equal(c.codigo, 0, c.erro);

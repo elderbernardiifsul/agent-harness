@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { criarProjeto, criarRepo, gravar, dirDoTeste } from './apoio/repo.mjs';
+import { criarProjeto, criarRepo, gravar, dirDoTeste, envelhecerSinal } from './apoio/repo.mjs';
+import { enfileirar } from '../nucleo/lib/pendentes.mjs';
 
 test('projeto recém-preparado: sem falhas', () => {
   const p = criarProjeto();
@@ -206,12 +207,16 @@ test('sem ramos protegidos a proteção no servidor é aviso', () => {
   assert.match(p.ah(['doctor']).saida, /^aviso\s+Proteção no servidor: .*protegido/m);
 });
 
-test('C1: o doctor tem 16 itens, com "Harness no ramo base" antes de "Gancho responde"', async () => {
+test('C1: o doctor tem 20 itens, com "Harness no ramo base" antes de "Gancho responde" e os da fatia 2 depois dele', async () => {
   const { VERIFICACOES } = await import('../nucleo/comandos/doctor.mjs');
   const nomes = VERIFICACOES.map(v => v.item);
-  assert.equal(nomes.length, 16); // + Fila de pendentes (tarefa 5, rodada 4)
+  // 16 da fatia 1 e da tarefa 5, menos "Fila de pendentes" (virou "Comentários pendentes"), mais 5 da tarefa 14.
+  assert.equal(nomes.length, 20);
   assert.equal(nomes.indexOf('Harness no ramo base'), nomes.indexOf('Ganchos do Claude Code instalados') + 1);
   assert.equal(nomes.indexOf('Gancho responde'), nomes.indexOf('Harness no ramo base') + 1);
+  const g = nomes.indexOf('Gancho responde');
+  assert.deepEqual(nomes.slice(g + 1, g + 6), ['Hora de início do processo', 'Gancho recusa troca de ramo', 'Ganchos vigiam a edição', 'Comentários pendentes', 'Frentes órfãs']);
+  assert.ok(!nomes.includes('Fila de pendentes'));
 });
 
 test('esquema desconhecido ou mais novo no estado é falha com o arquivo e o conserto', () => {
@@ -239,4 +244,108 @@ test('esquema desconhecido ou mais novo no estado é falha com o arquivo e o con
   } finally {
     p.limpar();
   }
+});
+
+// ---------------------------------------------------------------- fatia 2
+
+const projetoLimpo = t => {
+  const p = criarProjeto();
+  t.after(() => p.limpar());
+  return p;
+};
+
+const trocarSeletorDoPre = (p, matcher) => {
+  const f = path.join(p.raiz, '.claude', 'settings.json');
+  const s = JSON.parse(fs.readFileSync(f, 'utf8'));
+  s.hooks.PreToolUse[0].matcher = matcher;
+  fs.writeFileSync(f, JSON.stringify(s));
+};
+
+test('projeto recém-preparado: os itens novos passam', t => {
+  const p = projetoLimpo(t);
+  const r = p.ah(['doctor']);
+  assert.equal(r.codigo, 0, r.saida + r.erro);
+  assert.match(r.saida, /^ok\s+Gancho recusa troca de ramo/m);
+  assert.match(r.saida, /^ok\s+Ganchos vigiam a edição/m);
+  assert.match(r.saida, /^ok\s+Comentários pendentes/m);
+  assert.match(r.saida, /^ok\s+Frentes órfãs/m);
+  if (process.platform === 'win32') assert.match(r.saida, /^aviso\s+Hora de início do processo: no Windows a hora de início não é conferida; um pid reaproveitado conta como vivo até o sinal vencer$/m);
+  else assert.match(r.saida, /^ok\s+Hora de início do processo/m);
+});
+
+test('comentário pendente e frente órfã viram aviso com o que fazer', t => {
+  const p = projetoLimpo(t);
+  const A = 'sessao-teste-0001';
+  assert.equal(p.ah(['open', 'carrinho'], { env: { AH_SESSAO: A } }).codigo, 0);
+  envelhecerSinal(p, A, 300);
+  enfileirar(dirDoTeste(p), { tipo: 'comentario', ticket: 1, corpo: 'comentário que ficou' });
+  enfileirar(dirDoTeste(p), { tipo: 'comentario', ticket: 2, corpo: 'outro' });
+  const r = p.ah(['doctor'], { env: { AH_SESSAO: '' } });
+  assert.equal(r.codigo, 0, r.saida + r.erro);
+  assert.match(r.saida, /^aviso\s+Comentários pendentes: 2 operações na fila \(#1, #2\); rode ah sweep --reparar com rede/m);
+  assert.match(r.saida, /^aviso\s+Frente carrinho órfã: dona sessao-t.* \(sinal vencido\); ah takeover carrinho com a ordem do executivo$/m);
+  assert.doesNotMatch(r.saida, /^ok\s+Frentes órfãs/m);
+  // o mesmo que o sweep acha
+  const s = JSON.parse(p.ah(['sweep', '--json'], { env: { AH_SESSAO: '' } }).saida);
+  assert.deepEqual(s.achados.filter(a => ['frente-orfa', 'pendentes'].includes(a.tipo)).map(a => a.tipo).sort(), ['frente-orfa', 'pendentes']);
+});
+
+test('frente de dona viva não é órfã', t => {
+  const p = projetoLimpo(t);
+  assert.equal(p.ah(['open', 'carrinho'], { env: { AH_SESSAO: 'sessao-teste-0001' } }).codigo, 0);
+  const r = p.ah(['doctor']);
+  assert.match(r.saida, /^ok\s+Frentes órfãs/m);
+  assert.doesNotMatch(r.saida, /órfã:/);
+});
+
+test('o doctor não altera o estado', t => {
+  const p = projetoLimpo(t);
+  const A = 'sessao-teste-0001';
+  assert.equal(p.ah(['open', 'carrinho'], { env: { AH_SESSAO: A } }).codigo, 0);
+  envelhecerSinal(p, A, 300);
+  enfileirar(dirDoTeste(p), { tipo: 'comentario', ticket: 1, corpo: 'comentário que ficou' });
+  const foto = () => {
+    const lista = [];
+    const andar = d => {
+      for (const n of fs.readdirSync(d).sort()) {
+        const c = path.join(d, n);
+        if (fs.statSync(c).isDirectory()) andar(c);
+        else lista.push([path.relative(dirDoTeste(p), c), fs.readFileSync(c, 'utf8'), fs.statSync(c).mtimeMs]);
+      }
+    };
+    andar(dirDoTeste(p));
+    return lista;
+  };
+  const antes = foto();
+  p.ah(['doctor'], { env: { AH_SESSAO: '' } });
+  assert.deepEqual(foto(), antes);
+});
+
+test('seletor sem Edit falha apontando o init', t => {
+  const p = projetoLimpo(t);
+  trocarSeletorDoPre(p, 'Bash');
+  const r = p.ah(['doctor']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.saida, /^FALHOU\s+Ganchos vigiam a edição: .*Edit, Write e NotebookEdit.*ah init/m);
+});
+
+test('seletor que pega tudo vigia a edição; o que deixa só NotebookEdit de fora falha nomeando-o', t => {
+  const p = projetoLimpo(t);
+  trocarSeletorDoPre(p, '*');
+  assert.match(p.ah(['doctor']).saida, /^ok\s+Ganchos vigiam a edição/m);
+  trocarSeletorDoPre(p, 'Bash|Edit|Write');
+  assert.match(p.ah(['doctor']).saida, /^FALHOU\s+Ganchos vigiam a edição: o seletor do PreToolUse não pega NotebookEdit; .*ah init/m);
+});
+
+test('gancho que não recusa a troca de ramo falha', t => {
+  const p = projetoLimpo(t);
+  trocarComandoDoPre(p, 'true tools/ah gancho claude-code');
+  assert.match(p.ah(['doctor']).saida, /^FALHOU\s+Gancho recusa troca de ramo: .*git switch stage.*rode ah init --sobrescrever e confira tools\/ah/m);
+});
+
+test('o ensaio da troca de ramo não suja o estado nem troca o ramo do principal', t => {
+  const p = projetoLimpo(t);
+  assert.match(p.ah(['doctor']).saida, /^ok\s+Gancho recusa troca de ramo/m);
+  assert.equal(fs.existsSync(path.join(dirDoTeste(p), 'eventos.jsonl')), false);
+  assert.equal(p.git(['branch', '--show-current']).saida.trim(), 'dev');
 });

@@ -8,10 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { arquivoDaMaquina, dirEstado as caminhoDoEstado } from '../lib/caminhos.mjs';
 import { ErroDeConfig, carregarConfig, configAusente } from '../lib/config.mjs';
 import { ErroDeEstado, lerJson } from '../lib/estado.mjs';
-import { idsNoHistorico, lerFrente, listarFrentes, siglaValida } from '../lib/frente.mjs';
-import { listarPendentes } from '../lib/pendentes.mjs';
-import { lerSessao } from '../lib/sessao.mjs';
-import { aberturaParada, vidaDaSessao } from '../lib/vida.mjs';
+import { idsNoHistorico, lerFrente, listarFrentes, listarFrentesTolerante, siglaValida } from '../lib/frente.mjs';
+import { contarPendentes, listarPendentes } from '../lib/pendentes.mjs';
+import { idCurto, lerSessao } from '../lib/sessao.mjs';
+import { aberturaParada, frenteOrfa, inicioDoProcesso, vidaDaDona } from '../lib/vida.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
 import { gh, protecaoDoRamo, repoAtual } from '../lib/github.mjs';
 import { mesclarGanchos } from './init.mjs';
@@ -62,6 +62,52 @@ const comandoDoPre = settings => {
   }
   return null;
 };
+
+// Grupos do PreToolUse que chamam o gancho do harness.
+const gruposDoHarness = settings => (settings?.hooks?.PreToolUse ?? []).filter(grupo => eObjeto(grupo) && Array.isArray(grupo.hooks)
+  && grupo.hooks.some(h => eObjeto(h) && typeof h.command === 'string' && h.command.trim().endsWith(FIM_DO_GANCHO)));
+
+// O seletor (`matcher`) do Claude Code pega a ferramenta? Vazio, ausente ou `*` pega todas; senão é uma
+// expressão regular que precisa casar com o nome inteiro. Seletor que não é expressão válida não pega nada.
+function seletorPega(matcher, ferramenta) {
+  if (matcher === undefined || matcher === null || matcher === '' || matcher === '*') return true;
+  if (typeof matcher !== 'string') return false;
+  try { return new RegExp(`^(?:${matcher})$`).test(ferramenta); } catch { return false; }
+}
+
+// Roda o gancho PreToolUse instalado com um evento de Bash, num estado temporário (o real fica intacto).
+// Devolve {comando} quando não há gancho a ensaiar, senão o resultado do spawnSync.
+function ensaiarGancho(amb, comandoBash) {
+  const { settings } = lerSettings(amb.raiz);
+  const comando = settings ? comandoDoPre(settings) : null;
+  if (!comando) return null;
+  const evento = {
+    hook_event_name: 'PreToolUse', session_id: 'doctor-ensaio', cwd: amb.raiz, tool_name: 'Bash',
+    tool_input: { command: comandoBash },
+  };
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ah-doctor-'));
+  try {
+    const env = { ...amb.env, CLAUDE_PROJECT_DIR: amb.raiz, AH_ESTADO: tmp, AH_SESSAO: 'doctor-ensaio' };
+    return process.platform === 'win32'
+      // Windows não tem sh: ali roda o ah.mjs instalado direto, que é o que tools/ah.cmd executa.
+      ? spawnSync(process.execPath, [path.join(amb.raiz, '.harness', 'nucleo', 'bin', 'ah.mjs'), 'gancho', 'claude-code'], { cwd: amb.raiz, env, input: JSON.stringify(evento), encoding: 'utf8', timeout: 30000 })
+      : spawnSync('sh', ['-c', comando], { cwd: amb.raiz, env, input: JSON.stringify(evento), encoding: 'utf8', timeout: 30000 });
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+// O gancho recusou com a trava esperada? ok, ou falha com o que se viu.
+function conferirRecusa(nome, r, trava, comandoBash) {
+  const fazer = 'rode ah init --sobrescrever e confira tools/ah';
+  if (r.status === 2) {
+    if (new RegExp(`Recusado \\(${trava}\\)`).test(`${r.stderr ?? ''}\n${r.stdout ?? ''}`)) return ok(nome);
+    const linha = (r.stderr ?? '').trim().split('\n')[0].slice(0, 200);
+    return falha(nome, `saiu com 2 mas sem a recusa ${trava}: ${linha || '(sem mensagem)'}; ${fazer}`);
+  }
+  const motivo = r.error ? String(r.error.message) : `saiu com código ${r.status}`;
+  return falha(nome, `o gancho não recusou \`${comandoBash}\` (${motivo}); ${fazer}`);
+}
 
 // Resultado de `gh auth status`, uma vez só.
 function ghPronto(amb, ctx) {
@@ -206,32 +252,71 @@ export const VERIFICACOES = [
   verificacao('Gancho responde', amb => {
     const nome = 'Gancho responde';
     if (!amb.config || !usaClaude(amb)) return null;
-    const { settings } = lerSettings(amb.raiz);
-    const comando = settings ? comandoDoPre(settings) : null;
-    if (!comando) return falha(nome, 'não achei o gancho PreToolUse do harness; rode ah init');
     const alvo = amb.config.git.protegidos[0];
+    const { settings } = lerSettings(amb.raiz);
+    if (!settings || !comandoDoPre(settings)) return falha(nome, 'não achei o gancho PreToolUse do harness; rode ah init');
     if (!alvo) return aviso(nome, 'não há ramo protegido para ensaiar o gancho; defina git.protegidos em .harness/config.json');
-    const evento = {
-      hook_event_name: 'PreToolUse', session_id: 'doctor-ensaio', cwd: amb.raiz, tool_name: 'Bash',
-      tool_input: { command: `git push ${amb.config.git.remoto} ${alvo}` },
-    };
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ah-doctor-'));
+    const comando = `git push ${amb.config.git.remoto} ${alvo}`;
+    return conferirRecusa(nome, ensaiarGancho(amb, comando), 'T5', comando);
+  }),
+
+  verificacao('Hora de início do processo', () => {
+    const nome = 'Hora de início do processo';
+    if (process.platform === 'win32') return aviso(nome, 'no Windows a hora de início não é conferida; um pid reaproveitado conta como vivo até o sinal vencer');
+    return inicioDoProcesso(process.pid) !== null ? ok(nome)
+      : aviso(nome, `não consegui ler a hora de início de um processo (${process.platform === 'linux' ? '/proc' : 'ps -o lstart'}); um pid reaproveitado conta como vivo até o sinal vencer`);
+  }),
+
+  verificacao('Gancho recusa troca de ramo', amb => {
+    const nome = 'Gancho recusa troca de ramo';
+    if (!amb.config || !usaClaude(amb)) return null;
+    const alvo = amb.config.git.protegidos[0];
+    const { settings } = lerSettings(amb.raiz);
+    if (!settings || !comandoDoPre(settings)) return falha(nome, 'não achei o gancho PreToolUse do harness; rode ah init');
+    if (!alvo) return aviso(nome, 'não há ramo protegido para ensaiar a troca de ramo; defina git.protegidos em .harness/config.json');
+    const comando = `git switch ${alvo}`;
+    return conferirRecusa(nome, ensaiarGancho(amb, comando), 'T1', comando);
+  }),
+
+  verificacao('Ganchos vigiam a edição', amb => {
+    const nome = 'Ganchos vigiam a edição';
+    if (!amb.config || !usaClaude(amb)) return null;
+    const { settings } = lerSettings(amb.raiz);
+    const grupos = settings ? gruposDoHarness(settings) : [];
+    if (!grupos.length) return falha(nome, 'não achei o gancho PreToolUse do harness; rode ah init');
+    const faltam = ['Edit', 'Write', 'NotebookEdit'].filter(f => !grupos.some(g => seletorPega(g.matcher, f)));
+    if (!faltam.length) return ok(nome);
+    const lista = faltam.length === 1 ? faltam[0] : `${faltam.slice(0, -1).join(', ')} e ${faltam.at(-1)}`;
+    return falha(nome, `o seletor do PreToolUse não pega ${lista}; sem ele a trava T4 não vê a edição de arquivo; rode ah init`);
+  }),
+
+  // A mesma leitura do achado `pendentes` do sweep (contarPendentes e listarPendentes).
+  verificacao('Comentários pendentes', amb => {
+    const nome = 'Comentários pendentes';
+    if (!amb.dirEstado) return null;
+    let n;
+    let tickets;
     try {
-      const env = { ...amb.env, CLAUDE_PROJECT_DIR: amb.raiz, AH_ESTADO: tmp, AH_SESSAO: 'doctor-ensaio' };
-      const r = process.platform === 'win32'
-        // Windows não tem sh: ali roda o ah.mjs instalado direto, que é o que tools/ah.cmd executa.
-        ? spawnSync(process.execPath, [path.join(amb.raiz, '.harness', 'nucleo', 'bin', 'ah.mjs'), 'gancho', 'claude-code'], { cwd: amb.raiz, env, input: JSON.stringify(evento), encoding: 'utf8', timeout: 30000 })
-        : spawnSync('sh', ['-c', comando], { cwd: amb.raiz, env, input: JSON.stringify(evento), encoding: 'utf8', timeout: 30000 });
-      if (r.status === 2) {
-        if (/Recusado \(T5\)/.test(`${r.stderr ?? ''}\n${r.stdout ?? ''}`)) return ok(nome);
-        const linha = (r.stderr ?? '').trim().split('\n')[0].slice(0, 200);
-        return falha(nome, `saiu com 2 mas sem a recusa T5: ${linha || '(sem mensagem)'}; rode ah init --sobrescrever e confira tools/ah`);
-      }
-      const motivo = r.error ? String(r.error.message) : `saiu com código ${r.status}`;
-      return falha(nome, `o gancho não recusou \`git push ${amb.config.git.remoto} ${alvo}\` (${motivo}); rode ah init --sobrescrever e confira tools/ah`);
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
+      n = contarPendentes(amb.dirEstado);
+      tickets = [...new Set(listarPendentes(amb.dirEstado).map(op => op.ticket))].map(t => `#${t}`).join(', ');
+    } catch (e) {
+      if (e instanceof ErroDeEstado) return aviso(nome, `não consegui ler a fila (${e.message.split('\n')[0]}); apague ou conserte o arquivo`);
+      throw e;
     }
+    if (!n) return ok(nome);
+    return aviso(nome, `${n} ${n === 1 ? 'operação' : 'operações'} na fila${tickets ? ` (${tickets})` : ''}; rode ah sweep --reparar com rede; `
+      + 'enquanto um ticket tem operação na fila, o ah open não o reserva');
+  }),
+
+  // As mesmas funções do achado `frente-orfa` do sweep (vidaDaDona e frenteOrfa).
+  verificacao('Frentes órfãs', amb => {
+    if (!amb.dirEstado) return null;
+    const { frentes } = listarFrentesTolerante(amb.dirEstado);
+    const agora = Date.now();
+    const orfas = frentes.map(f => ({ f, v: vidaDaDona(amb.dirEstado, f.dona, { config: amb.config, agora }) })).filter(({ f, v }) => frenteOrfa(f, v));
+    if (!orfas.length) return ok('Frentes órfãs');
+    return orfas.map(({ f, v }) => aviso(`Frente ${f.nome} órfã`,
+      `${f.dona ? `dona ${idCurto(f.dona)} (${v.motivo})` : 'sem dona'}; ah takeover ${f.nome} com a ordem do executivo`));
   }),
 
   verificacao('Proteção no servidor', (amb, ctx) => {
@@ -257,24 +342,9 @@ export const VERIFICACOES = [
       : aviso('CI com comando de teste', 'defina ci.comandoDeTeste em .harness/config.json e rode ah init');
   }),
 
-  verificacao('Fila de pendentes', amb => {
-    if (!amb.dirEstado) return null;
-    let ops;
-    try { ops = listarPendentes(amb.dirEstado); } catch (e) {
-      if (e instanceof ErroDeEstado) return aviso('Fila de pendentes', `não consegui ler a fila (${e.message.split('\n')[0]})`);
-      throw e;
-    }
-    if (!ops.length) return ok('Fila de pendentes');
-    const tickets = [...new Set(ops.map(op => op.ticket))].map(n => `#${n}`).join(', ');
-    return aviso(`Fila de pendentes: ${ops.length} ${ops.length === 1 ? 'operação' : 'operações'} (${tickets})`,
-      'saem sozinhas no próximo ah open ou ah close com rede; enquanto um ticket tem operação na fila, o ah open não o reserva');
-  }),
-
   verificacao('Frentes com worktree', amb => {
-    const sessaoViva = (a, id) => {
-      if (!id) return false;
-      try { return vidaDaSessao(a.dirEstado, id, { config: a.config }).estado === 'viva'; } catch { return false; }
-    };
+    // Como o sweep: a vida da dona por vidaDaDona.
+    const sessaoViva = (a, id) => vidaDaDona(a.dirEstado, id, { config: a.config })?.estado === 'viva';
     if (!amb.dirEstado) return null;
     let frentes;
     try { frentes = listarFrentes(amb.dirEstado); } catch (e) {
