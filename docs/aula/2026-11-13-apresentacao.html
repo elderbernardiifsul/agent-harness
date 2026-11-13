@@ -1,0 +1,1039 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vários agentes, um repositório</title>
+<style>
+:root {
+  --bg: #f6f6f2;
+  --surface: #ffffff;
+  --fg: #1d211f;
+  --muted: #5a625d;
+  --line: #d5d9d4;
+  --accent: #2e7a4e;
+  --accent-fg: #ffffff;
+  --accent-soft: #e2efe6;
+  --code-bg: #ebeee9;
+  --warn: #9a5b00;
+  --warn-soft: #f6ebd9;
+  --empty: #b9bfb9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121513;
+    --surface: #1a1e1b;
+    --fg: #e7ebe8;
+    --muted: #9ba49f;
+    --line: #2f3632;
+    --accent: #5fc28c;
+    --accent-fg: #0f1a13;
+    --accent-soft: #1c2c22;
+    --code-bg: #191d1a;
+    --warn: #e0a54a;
+    --warn-soft: #2d2416;
+    --empty: #48504b;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121513;
+  --surface: #1a1e1b;
+  --fg: #e7ebe8;
+  --muted: #9ba49f;
+  --line: #2f3632;
+  --accent: #5fc28c;
+  --accent-fg: #0f1a13;
+  --accent-soft: #1c2c22;
+  --code-bg: #191d1a;
+  --warn: #e0a54a;
+  --warn-soft: #2d2416;
+  --empty: #48504b;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Ubuntu, sans-serif;
+  line-height: 1.35;
+  overflow-x: hidden;
+  height: 100vh;
+  overflow-y: hidden;
+  display: grid;
+  place-items: center;
+}
+code, pre, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace; }
+
+/* Palco 16:9 */
+.palco {
+  position: relative;
+  width: min(100vw, 177.78vh);
+  aspect-ratio: 16 / 9;
+  margin: 0 auto;
+  container-type: size;
+  overflow: hidden;
+}
+.slide {
+  position: absolute;
+  inset: 0;
+  display: none;
+  padding: 6cqh 7cqw;
+  font-size: 3.6cqh;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.6em;
+}
+.slide.ativo { display: flex; }
+.slide > * { margin: 0; min-width: 0; max-width: 100%; }
+.duas > * { min-width: 0; }
+.rotulo {
+  font-size: 0.62em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 650;
+}
+h1 { font-size: 2.1em; line-height: 1.1; font-weight: 700; }
+h2 { font-size: 1.45em; line-height: 1.15; font-weight: 680; }
+p, li { font-size: 1em; }
+.sub { color: var(--muted); }
+.pequeno { font-size: 0.75em; }
+ul, ol { padding-left: 1.2em; }
+li + li { margin-top: 0.25em; }
+.destaque { color: var(--accent); font-weight: 650; }
+.pergunta {
+  font-size: 1.5em;
+  line-height: 1.2;
+  font-weight: 650;
+  border-left: 0.18em solid var(--accent);
+  padding-left: 0.6em;
+}
+.espaco {
+  flex: 1;
+  min-height: 3em;
+  border: 0.08em dashed var(--empty);
+  border-radius: 0.4em;
+  display: flex;
+  align-items: flex-end;
+  padding: 0.4em 0.6em;
+  color: var(--muted);
+  font-size: 0.7em;
+}
+.atividade {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em;
+}
+.chip {
+  font-size: 0.7em;
+  padding: 0.2em 0.7em;
+  border-radius: 1em;
+  background: var(--accent-soft);
+  color: var(--fg);
+  border: 0.06em solid var(--line);
+}
+.tag {
+  display: inline-block;
+  font-size: 0.6em;
+  padding: 0.1em 0.55em;
+  border-radius: 0.3em;
+  vertical-align: middle;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.tag.pronto { background: var(--accent); color: var(--accent-fg); }
+.tag.construcao { background: var(--warn-soft); color: var(--warn); border: 0.06em solid var(--warn); }
+.tag.depois { background: transparent; color: var(--muted); border: 0.06em solid var(--line); }
+pre {
+  background: var(--code-bg);
+  border: 0.06em solid var(--line);
+  border-radius: 0.35em;
+  padding: 0.6em 0.8em;
+  font-size: 0.62em;
+  line-height: 1.4;
+  overflow-x: auto;
+  white-space: pre;
+}
+pre .ok { color: var(--accent); }
+pre .rec { color: var(--warn); }
+pre .cmd { font-weight: 700; }
+table { border-collapse: collapse; width: 100%; font-size: 0.72em; }
+th, td { text-align: left; padding: 0.35em 0.5em; border-bottom: 0.06em solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+td.vazio { color: var(--muted); font-style: italic; }
+.duas { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2em; align-items: start; }
+.figura svg { width: 100%; height: auto; display: block; }
+.figura { max-height: 62cqh; }
+svg text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; fill: var(--fg); }
+svg .caixa { fill: var(--surface); stroke: var(--line); stroke-width: 2; }
+svg .caixa-a { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2.5; }
+svg .caixa-w { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 2.5; }
+svg .seta { stroke: var(--muted); stroke-width: 2.5; fill: none; }
+svg .seta-a { stroke: var(--accent); stroke-width: 3; fill: none; }
+svg .seta-w { stroke: var(--warn); stroke-width: 3; fill: none; }
+svg .ponta { fill: var(--muted); }
+svg .ponta-a { fill: var(--accent); }
+svg .ponta-w { fill: var(--warn); }
+svg .t-muted { fill: var(--muted); }
+svg .t-acc { fill: var(--accent); font-weight: 700; }
+svg .t-warn { fill: var(--warn); font-weight: 700; }
+svg .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.notas { display: none; }
+
+/* Interface */
+.contador {
+  position: fixed;
+  right: 16px;
+  bottom: 12px;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.ajuda {
+  position: fixed;
+  left: 16px;
+  bottom: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.7;
+  user-select: none;
+}
+#painel-notas {
+  display: none;
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 40px;
+  max-height: 38vh;
+  overflow: auto;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 16px;
+  line-height: 1.45;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  z-index: 10;
+}
+body.com-notas #painel-notas { display: block; }
+
+/* Celular: os slides viram uma lista que rola na vertical */
+@media (max-width: 700px) {
+  body { height: auto; overflow-y: auto; display: block; }
+  .palco {
+    width: 100%;
+    aspect-ratio: auto;
+    container-type: normal;
+    overflow: visible;
+  }
+  .slide {
+    position: static;
+    display: flex;
+    font-size: 16px;
+    padding: 28px 16px;
+    border-bottom: 1px solid var(--line);
+    min-height: 0;
+  }
+  h1 { font-size: 1.8em; }
+  h2 { font-size: 1.3em; }
+  .pergunta { font-size: 1.2em; }
+  .duas { grid-template-columns: 1fr; }
+  .figura { max-height: none; }
+  .espaco { min-height: 4em; flex: none; }
+  .contador, .ajuda { display: none; }
+}
+
+/* Impressão: um slide por página */
+@page { size: 1280px 720px; margin: 0; }
+@media print {
+  :root, :root[data-theme="dark"] {
+    --bg: #ffffff; --surface: #ffffff; --fg: #1d211f; --muted: #5a625d; --line: #d5d9d4;
+    --accent: #2e7a4e; --accent-fg: #ffffff; --accent-soft: #e2efe6; --code-bg: #f1f3ef;
+    --warn: #9a5b00; --warn-soft: #f6ebd9; --empty: #b9bfb9;
+  }
+  body { background: #ffffff; height: auto; overflow: visible; display: block; }
+  .palco { width: 1280px; aspect-ratio: auto; container-type: normal; overflow: visible; }
+  .figura { max-height: none; }
+  .slide {
+    position: relative;
+    display: flex !important;
+    width: 1280px;
+    height: 720px;
+    font-size: 26px;
+    padding: 43px 90px;
+    break-after: page;
+    page-break-after: always;
+    overflow: hidden;
+  }
+  .contador, .ajuda, #painel-notas { display: none !important; }
+}
+</style>
+</head>
+<body>
+<main class="palco" id="palco">
+
+<!-- 1 -->
+<section class="slide">
+  <p class="rotulo">Programação Agêntica · IFSul · 13/11/2026</p>
+  <h1>Vários agentes,<br>um repositório</h1>
+  <p class="sub">Quando mais de um escreve no mesmo projeto ao mesmo tempo</p>
+  <p class="pequeno sub">professor elderbernardi</p>
+  <aside class="notas">Abertura. Pergunte quem já teve trabalho sobrescrito por outra pessoa num trabalho em grupo. Ouça duas histórias, no máximo. Não fale de solução nenhuma.</aside>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <p class="rotulo">Como vai ser</p>
+  <h2>Vocês propõem antes de ver uma solução</h2>
+  <ol>
+    <li>Uma história concreta</li>
+    <li>Uma pergunta</li>
+    <li><span class="destaque">Vocês propõem</span>, em duplas</li>
+    <li>As propostas na balança: o que custam, onde quebram</li>
+    <li>Uma solução existente, comparada com as de vocês</li>
+  </ol>
+  <aside class="notas">Combine o formato: 1 min sozinho no papel, 3 min em duplas, uma proposta por dupla numa linha do quadro. Desenhe já no quadro a tabela da balança: Proposta | Custa adotar | Custa não ter | Quebra quando. Ela fica o tempo todo.</aside>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <p class="rotulo">Nivelamento</p>
+  <h2>Uma pessoa só: do ticket ao merge</h2>
+  <div class="figura">
+    <svg viewBox="0 0 1200 300" role="img" aria-label="Fluxo: ticket, ramo, commits, push, pull request, revisão e CI, merge na main">
+      <defs>
+        <marker id="pf" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ponta"/></marker>
+        <marker id="pfa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ponta-a"/></marker>
+      </defs>
+      <line x1="20" y1="250" x2="1180" y2="250" class="seta-a" marker-end="url(#pfa)"/>
+      <text x="20" y="285" class="t-acc" font-size="22">main</text>
+      <path d="M90,250 C120,250 120,200 160,200 L960,200 C1000,200 1000,250 1030,250" class="seta" marker-end="url(#pf)"/>
+      <text x="170" y="190" class="t-muted mono" font-size="20">ramo conserta-total</text>
+      <rect x="20" y="30" width="150" height="100" rx="12" class="caixa"/>
+      <text x="95" y="72" text-anchor="middle" font-size="24" font-weight="700">ticket #1</text>
+      <text x="95" y="102" text-anchor="middle" font-size="18" class="t-muted">total errado</text>
+      <rect x="215" y="30" width="150" height="100" rx="12" class="caixa"/>
+      <text x="290" y="72" text-anchor="middle" font-size="24" font-weight="700">ramo</text>
+      <text x="290" y="102" text-anchor="middle" font-size="18" class="t-muted">linha separada</text>
+      <rect x="410" y="30" width="150" height="100" rx="12" class="caixa"/>
+      <text x="485" y="72" text-anchor="middle" font-size="24" font-weight="700">commits</text>
+      <text x="485" y="102" text-anchor="middle" font-size="18" class="t-muted">fotografias</text>
+      <rect x="605" y="30" width="150" height="100" rx="12" class="caixa"/>
+      <text x="680" y="72" text-anchor="middle" font-size="24" font-weight="700">push + PR</text>
+      <text x="680" y="102" text-anchor="middle" font-size="18" class="t-muted">pede para juntar</text>
+      <rect x="800" y="30" width="170" height="100" rx="12" class="caixa"/>
+      <text x="885" y="72" text-anchor="middle" font-size="24" font-weight="700">revisão + CI</text>
+      <text x="885" y="102" text-anchor="middle" font-size="18" class="t-muted">Carla lê, testes rodam</text>
+      <rect x="1015" y="30" width="165" height="100" rx="12" class="caixa-a"/>
+      <text x="1097" y="72" text-anchor="middle" font-size="24" font-weight="700">merge</text>
+      <text x="1097" y="102" text-anchor="middle" font-size="18" class="t-muted">entra na main</text>
+      <line x1="172" y1="80" x2="211" y2="80" class="seta" marker-end="url(#pf)"/>
+      <line x1="367" y1="80" x2="406" y2="80" class="seta" marker-end="url(#pf)"/>
+      <line x1="562" y1="80" x2="601" y2="80" class="seta" marker-end="url(#pf)"/>
+      <line x1="757" y1="80" x2="796" y2="80" class="seta" marker-end="url(#pf)"/>
+      <line x1="972" y1="80" x2="1011" y2="80" class="seta" marker-end="url(#pf)"/>
+    </svg>
+  </div>
+  <p class="pequeno sub">Ana, projeto <span class="mono">loja</span>: ticket #1 "o total do carrinho está errado".</p>
+  <aside class="notas">Explique cada termo em uma frase, apontando a caixa. Ticket (issue): tarefa com número. Ramo: linha de trabalho separada; main é a principal. Commit: fotografia das mudanças. Push: enviar ao remoto, a cópia no GitHub. PR: pedido para juntar o ramo na main. Revisão: outra pessoa lê. CI: serviço que roda os testes sozinho. Merge: juntar. Pergunte: por que não mexer direto na main?</aside>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <p class="rotulo">Nivelamento · vocês fazem</p>
+  <p class="pergunta">Ponham em ordem os passos de Ana. O que acontece se ela pular a revisão? E a CI?</p>
+  <div class="atividade"><span class="chip">duplas</span><span class="chip">3 min</span><span class="chip">ordem escrita no papel</span></div>
+  <p class="mono pequeno sub">merge · revisão · ticket · push · commit · criar ramo · PR · CI</p>
+  <div class="espaco">ordem da turma</div>
+  <aside class="notas">Os cartões estão embaralhados de propósito. Resposta: ticket, ramo, commit, push, PR, CI e revisão (podem correr juntas), merge. Pule a revisão: ninguém além do autor leu. Pule a CI: os testes dependem de alguém lembrar. Pergunte: e se o autor for um agente que diz que rodou os testes?</aside>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <p class="rotulo">Nivelamento</p>
+  <h2>Conflito de merge</h2>
+  <div class="duas">
+    <div>
+      <p>Carla mudou a mesma linha, em outro ramo. No segundo merge, o git não sabe qual vale:</p>
+      <pre>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
+total = soma(preco * qtd)
+=======
+total = soma(preco) - desconto
+&gt;&gt;&gt;&gt;&gt;&gt;&gt; cupom</pre>
+      <p class="pequeno">Alguém lê as duas e decide. Não é erro: é o custo de mexer no mesmo lugar.</p>
+    </div>
+    <div>
+      <p>Ramos que muitos projetos usam:</p>
+      <ul>
+        <li><span class="mono">dev</span>: integração, onde os trabalhos se juntam</li>
+        <li><span class="mono">stage</span>: teste</li>
+        <li><span class="mono">main</span>: produção, o que está publicado</li>
+      </ul>
+      <p class="pequeno sub">Publicar = levar a dev para stage ou main.</p>
+    </div>
+  </div>
+  <aside class="notas">Mostre que o conflito só aparece no segundo merge: quem mesclou primeiro não paga nada. Termine o nivelamento com "pasta de trabalho": numa pasta, só um ramo está em uso por vez; trocar de ramo troca os arquivos da pasta inteira. Isso vai importar daqui a pouco.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Nivelamento</p>
+  <h2>E o agente?</h2>
+  <ul>
+    <li><b>Agente de código</b>: programa que lê, edita e roda comandos no projeto</li>
+    <li><b>Conversa</b> (sessão): um terminal com o agente aberto</li>
+    <li><b>Contexto</b>: o que o agente consegue ler de uma vez; enche</li>
+    <li><b>Limpar ou compactar</b>: começar a conversa de novo, ou resumida</li>
+    <li><b>Ferramenta</b>: cada ação do agente (rodar um comando, editar um arquivo)</li>
+  </ul>
+  <aside class="notas">Pergunte quem já usou um agente de código e quem já viu a conversa "encher". Exemplos: Claude Code, OpenCode (o da disciplina), Codex. Processo: o programa do agente rodando no computador, com um número; aparece na questão 1.</aside>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <p class="rotulo">O problema</p>
+  <h2>Ana abre três terminais</h2>
+  <div class="duas">
+    <div class="figura">
+      <svg viewBox="0 0 600 380" role="img" aria-label="Três agentes escrevendo na mesma pasta e no mesmo arquivo">
+        <defs>
+          <marker id="pw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ponta-w"/></marker>
+        </defs>
+        <rect x="10" y="20" width="170" height="70" rx="10" class="caixa"/>
+        <text x="95" y="62" text-anchor="middle" font-size="22">agente: carrinho</text>
+        <rect x="215" y="20" width="170" height="70" rx="10" class="caixa"/>
+        <text x="300" y="62" text-anchor="middle" font-size="22">agente: cupom</text>
+        <rect x="420" y="20" width="170" height="70" rx="10" class="caixa"/>
+        <text x="505" y="62" text-anchor="middle" font-size="22">agente: frete</text>
+        <rect x="120" y="210" width="360" height="150" rx="14" class="caixa-w"/>
+        <text x="300" y="250" text-anchor="middle" font-size="24" font-weight="700">uma pasta: loja/</text>
+        <text x="300" y="290" text-anchor="middle" font-size="22" class="mono">src/total.js</text>
+        <text x="300" y="330" text-anchor="middle" font-size="20" class="t-warn">um ramo em uso por vez</text>
+        <line x1="95" y1="92" x2="230" y2="205" class="seta-w" marker-end="url(#pw)"/>
+        <line x1="300" y1="92" x2="300" y2="205" class="seta-w" marker-end="url(#pw)"/>
+        <line x1="505" y1="92" x2="370" y2="205" class="seta-w" marker-end="url(#pw)"/>
+      </svg>
+    </div>
+    <ul class="pequeno">
+      <li>O do cupom salva "tudo o que mudou" e leva o arquivo pela metade do carrinho.</li>
+      <li>O do frete troca de ramo; os outros continuam, no ramo errado.</li>
+      <li>Ana limpa a conversa do carrinho; o agente novo não sabe do carrinho.</li>
+      <li>Carla, em casa, pega a mesma tarefa do frete.</li>
+      <li>Às 18h, a conversa do cupom trava. Ninguém sabe o que ficou feito.</li>
+    </ul>
+  </div>
+  <aside class="notas">Conte como história, sem termo novo. Não diga como resolver. Se perguntarem "e se cada um tivesse uma pasta?", anote no canto do quadro e diga que volta na questão 2.</aside>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <p class="rotulo">O problema · vocês fazem</p>
+  <p class="pergunta">O que aqui é falta de cuidado, e o que nenhum cuidado resolve?</p>
+  <div class="atividade"><span class="chip">duplas</span><span class="chip">2 min</span><span class="chip">lista no papel</span></div>
+  <div class="espaco">problemas que a turma viu</div>
+  <p class="pequeno sub">Relato de um projeto real: mais de 280 trabalhos em um mês; 15% dos commits eram só atualizar um arquivo de "quem faz o quê".</p>
+  <aside class="notas">Junte as listas no quadro. A lista da turma vira o roteiro das próximas questões; marque com um número cada item que casar com uma questão. Os números do relato são do autor do harness, de um projeto privado: diga que não dá para conferir. Ponto a fixar: várias pessoas escrevendo ao mesmo tempo é um sistema concorrente (como dois caixas vendendo o último ingresso); cuidado não resolve isso.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">O problema · o mapa</p>
+  <h2>Cinco perguntas hoje</h2>
+  <ol class="pequeno">
+    <li>Depois de limpar a conversa, quem é ela?</li>
+    <li>Como um não estraga o trabalho do outro na mesma pasta?</li>
+    <li>Onde anotar quem faz o quê?</li>
+    <li>Duas pessoas pegam a mesma tarefa: quem fica?</li>
+    <li>Uma regra escrita basta?</li>
+  </ol>
+  <p class="pequeno sub">Mais oito na aula 2. Em cada uma: vocês propõem, a balança pesa, e só depois aparece uma solução existente.</p>
+  <aside class="notas">Ligue cada item da lista da turma a um número. O que não couber nas cinco provavelmente está nas oito da aula 2 (sessão que morre, mesmo arquivo, máquina sem memória, rede, agentes diferentes, custo do método, prova de pronto, fechar e publicar). Não diga como resolver nenhuma.</aside>
+</section>
+
+<!-- Q1 -->
+<section class="slide">
+  <p class="rotulo">Questão 1 · a história</p>
+  <h2>A conversa que esquece</h2>
+  <p>Ana pede "comece o carrinho" e trabalha uma hora. A conversa enche; ela limpa.</p>
+  <p>A conversa nova não sabe do carrinho e começa outra coisa no mesmo lugar.</p>
+  <p>Em outro terminal, uma conversa de ontem é retomada e acha que o carrinho é dela.</p>
+  <aside class="notas">Quem usa agente no dia a dia já viu isso. Pergunte quem limpa ou compacta a conversa.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 1 · vocês propõem</p>
+  <p class="pergunta">Depois de limpar a conversa, como o agente saberia qual é o trabalho dele? Se duas conversas disserem "é meu", quem decide?</p>
+  <div class="atividade"><span class="chip">1 min sozinho</span><span class="chip">3 min em duplas</span><span class="chip">uma proposta por dupla no quadro</span></div>
+  <div class="espaco">propostas</div>
+  <aside class="notas">Respostas típicas: o agente anota num arquivo o que está fazendo; pergunta à pessoa; cada conversa tem um nome escolhido; ler o histórico do git. Se ninguém falar da segunda pergunta, insista: herdar errado ou soltar errado, qual erro custa mais?</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 1 · na balança</p>
+  <table>
+    <tr><th>Proposta</th><th>Custa adotar</th><th>Quebra quando</th></tr>
+    <tr><td>O agente pergunta à pessoa</td><td>nada</td><td>a pessoa também esquece; cinco terminais</td></tr>
+    <tr><td>Anotar num arquivo do projeto</td><td>escrever o arquivo</td><td>todos disputam o mesmo arquivo</td></tr>
+    <tr><td>Um nome por conversa, dado pela pessoa</td><td>disciplina</td><td>alguém esquece de dar o nome</td></tr>
+    <tr><td>Na dúvida, herdar o trabalho</td><td>nada</td><td>duas conversas viram donas da mesma coisa</td></tr>
+    <tr><td class="vazio">a de vocês</td><td></td><td></td></tr>
+  </table>
+  <p class="pequeno"><b>Não resolver custa:</b> trabalho sem dono, ou com dois donos.</p>
+  <aside class="notas">Preencha com as propostas da turma; as linhas impressas são as que costumam aparecer. Leve para a pergunta: qual erro é pior, herdar o trabalho de outro ou deixar um trabalho sem dono?</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 1 · uma solução existente</p>
+  <h2>A conversa tem um id e herda só com prova</h2>
+  <ul class="pequeno">
+    <li><b>Sessão</b> = a conversa, pelo id que o agente fornece; à mão, <span class="mono">AH_SESSAO=&lt;nome&gt;</span></li>
+    <li><b>Frente</b> = um trabalho com nome (o carrinho)</li>
+    <li>Conversa limpa herda a frente só se for o mesmo programa aberto (processo); <b>na dúvida, não herda</b></li>
+  </ul>
+  <pre><span class="cmd">$ tools/ah whoami</span>
+Sessão 7f3a9c21 (executor) · frente: as-1 carrinho</pre>
+  <p class="pequeno"><span class="tag pronto">pronto</span> Das propostas: "um nome por conversa", sem depender da pessoa. Paga: às vezes solta um trabalho que era dela.</p>
+  <aside class="notas">Primeira vez do agent-harness: um conjunto de comandos (tools/ah) feito pelo professor a partir de um projeto real. É uma alternativa entre outras; a cada questão ela entra como mais uma linha da balança. Não descreva ainda as outras peças. Compare: escolheu errar para o lado de soltar o trabalho (avisa "a frente está sem dona; ah open para retomar"). Executor = conversa com uma frente por vez. No começo de cada conversa, o agente recebe um resumo curto: quem é e qual a frente. Limite: no Windows não há herança por processo.</aside>
+</section>
+
+<!-- Q2 -->
+<section class="slide">
+  <p class="rotulo">Questão 2 · a história</p>
+  <h2>Três agentes, uma pasta</h2>
+  <p>O do carrinho edita <span class="mono">total.js</span>.</p>
+  <p>O do cupom grava "tudo o que mudou" e leva junto o arquivo pela metade.</p>
+  <p>O do frete troca de ramo para conferir uma coisa. Os outros dois passam a trabalhar no ramo errado, sem saber.</p>
+  <aside class="notas">Volte à figura do slide 6 se precisar. Lembre do nivelamento: numa pasta, um ramo por vez.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 2 · vocês propõem</p>
+  <p class="pergunta">Três pessoas mexem nos mesmos arquivos, na mesma pasta, ao mesmo tempo. Como organizar para uma não estragar o trabalho da outra?</p>
+  <div class="atividade"><span class="chip">1 min sozinho</span><span class="chip">4 min em duplas</span><span class="chip">uma proposta por dupla no quadro</span></div>
+  <div class="espaco">propostas</div>
+  <aside class="notas">Típicas: combinar no grupo; uma cópia da pasta para cada um; um ramo por pessoa; trava de arquivo; um de cada vez. Para cada uma, pergunte: e o agente, sabe da combinação?</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 2 · na balança</p>
+  <table>
+    <tr><th>Proposta</th><th>Custa adotar</th><th>Quebra quando</th></tr>
+    <tr><td>Combinar no grupo</td><td>nada</td><td>no primeiro esquecimento; o agente não estava na conversa</td></tr>
+    <tr><td>Um ramo por pessoa</td><td>criar ramos</td><td>na mesma pasta só há um ramo em uso</td></tr>
+    <tr><td>Uma cópia da pasta para cada um</td><td>disco; instalar tudo de novo</td><td>na hora de juntar</td></tr>
+    <tr><td>Trava de arquivo</td><td>um sistema de travas</td><td>bloqueia trabalho legítimo; trava esquecida</td></tr>
+    <tr><td>Um de cada vez</td><td>espera</td><td>não quebra; só é lento</td></tr>
+    <tr><td class="vazio">a de vocês</td><td></td><td></td></tr>
+  </table>
+  <p class="pequeno"><b>Não resolver custa:</b> commit com o trabalho do outro; horas no ramo errado.</p>
+  <aside class="notas">Leve a turma a combinar duas: ramo por pessoa mais pasta por pessoa. Pergunte o que custa um worktree só depois de eles chegarem à ideia de uma pasta por trabalho.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 2 · uma solução existente</p>
+  <h2>Uma pasta e um ramo por trabalho</h2>
+  <div class="duas">
+    <div class="figura">
+      <svg viewBox="0 0 560 360" role="img" aria-label="Um repositório com três pastas de trabalho, cada uma com seu ramo">
+        <rect x="20" y="20" width="520" height="80" rx="12" class="caixa"/>
+        <text x="280" y="55" text-anchor="middle" font-size="22" font-weight="700">pasta principal · dev</text>
+        <text x="280" y="84" text-anchor="middle" font-size="18" class="t-muted">de todos: só integrar</text>
+        <rect x="20" y="170" width="245" height="90" rx="12" class="caixa-a"/>
+        <text x="142" y="207" text-anchor="middle" font-size="21" font-weight="700">wt/carrinho</text>
+        <text x="142" y="238" text-anchor="middle" font-size="18" class="mono">feat/carrinho</text>
+        <rect x="295" y="170" width="245" height="90" rx="12" class="caixa-a"/>
+        <text x="417" y="207" text-anchor="middle" font-size="21" font-weight="700">wt/cupom</text>
+        <text x="417" y="238" text-anchor="middle" font-size="18" class="mono">feat/cupom</text>
+        <line x1="142" y1="102" x2="142" y2="166" class="seta"/>
+        <line x1="417" y1="102" x2="417" y2="166" class="seta"/>
+        <text x="280" y="320" text-anchor="middle" font-size="18" class="t-muted">mesmo repositório, pastas separadas (worktree)</text>
+      </svg>
+    </div>
+    <div>
+      <pre><span class="cmd">$ tools/ah open carrinho</span>
+<span class="ok">Frente as-1 carrinho aberta.</span>
+Trabalhe em: ~/.cache/…/wt/carrinho</pre>
+      <p class="pequeno"><span class="tag pronto">pronto</span> Das propostas: junta "um ramo por pessoa" com "uma cópia por pessoa".</p>
+      <p class="pequeno">Paga: uma pasta a mais por trabalho, e o conflito fica para o merge.</p>
+    </div>
+  </div>
+  <aside class="notas">Worktree: uma segunda pasta de trabalho do mesmo repositório, com o seu próprio ramo. É a junção de "ramo por pessoa" com "pasta por pessoa", sem copiar o histórico. A pasta principal vira o lugar de integrar. Se perguntarem "e o que impede alguém de mexer na pasta principal ou na pasta do outro?": é a questão 5; anote e siga. Diga com todas as letras: hoje, a separação é só por pasta. Custo: cada pasta tem a sua cópia de dependências.</aside>
+</section>
+
+<!-- Q3 -->
+<section class="slide">
+  <p class="rotulo">Questão 3 · a história</p>
+  <h2>O quadro que virou metade dos commits</h2>
+  <p>O grupo cria <span class="mono">QUADRO.md</span> no projeto. Cada agente escreve "estou no carrinho" ao começar.</p>
+  <p>Uma semana depois: metade dos commits é o quadro, os merges dão conflito justamente nele, e cada agente lê o arquivo inteiro antes de trabalhar.</p>
+  <aside class="notas">Este é o caso do relato: 15% dos commits e cerca de 16 mil tokens por sessão, no projeto de origem.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 3 · vocês propõem</p>
+  <p class="pergunta">Onde anotar quem está fazendo o quê, para todos verem, ninguém brigar pelo papel e o agente não gastar meia conversa lendo?</p>
+  <div class="atividade"><span class="chip">1 min sozinho</span><span class="chip">3 min em duplas</span><span class="chip">uma proposta por dupla no quadro</span></div>
+  <div class="espaco">propostas</div>
+  <aside class="notas">Típicas: arquivo no repositório; grupo de mensagens; planilha; os tickets do GitHub; um servidor. Pergunta-chave para a balança: isso é histórico do projeto ou estado de agora?</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 3 · na balança</p>
+  <table>
+    <tr><th>Proposta</th><th>Custa adotar</th><th>Quebra quando</th></tr>
+    <tr><td>Arquivo no projeto</td><td>nada de infraestrutura</td><td>commits e conflitos só de quadro; custo de leitura</td></tr>
+    <tr><td>Grupo de mensagens, planilha</td><td>nada</td><td>o agente não vê</td></tr>
+    <tr><td>Tickets do GitHub</td><td>rede</td><td>sem internet; quem não usa ticket some</td></tr>
+    <tr><td>Um servidor só para isso</td><td>manter o servidor</td><td>o servidor cai</td></tr>
+    <tr><td class="vazio">a de vocês</td><td></td><td></td></tr>
+  </table>
+  <p class="pequeno"><b>Não resolver custa:</b> ninguém sabe quem faz o quê; perguntar a cada vez.</p>
+  <aside class="notas">Leve à distinção: o que outra máquina precisa saber (pouco) e o que só esta máquina precisa (muito).</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 3 · uma solução existente</p>
+  <h2>O quadro fica fora do git</h2>
+  <ul class="pequeno">
+    <li>Estado por máquina, em arquivos fora do projeto; no git, só uma linha por trabalho fechado</li>
+    <li>Entre máquinas: comentários nos tickets</li>
+    <li>O agente recebe um resumo de até 1200 caracteres, não o quadro</li>
+  </ul>
+  <pre><span class="cmd">$ tools/ah board</span>
+ID    NOME      DONA      ESTADO  TICKETS  …  ÚLTIMA NOTA
+as-1  carrinho  ana-term  ativa   #1       …  mexendo no total</pre>
+  <p class="pequeno"><span class="tag pronto">pronto</span> Das propostas: junta "arquivo" (só que fora do git) com "tickets". Paga: outra máquina não vê o quadro desta.</p>
+  <aside class="notas">Compare com as propostas: ficou com duas, uma para cada alcance. Limite: outra máquina não vê o quadro desta. Ligação com o trabalho final: o registro da disciplina é histórico e vai para o git com data; o "quem faz o quê agora" não precisa ir.</aside>
+</section>
+
+<!-- Q4 -->
+<section class="slide">
+  <p class="rotulo">Questão 4 · a história</p>
+  <h2>Duas pessoas, o mesmo ticket</h2>
+  <p>Ana e Carla, cada uma em casa, olham os tickets às 9h.</p>
+  <p>As duas pegam o #2, "frete grátis acima de 200".</p>
+  <p>Às 11h, há duas metades de solução diferentes.</p>
+  <aside class="notas">Depois do intervalo. Retome a tabela da balança no quadro.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 4 · vocês propõem</p>
+  <p class="pergunta">Como evitar que duas pessoas peguem a mesma tarefa? Se as duas pegarem no mesmo segundo, quem fica com ela?</p>
+  <div class="atividade"><span class="chip">1 min sozinho</span><span class="chip">4 min em duplas</span><span class="chip">uma regra de desempate por dupla</span></div>
+  <div class="espaco">propostas e regras de desempate</div>
+  <aside class="notas">Típicas: combinar no chat; pôr o nome no ticket; quem chegar primeiro; dividir por área. Para "quem chegar primeiro", pergunte: primeiro pelo relógio de quem? Os relógios das máquinas não batem.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 4 · na balança</p>
+  <table>
+    <tr><th>Proposta</th><th>Custa adotar</th><th>Quebra quando</th></tr>
+    <tr><td>Combinar no chat</td><td>nada</td><td>alguém não leu</td></tr>
+    <tr><td>Pôr o nome no ticket à mão</td><td>um clique</td><td>esquece de pôr, esquece de tirar</td></tr>
+    <tr><td>Quem chegar primeiro</td><td>um relógio comum</td><td>as duas conferem no mesmo segundo</td></tr>
+    <tr><td>Dividir por área</td><td>planejar</td><td>a área de uma precisa da outra</td></tr>
+    <tr><td class="vazio">a de vocês</td><td></td><td></td></tr>
+  </table>
+  <p class="pequeno"><b>Não resolver custa:</b> duas metades de solução; uma manhã jogada fora.</p>
+  <aside class="notas">Ponto central: conferir "ninguém pegou" e depois pegar são dois passos; entre eles, outra pessoa pode passar. Isso é uma corrida.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 4 · uma solução existente</p>
+  <h2>Reserva no ticket; o servidor desempata</h2>
+  <div class="duas">
+    <div class="figura">
+      <svg viewBox="0 0 560 360" role="img" aria-label="Linha do tempo de comentários no ticket 2: o mais antigo vence">
+        <rect x="20" y="15" width="520" height="56" rx="10" class="caixa"/>
+        <text x="280" y="51" text-anchor="middle" font-size="22" font-weight="700">ticket #2 · comentários em ordem</text>
+        <rect x="20" y="95" width="520" height="66" rx="10" class="caixa-a"/>
+        <text x="40" y="125" font-size="20" font-weight="700">1º · Ana, frente as-3</text>
+        <text x="40" y="150" font-size="18" class="t-acc">mais antigo: fica com o ticket</text>
+        <rect x="20" y="180" width="520" height="66" rx="10" class="caixa"/>
+        <text x="40" y="210" font-size="20" font-weight="700">2º · Carla, frente cd-4</text>
+        <text x="40" y="235" font-size="18" class="t-muted">relê, vê que perdeu</text>
+        <rect x="20" y="265" width="520" height="66" rx="10" class="caixa-w"/>
+        <text x="40" y="295" font-size="20" font-weight="700">3º · Carla: desistência</text>
+        <text x="40" y="320" font-size="18" class="t-warn">sai de responsável, não cria nada</text>
+      </svg>
+    </div>
+    <div>
+      <pre><span class="cmd">$ tools/ah open frete --tickets 2</span>
+<span class="rec">Recusado: Não reservei os tickets:
+o ticket #2 já está reservado pela
+frente cd-4 (frete), de @carla-dias.</span>
+Faça: combine com @carla-dias, …</pre>
+      <p class="pequeno"><span class="tag pronto">pronto</span> Das propostas: "nome no ticket", automático, e "quem chegar primeiro" pelo servidor. Paga: precisa de rede.</p>
+    </div>
+  </div>
+  <aside class="notas">O open põe a pessoa de responsável, o rótulo (etiqueta do ticket) em-andamento e um comentário com um marcador que o programa lê. É aviso, não trava garantida: duas aberturas no mesmo segundo podem passar; cada uma relê o ticket, e vence o comentário mais antigo no servidor (o número do comentário, não o relógio da máquina). Sem rede, recusa reservar. Corrida real achada na revisão da construção: A pedia #1 e #2, B pedia #2 e #1, e as duas desistiam. O código de hoje aceita isso: nunca ficam as duas, e quem desistiu precisa abrir de novo. Pergunte: garantir um vencedor valeria o que custa?</aside>
+</section>
+
+<!-- Q5 -->
+<section class="slide">
+  <p class="rotulo">Questão 5 · a história</p>
+  <h2>"Nunca envie para a main"</h2>
+  <p>Está escrito no arquivo de instruções do grupo.</p>
+  <p>No meio de uma tarefa longa, o agente envia para a main "para publicar a correção".</p>
+  <p>Outra vez, ele troca para a main primeiro e envia sem dizer o destino. Ninguém tinha escrito essa forma.</p>
+  <aside class="notas">Pergunte quem já viu o agente ignorar uma instrução escrita. Não fale ainda de gancho.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 5 · vocês propõem</p>
+  <p class="pergunta">Escrevam uma regra que deveria ser proibida de verdade e uma que basta pedir. Se a proibição quebrar, ela deixa passar ou bloqueia tudo?</p>
+  <div class="atividade"><span class="chip">1 min sozinho</span><span class="chip">4 min em duplas</span><span class="chip">duas regras por dupla no quadro</span></div>
+  <div class="espaco">"proibido de verdade" · "basta pedir"</div>
+  <aside class="notas">Típicas: escrever melhor a instrução; pedir confirmação para tudo; tirar a permissão de enviar; um programa que confere o comando antes; proteger o ramo no GitHub. Divida o quadro em duas colunas: proibido × pedido.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 5 · na balança</p>
+  <table>
+    <tr><th>Proposta</th><th>Custa adotar</th><th>Quebra quando</th></tr>
+    <tr><td>Instrução mais bem escrita</td><td>escrever</td><td>o agente esquece ou acha outra forma; ninguém percebe</td></tr>
+    <tr><td>Confirmação humana para tudo</td><td>atenção da pessoa</td><td>a pessoa aprova sem ler</td></tr>
+    <tr><td>Tirar a permissão</td><td>configurar o agente</td><td>o agente não consegue trabalhar</td></tr>
+    <tr><td>Conferir o comando antes de rodar</td><td>um programa que entende comandos</td><td>sempre há uma forma que escapa</td></tr>
+    <tr><td>Proteger o ramo no GitHub</td><td>configurar o servidor</td><td>repositório privado de conta gratuita não tem</td></tr>
+    <tr><td class="vazio">a de vocês</td><td></td><td></td></tr>
+  </table>
+  <p class="pequeno"><b>Não resolver custa:</b> um envio para produção que ninguém revisou.</p>
+  <aside class="notas">Pergunta para fechar a balança: instrução falha em silêncio; mecanismo falha alto. Qual vocês preferem para "não enviar para a main"? E para "escrever o teste antes"?</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 5 · uma solução existente</p>
+  <h2>Um gancho lê o comando antes de rodar</h2>
+  <p class="pequeno"><b>Gancho</b>: programa que o agente chama antes de cada ferramenta. <b>Trava</b>: regra do gancho que recusa.</p>
+  <table>
+    <tr><th>Trava</th><th>Recusa</th><th></th></tr>
+    <tr><td>T0</td><td>comando com git que não dá para ler</td><td><span class="tag pronto">pronto</span></td></tr>
+    <tr><td>T2</td><td>"adicionar tudo" na pasta principal</td><td><span class="tag pronto">pronto</span></td></tr>
+    <tr><td>T5</td><td>enviar para ramo protegido, em qualquer forma</td><td><span class="tag pronto">pronto</span></td></tr>
+    <tr><td>T1 · T3 · T4</td><td>trocar ramo · descartar · pasta de outro</td><td><span class="tag construcao">em construção</span></td></tr>
+    <tr><td>T6</td><td>trabalho pesado fora da fila</td><td><span class="tag depois">depois</span></td></tr>
+  </table>
+  <p class="pequeno">Das propostas: "conferir antes" mais "proteger no GitHub". Gancho que quebra <b>recusa</b>.</p>
+  <aside class="notas">Juntou "conferir o comando antes" com "proteger no GitHub": a barreira de verdade fica no servidor (proteção de ramo); a trava local avisa antes e diz a saída. Paga: a trava lê texto e sempre há forma que escapa. Regra geral do harness: só recusa o que protege o trabalho dos outros e a máquina; método (plano, teste antes) nunca é motivo de recusa. Desvio: AH_GUARD=off no começo do comando, por ordem do executivo, libera T2 e T5 e fica registrado; nunca libera T0. Volte à questão 2: hoje, git switch main e git reset --hard na pasta principal passam (T1 e T3 em construção); a pasta do outro só é protegida pela separação (T4 em construção).</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 5 · ao vivo</p>
+  <pre><span class="cmd">$ echo '{… "command":"git add -A"}' | tools/ah gancho claude-code</span>
+<span class="rec">Recusado (T2): git add com tudo (-A, ., -u, *, a raiz) no checkout principal leva junto o trabalho de outras frentes</span>
+Faça: git add &lt;caminhos&gt; com só os arquivos que você mudou …
+<span class="cmd">$ echo $?</span>
+2
+
+<span class="cmd">$ … "command":"git checkout main &amp;&amp; git push" …</span>
+<span class="rec">Recusado (T5): push sem destino explícito com o ramo protegido main em uso</span>
+
+<span class="cmd">$ … "command":"G=git; $G push" …</span>
+<span class="rec">Recusado (T0): o nome do comando vem de uma variável e o texto menciona git ou gh</span>
+
+<span class="cmd">$ … "command":"git switch main" …</span>          <span class="sub"># passa hoje (T1 em construção)</span></pre>
+  <p class="pequeno">Toda recusa diz o motivo e o que fazer no lugar.</p>
+  <aside class="notas">Demonstração do roteiro do professor, passo 3. Mostre que git switch main passa: é a diferença entre o desenho e o código de hoje. Limites para citar: find | xargs git add passa; apelido do git passa; há falso positivo (switch main, pull, switch dev, push é recusado).</aside>
+</section>
+
+<!-- Q6 -->
+<section class="slide">
+  <p class="rotulo">Questão 6 · aula 2 · a história</p>
+  <h2>A conversa que morre no meio</h2>
+  <p>A conversa de Ana trava às 16h com o carrinho pela metade.</p>
+  <p>No dia seguinte, o quadro ainda diz "carrinho: Ana, em andamento".</p>
+  <p>Carla quer continuar. Ana, no notebook, quer retomar o que deixou no laboratório.</p>
+  <aside class="notas">Na aula 1, pule daqui para o slide 36 (digite 36 e Enter). A aula 2 começa neste slide.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 6 · vocês propõem</p>
+  <p class="pergunta">Como saber que alguém desistiu, e não está só pensando? Escrevam o bilhete que vocês deixariam para quem continuar.</p>
+  <div class="atividade"><span class="chip">1 min sozinho</span><span class="chip">4 min em duplas</span><span class="chip">um bilhete por dupla</span></div>
+  <div class="espaco">critério de "desistiu" · bilhete</div>
+  <aside class="notas">Típicas: esperar a pessoa; prazo de X horas; qualquer um assume; bilhete combinado. Recolha dois bilhetes e leia: o que falta neles para alguém continuar sem perguntar nada?</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 6 · na balança</p>
+  <table>
+    <tr><th>Proposta</th><th>Custa adotar</th><th>Quebra quando</th></tr>
+    <tr><td>Esperar a pessoa</td><td>nada</td><td>"em andamento" para sempre</td></tr>
+    <tr><td>Prazo automático</td><td>escolher o prazo</td><td>quem está lento parece morto</td></tr>
+    <tr><td>Qualquer um assume</td><td>nada</td><td>duas pessoas assumem</td></tr>
+    <tr><td>Bilhete combinado</td><td>escrever antes de parar</td><td>quem trava não escreve nada</td></tr>
+    <tr><td class="vazio">a de vocês</td><td></td><td></td></tr>
+  </table>
+  <p class="pequeno"><b>Não resolver custa:</b> trabalho parado sem dono; quem continua começa do zero.</p>
+  <aside class="notas">Repare que as propostas se complementam: o bilhete serve para a parada planejada; o prazo, para a morte.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Questão 6 · uma solução existente</p>
+  <h2>Sinal de vida e passagem de bastão</h2>
+  <pre><span class="cmd">$ tools/ah handoff --nota "falta validar a data"</span>
+<span class="ok">Frente as-2 cupom passada.</span>
+Para retomar: tools/ah open cupom
+
+<span class="cmd">$ tools/ah open cupom</span>          <span class="sub"># outra sessão, outra máquina</span>
+<span class="ok">Frente as-2 cupom retomada.</span></pre>
+  <ul class="pequeno">
+    <li>Viva = o processo existe e deu sinal há menos de 120 min; senão, "órfã" no quadro <span class="tag pronto">pronto</span></li>
+    <li><span class="mono">handoff</span> envia o ramo e escreve o bilhete no ticket <span class="tag pronto">pronto</span></li>
+    <li><span class="mono">takeover</span>: tomar a frente de quem morreu, com confirmação humana <span class="tag pronto">pronto</span></li>
+    <li><span class="mono">sweep</span>: listar o que ficou fora do lugar <span class="tag construcao">em construção</span></li>
+  </ul>
+  <aside class="notas">Das propostas: junta "prazo automático" (sinal de vida) com "bilhete combinado" (handoff) e "alguém assume" só com confirmação humana (takeover sem --confirmado mostra a dona, o motivo e recusa até o executivo confirmar). Paga: uma sessão morta parece viva por até duas horas. O comentário de passagem traz a nota, os últimos commits, o plano e o comando para retomar. Compare com os bilhetes da turma. Retomar em outra máquina usa o ramo no remoto e a passagem no ticket, com o mesmo ID. Frente sem ticket só se retoma na mesma máquina.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Aula 2 · as outras perguntas</p>
+  <ol start="7" class="pequeno">
+    <li>Dois trabalhos mexem no mesmo arquivo. Avisar antes basta?</li>
+    <li>Cinco conversas rodam testes juntas e a máquina trava. De quem é a memória?</li>
+    <li>A internet cai no meio do fechamento. Fazer o que dá ou nada?</li>
+    <li>Três pessoas, três agentes diferentes. A mesma regra vale para todos?</li>
+    <li>Plano e revisão para mudar três linhas: quando compensa?</li>
+    <li>"Pronto, os testes passam." O que conta como prova?</li>
+    <li>Apagar a pasta de um trabalho terminado: o que conferir antes?</li>
+  </ol>
+  <aside class="notas">Só as perguntas. As soluções ficam para depois das propostas, na aula 2. Peça que cada um escolha uma e traga uma proposta escrita.</aside>
+</section>
+
+<!-- Alternativa -->
+<section class="slide">
+  <p class="rotulo">Uma alternativa, não a resposta</p>
+  <h2>O agent-harness em um slide</h2>
+  <ul class="pequeno">
+    <li><b>O que é:</b> comandos <span class="mono">tools/ah</span> e ganchos do agente, em Node, sem dependências</li>
+    <li><b>O que resolve:</b> várias conversas e pessoas no mesmo repositório sem pisar umas nas outras</li>
+    <li><b>Como:</b> uma pasta e um ramo por frente; quadro fora do git; reserva no ticket; travas antes do comando</li>
+    <li><b>Como aplicar:</b> <span class="mono">init</span> no projeto, <span class="mono">doctor</span> para conferir</li>
+    <li><b>O que não resolve:</b> método, custo, agentes sem adaptador</li>
+  </ul>
+  <p class="pequeno sub">Regra do autor: sugere e registra; só recusa o que protege o trabalho dos outros e a máquina.</p>
+  <aside class="notas">Agora sim, a visão geral, depois das propostas. Reforce: é uma das linhas da balança, a que o professor escolheu para o projeto dele. As propostas da turma que ficaram no quadro valem como alternativas para o trabalho final. Foi extraído de um projeto real e privado (relato do autor: mais de 280 frentes em um mês, não verificável aqui).</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">A alternativa inteira</p>
+  <h2>O ciclo de uma frente</h2>
+  <div class="figura">
+    <svg viewBox="0 0 1200 330" role="img" aria-label="Ciclo: open, trabalho no worktree, commit; depois handoff e retomada, ou merge na dev e close">
+      <defs>
+        <marker id="pc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ponta"/></marker>
+        <marker id="pca" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ponta-a"/></marker>
+      </defs>
+      <rect x="20" y="120" width="170" height="90" rx="14" class="caixa-a"/>
+      <text x="105" y="160" text-anchor="middle" font-size="26" font-weight="700" class="mono">open</text>
+      <text x="105" y="190" text-anchor="middle" font-size="17" class="t-muted">ramo + pasta + reserva</text>
+      <rect x="250" y="120" width="230" height="90" rx="14" class="caixa"/>
+      <text x="365" y="160" text-anchor="middle" font-size="24" font-weight="700">trabalho</text>
+      <text x="365" y="190" text-anchor="middle" font-size="17" class="t-muted">editar e commitar na pasta</text>
+      <rect x="560" y="20" width="220" height="90" rx="14" class="caixa"/>
+      <text x="670" y="60" text-anchor="middle" font-size="26" font-weight="700" class="mono">handoff</text>
+      <text x="670" y="90" text-anchor="middle" font-size="17" class="t-muted">parar no meio</text>
+      <rect x="560" y="220" width="220" height="90" rx="14" class="caixa"/>
+      <text x="670" y="260" text-anchor="middle" font-size="24" font-weight="700">merge na dev</text>
+      <text x="670" y="290" text-anchor="middle" font-size="17" class="t-muted">na pasta principal</text>
+      <rect x="860" y="220" width="170" height="90" rx="14" class="caixa-a"/>
+      <text x="945" y="260" text-anchor="middle" font-size="26" font-weight="700" class="mono">close</text>
+      <text x="945" y="290" text-anchor="middle" font-size="17" class="t-muted">confere e libera</text>
+      <rect x="860" y="20" width="320" height="90" rx="14" class="caixa"/>
+      <text x="1020" y="60" text-anchor="middle" font-size="22" font-weight="700">outra sessão: <tspan class="mono">open</tspan></text>
+      <text x="1020" y="90" text-anchor="middle" font-size="17" class="t-muted">retoma, até em outra máquina</text>
+      <line x1="192" y1="165" x2="246" y2="165" class="seta" marker-end="url(#pc)"/>
+      <line x1="482" y1="140" x2="556" y2="80" class="seta" marker-end="url(#pc)"/>
+      <line x1="482" y1="190" x2="556" y2="250" class="seta" marker-end="url(#pc)"/>
+      <line x1="782" y1="65" x2="856" y2="65" class="seta" marker-end="url(#pc)"/>
+      <line x1="782" y1="265" x2="856" y2="265" class="seta-a" marker-end="url(#pca)"/>
+      <path d="M1020,112 C1020,170 600,170 482,168" class="seta" marker-end="url(#pc)"/>
+    </svg>
+  </div>
+  <p class="pequeno sub">Antes da demonstração: com o que vocês propuseram hoje, quais passos uma sessão faria?</p>
+  <aside class="notas">2 min: a turma dita a sequência dela; anote. Depois a demonstração do roteiro do professor (init, doctor, open, commit, board, merge, close). No fim, compare as duas sequências.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">O que existe hoje</p>
+  <div class="duas">
+    <div>
+      <p><span class="tag pronto">pronto</span></p>
+      <p class="mono pequeno">init · doctor · open · nota · board · whoami · papel · handoff · takeover · close · gancho</p>
+      <p class="pequeno">Travas T0, T2, T5 · adaptador do Claude Code · fila de comentários sem rede</p>
+    </div>
+    <div>
+      <p><span class="tag construcao">em construção</span></p>
+      <p class="mono pequeno">sweep · T1 · T3 · T4</p>
+      <p><span class="tag depois">depois</span></p>
+      <p class="pequeno">fila de trabalho pesado e T6 · roteiro e testes para outros agentes · atualizar o harness instalado</p>
+    </div>
+  </div>
+  <p class="pequeno sub">Conferido no código em 12/11/2026. Confiram com <span class="mono">tools/ah --help</span>, não no slide.</p>
+  <aside class="notas">Node 22, sem dependências. Construído em fatias: cada uma utilizável e testada antes da seguinte. open aceita --tickets, --plano, --caminhos e --para. Se o repositório estiver publicado: github.com/elderbernardiifsul/agent-harness; se não, só demonstração.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Como aplicar</p>
+  <h2>Do zero ao primeiro ciclo</h2>
+  <pre><span class="cmd">$ node ~/agent-harness/nucleo/bin/ah.mjs init</span>     <span class="sub"># depois: commit na dev</span>
+<span class="cmd">$ tools/ah doctor</span>
+<span class="ok">0 falha(s), 1 aviso(s).</span>
+<span class="cmd">$ tools/ah open carrinho --tickets 1</span>
+<span class="cmd">$ git add src/total.js &amp;&amp; git commit -m "feat: frete"</span>   <span class="sub"># no worktree</span>
+<span class="cmd">$ tools/ah board</span>
+<span class="cmd">$ git merge --no-ff feat/carrinho</span>                <span class="sub"># na pasta principal, na dev</span>
+<span class="cmd">$ tools/ah close --resumo "frete no total"</span>
+<span class="ok">Frente as-1 carrinho fechada.</span></pre>
+  <p class="pequeno">Precisa de Node 22, git e <span class="mono">gh</span> com login. Linux, WSL2 ou macOS.</p>
+  <aside class="notas">À mão, fora do agente: AH_SESSAO=ana-terminal antes de open, nota, whoami e close. Dentro do Claude Code, a sessão vem do gancho. Passo a passo completo no material de apoio, seção 4.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">OpenCode e Codex</p>
+  <h2>Sem adaptador pronto: o agente se adapta</h2>
+  <ol class="pequeno">
+    <li>Os comandos já funcionam: <span class="mono">AH_SESSAO=$OPENCODE_SESSION_ID tools/ah open …</span></li>
+    <li>O agente lê a tabela de capacidades, o contrato de quatro eventos e o adaptador do Claude Code</li>
+    <li>Escreve o adaptador mais curto, sem mudar o núcleo</li>
+    <li>Escreve testes e roda <span class="mono">node --test teste/</span></li>
+    <li>Prova com o agente real: pede um envio para a main e mostra a recusa</li>
+  </ol>
+  <p class="pequeno"><span class="tag depois">depois</span> roteiro oficial e testes de contrato · hoje: roteiro do material, não ensaiado</p>
+  <aside class="notas">O OpenCode recusa por exceção num plugin (execute.before); não tem evento de começo nem de fim de sessão. O Codex só roda ganchos do projeto depois de confiados. Isto é a prática da aula 2.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Trabalho final · 1 de 2</p>
+  <h2>Decisões do harness × cenários</h2>
+  <table>
+    <tr><th>Decisão do harness</th><th>Cenário</th><th>O grupo pode aproveitar</th></tr>
+    <tr><td>Uma pasta e um ramo por frente</td><td>3 · Três pessoas, quantos agentes?</td><td>contar onde cada conflito apareceu</td></tr>
+    <tr><td>Reserva é aviso, não trava</td><td>3 · Três pessoas, quantos agentes?</td><td>combinar quem pega o quê; contar duplicações</td></tr>
+    <tr><td>Só recusa o que protege os outros</td><td>9 · Um plugin para o DSH</td><td>decidir o que vira código e o que fica instrução</td></tr>
+    <tr><td>Construir em fatias; peça sem explicação é fracasso</td><td>7 · O meu harness</td><td>tirar a peça que ninguém explica</td></tr>
+  </table>
+  <aside class="notas">Leia uma linha por vez e pergunte: qual grupo pensa num cenário parecido? Cenário 3: "cada um com o seu agente acelera o começo e complica a integração"; a pasta por frente concentra o conflito no merge, e o grupo pode medir isso. Cenário 9: o harness pôs em código a proteção do trabalho alheio e deixou o método como recomendação; o grupo pode adotar ou contestar essa fronteira. Cenário 7: o próprio autor cortou peças depois de uma avaliação (adaptadores prontos de dois agentes).</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Trabalho final · 2 de 2</p>
+  <h2>Decisões do harness × cenários</h2>
+  <table>
+    <tr><th>Decisão do harness</th><th>Cenário</th><th>O grupo pode aproveitar</th></tr>
+    <tr><td>Resumo curto; na dúvida, não herdar</td><td>5 · O veterano de bolso</td><td>decidir o que guardar fora do agente</td></tr>
+    <tr><td>Exceção só com ordem humana registrada</td><td>1 · O balcão que responde</td><td>aprovar a exceção, não cada passo</td></tr>
+    <tr><td>Desenho que muda, com seções que prevalecem</td><td>6 · Especificação antes do código</td><td>marcar o que mudou e o que vale agora</td></tr>
+    <tr><td>Trava lê texto; o ilegível é recusado</td><td>4 · A portaria das skills</td><td>usar as formas que escapam como falso negativo</td></tr>
+  </table>
+  <p class="pequeno sub">Ligação fraca ou nenhuma: 2, 8 e 10. Tabela completa no material de apoio.</p>
+  <aside class="notas">Cenário 5: o harness guarda fora do agente só quem a conversa é e qual a frente; é memória ou só estado? Cenário 1: AH_GUARD=off e takeover --confirmado são aprovação humana só para a exceção; no balcão, a dona aprova cada resposta. Cenário 6: o desenho do harness mudou no caminho e marcou as seções novas que valem sobre as antigas. Cenário 4: a trava não é caixa de areia; a lista do que escapa é um catálogo de falso negativo. Para todos (enunciado §4 e §8): registro com data durante o trabalho; "pronto" com comando e saída. O harness não mede horas nem gasto com modelo; quem precisar, registra à mão.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Trabalho final · vocês fazem</p>
+  <p class="pergunta">Que curiosidade esta aula despertou? Em qual cenário ela apareceria?</p>
+  <div class="atividade"><span class="chip">grupos</span><span class="chip">3 min</span><span class="chip">uma curiosidade e um cenário por grupo</span></div>
+  <div class="espaco">curiosidade · cenário · uma decisão que vocês tomariam diferente</div>
+  <aside class="notas">Recolha no papel. Peça que cada grupo diga também uma decisão que tomaria diferente do harness, com base nas propostas que fez hoje. Isso entra na conversa da proposta do trabalho final.</aside>
+</section>
+
+<section class="slide">
+  <p class="rotulo">Próximos passos</p>
+  <h2>Para a aula 2</h2>
+  <ul>
+    <li>Ler o material de apoio, seção 1, e fazer os exercícios 1 a 3</li>
+    <li>Trazer uma proposta escrita para uma das sete perguntas</li>
+    <li>OpenCode instalado e um repositório descartável no GitHub</li>
+  </ul>
+  <p class="pequeno sub">Material: <span class="mono">docs/aula/</span> no repositório do agent-harness</p>
+  <aside class="notas">Repositório descartável pode ser privado; aí a proteção de ramo não vale, e isso entra na discussão da questão 5.</aside>
+</section>
+
+</main>
+
+<div class="contador" id="contador" aria-live="polite"></div>
+<div class="ajuda">← → espaço · N notas · T tema</div>
+<div id="painel-notas" role="note"></div>
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var total = slides.length;
+  var atual = 0;
+  var contador = document.getElementById('contador');
+  var painel = document.getElementById('painel-notas');
+  var digitado = '';
+
+  function lerHash() {
+    var m = /^#\/?(\d+)$/.exec(location.hash);
+    if (!m) return 0;
+    var n = parseInt(m[1], 10) - 1;
+    return Math.min(Math.max(n, 0), total - 1);
+  }
+  function mostrar(i) {
+    atual = Math.min(Math.max(i, 0), total - 1);
+    for (var k = 0; k < total; k++) slides[k].classList.toggle('ativo', k === atual);
+    contador.textContent = (atual + 1) + ' / ' + total;
+    var n = slides[atual].querySelector('.notas');
+    painel.textContent = n ? n.textContent : '(sem notas)';
+    var h = '#' + (atual + 1);
+    if (location.hash !== h) history.replaceState(null, '', h);
+  }
+  function proximo() { mostrar(atual + 1); }
+  function anterior() { mostrar(atual - 1); }
+  function trocarTema() {
+    var raiz = document.documentElement;
+    var escuroAgora = raiz.getAttribute('data-theme') === 'dark' ||
+      (!raiz.hasAttribute('data-theme') && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    raiz.setAttribute('data-theme', escuroAgora ? 'light' : 'dark');
+    try { localStorage.setItem('tema-apresentacao', raiz.getAttribute('data-theme')); } catch (e) {}
+  }
+  try {
+    var salvo = localStorage.getItem('tema-apresentacao');
+    if (salvo === 'light' || salvo === 'dark') document.documentElement.setAttribute('data-theme', salvo);
+  } catch (e) {}
+
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var k = e.key;
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ' || k === 'Spacebar') { e.preventDefault(); proximo(); }
+    else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp' || k === 'Backspace') { e.preventDefault(); anterior(); }
+    else if (k === 'Home') { e.preventDefault(); mostrar(0); }
+    else if (k === 'End') { e.preventDefault(); mostrar(total - 1); }
+    else if (k === 'n' || k === 'N') { document.body.classList.toggle('com-notas'); }
+    else if (k === 't' || k === 'T') { trocarTema(); }
+    else if (/^[0-9]$/.test(k)) { digitado += k; }
+    else if (k === 'Enter' && digitado) { mostrar(parseInt(digitado, 10) - 1); digitado = ''; }
+    else if (k === 'Escape') { digitado = ''; document.body.classList.remove('com-notas'); }
+  });
+
+  var palco = document.getElementById('palco');
+  palco.addEventListener('click', function (e) {
+    if (window.matchMedia('(max-width: 700px)').matches) return;
+    if (e.target.closest('a, button')) return;
+    var sel = window.getSelection && window.getSelection();
+    if (sel && String(sel).length) return;
+    var r = palco.getBoundingClientRect();
+    if (e.clientX - r.left < r.width / 3) anterior(); else proximo();
+  });
+
+  var x0 = null, y0 = null;
+  palco.addEventListener('touchstart', function (e) {
+    if (e.touches.length !== 1) return;
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+  }, { passive: true });
+  palco.addEventListener('touchend', function (e) {
+    if (x0 === null || window.matchMedia('(max-width: 700px)').matches) { x0 = null; return; }
+    var dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) { if (dx < 0) proximo(); else anterior(); }
+    x0 = null;
+  });
+
+  window.addEventListener('hashchange', function () { mostrar(lerHash()); });
+  mostrar(lerHash());
+})();
+</script>
+</body>
+</html>
