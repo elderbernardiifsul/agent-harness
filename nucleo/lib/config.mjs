@@ -22,12 +22,42 @@ export const PADROES = Object.freeze({
   extensoes: {},
   fuso: 'America/Sao_Paulo',
   sessoes: { prazoDoSinalMin: 120 },
+  pesado: { classes: {} },
 });
 
 const eObjeto = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const eTexto = v => typeof v === 'string' && v.length > 0;
 const eTextoOuNulo = v => v === null || eTexto(v);
 const eListaDeTextos = v => Array.isArray(v) && v.every(eTexto);
+
+const NOME_DE_CLASSE = /^[a-z0-9][a-z0-9-]*$/;
+const MAX_VAGAS = 64;
+
+// `pesado`: só `classes` é lida; chave que começa com `_` é comentário (o init instala `_exemplo`).
+// Devolve a lista de erros ({campo, motivo}) com o campo completo.
+function errosDoPesado(v) {
+  if (!eObjeto(v)) return [{ campo: 'pesado', motivo: 'deve ser um objeto' }];
+  const erros = [];
+  for (const chave of Object.keys(v)) {
+    if (chave.startsWith('_')) continue;
+    if (chave !== 'classes') erros.push({ campo: `pesado.${chave}`, motivo: 'campo desconhecido (vagas e memória são da máquina, no config.json da fila)' });
+  }
+  if (!('classes' in v)) return erros;
+  if (!eObjeto(v.classes)) return [...erros, { campo: 'pesado.classes', motivo: 'deve ser um objeto {nome: {vagas, padroes}}' }];
+  for (const [nome, c] of Object.entries(v.classes)) {
+    const campo = `pesado.classes.${nome}`;
+    if (!NOME_DE_CLASSE.test(nome)) { erros.push({ campo, motivo: 'o nome da classe deve ter só minúsculas, números e hífen' }); continue; }
+    if (!eObjeto(c)) { erros.push({ campo, motivo: 'deve ser um objeto {vagas, padroes}' }); continue; }
+    for (const k of Object.keys(c)) if (k !== 'vagas' && k !== 'padroes') erros.push({ campo: `${campo}.${k}`, motivo: 'campo desconhecido' });
+    if (!(c.vagas === 'todas' || (Number.isInteger(c.vagas) && c.vagas >= 1 && c.vagas <= MAX_VAGAS))) {
+      erros.push({ campo: `${campo}.vagas`, motivo: `deve ser um inteiro de 1 a ${MAX_VAGAS} ou "todas"` });
+    }
+    if (!Array.isArray(c.padroes) || c.padroes.length === 0 || !c.padroes.every(p => typeof p === 'string' && p.trim() !== '')) {
+      erros.push({ campo: `${campo}.padroes`, motivo: 'deve ser uma lista não vazia de comandos (ex.: "npm run build*")' });
+    }
+  }
+  return erros;
+}
 
 // Esquema: campo -> verificador (devolve motivo ou null) ou sub-esquema.
 const ESQUEMA = {
@@ -49,6 +79,7 @@ const ESQUEMA = {
   agentes: v => (eListaDeTextos(v) ? null : 'deve ser uma lista de nomes'),
   extensoes: v => (eObjeto(v) ? null : 'deve ser um objeto'),
   fuso: v => (eTexto(v) ? null : 'deve ser um fuso como America/Sao_Paulo'),
+  pesado: () => null, // conferido à parte (errosDoPesado)
   sessoes: {
     prazoDoSinalMin: v => (Number.isInteger(v) && v >= 1 && v <= 10080 ? null : 'deve ser um número inteiro de minutos, de 1 a 10080'),
   },
@@ -58,6 +89,7 @@ function conferir(obj, esquema, prefixo, erros) {
   for (const chave of Object.keys(obj)) {
     const campo = prefixo + chave;
     if (!(chave in esquema)) { erros.push({ campo, motivo: 'campo desconhecido' }); continue; }
+    if (prefixo === '' && chave === 'pesado') { erros.push(...errosDoPesado(obj[chave])); continue; }
     const regra = esquema[chave];
     if (typeof regra === 'function') {
       const motivo = regra(obj[chave]);

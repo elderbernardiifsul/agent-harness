@@ -22,6 +22,10 @@ test('init cria a estrutura e não faz commit', () => {
     assert.ok(fs.existsSync(path.join(p.raiz, f)), f);
   }
   assert.equal(JSON.parse(ler(p, '.harness/config.json')).projeto, 'loja');
+  // Classes de pesado só como exemplo: a T6 começa desligada.
+  const pesado = JSON.parse(ler(p, '.harness/config.json')).pesado;
+  assert.deepEqual(pesado.classes, {});
+  assert.ok(pesado._exemplo.exclusivo);
   const manifesto = JSON.parse(ler(p, '.harness/nucleo/MANIFEST.json'));
   assert.equal(manifesto.versao, VERSAO);
   assert.match(manifesto.commit, /^[0-9a-f]{40}$/);
