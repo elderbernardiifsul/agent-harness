@@ -505,3 +505,14 @@ test('cd x && a; b: a só roda em x; b roda em x ou na pasta de antes', () => {
   // Com o cwd de entrada já incerto, o cd relativo deixa o de depois desconhecido.
   assert.equal(comandosSimples('cd /w && x || y && cd sub; z', '/r').at(-1).cwd, null);
 });
+test('cd absoluto que deu certo faz as pastas alternativas convergirem; git -C leva as alternativas junto (terceira revisão)', () => {
+  const alt = (t, nome) => { const c = comandosSimples(t, '/r').findLast(x => x.argv[0] === nome); return [c.cwd, c.cwdsAlternativos]; };
+  assert.deepEqual(alt('cd /w && a; cd /w && b; c', 'b'), ['/w', undefined]);
+  assert.deepEqual(alt('cd /w && a; cd /w && b; c', 'c'), ['/w', ['/r']]);
+  assert.deepEqual(alt('cd /w && a; cd /w || exit; c', 'c'), ['/w', undefined]);
+  assert.deepEqual(alt('cd /w && a; cd /x && b', 'b'), ['/x', undefined]);
+  assert.deepEqual(alt('cd /w && a; cd sub && b', 'b'), ['/w/sub', ['/r/sub']]);
+  assert.deepEqual(alt('cd /w; git -C /w x', 'git'), ['/w', undefined]);
+  assert.deepEqual(alt('cd /w; git -C sub x', 'git'), ['/w/sub', ['/r/sub']]);
+  assert.deepEqual(alt('cd /w; env -C /x y', 'y'), ['/x', undefined]);
+});

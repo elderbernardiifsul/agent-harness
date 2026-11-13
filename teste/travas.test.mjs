@@ -497,6 +497,18 @@ test('M6. cd x && a; b: a avaliado só em x, b também na pasta de antes', () =>
   for (const c of ['cd /w && git status; git add -A', 'cd /w && git log && git status; git add -A', 'cd /w && true; git commit -a -m x'])
     assert.equal(av(c).trava, 'T2', c);
 });
+test('M6. cd absoluto (e git -C absoluto) desfaz a pasta alternativa do cd que pode ter falhado (terceira revisão)', () => {
+  const ctxOutro = { ...ctx, topoDe: c => (c?.startsWith('/w') ? '/w' : c?.startsWith('/outro') ? '/outro' : '/r') };
+  for (const c of ['cd /w && git status; cd /w && git add -A', 'cd /w && npm test; cd /w && git add -A && git commit -m x', 'cd /w && git status; git -C /w add -A',
+    'cd /w && git status; cd /w || exit; git add -A', 'cd /w; cd /w && git add -A', 'cd /w; git -C /w add -A', 'cd /w || true; cd /w && git add -A',
+    'cd /w && git status; cd /w && git status; cd /w && git add -A', 'cd /w && git status; cd /w/sub && git add -A', 'cd /w && git status; git -C /w/sub add -A'])
+    assert.ok(av(c).permite, c);
+  assert.ok(avaliar({ tipo: 'comando', comando: 'cd /w && git status; cd /outro && git add -A', cwd: '/r' }, ctxOutro).permite);
+  // O cd que pode falhar de novo, o relativo e o git -C relativo continuam vendo a pasta de antes.
+  for (const c of ['cd /w && git status; cd /w; git add -A', 'cd /w && git status; cd sub && git add -A', 'cd /w && git status; git -C sub add -A',
+    'cd /w && git status; cd /w && true; git add -A', 'cd /w || true; cd /w || true; git add -A', 'cd /w && git status; cd /w || true; git add -A'])
+    assert.equal(av(c).trava, 'T2', c);
+});
 
 // ---- pendência 11: merge de PR pela API
 test('T5: gh api …/pulls/<n>/merge com PUT é avaliado como gh pr merge (pendência 11)', () => {
