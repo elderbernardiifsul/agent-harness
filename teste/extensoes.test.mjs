@@ -277,7 +277,8 @@ test('ciclo: depoisDeAbrir, coluna no quadro, antesDeFechar recusa sem mexer em 
   assert.match(recusa.erro, /^Recusado: a extensão eco não deixa fechar a frente as-1 carrinho: a frente está presa pelo eco\nFaça: rode ah eco-marcar carrinho solta\n$/);
   assert.ok(fs.existsSync(wt));
   assert.equal(frenteDoTeste(p, 'carrinho').estado, 'ativa');
-  assert.equal(frenteDoTeste(p, 'carrinho').fechamentoComentado, undefined);
+  assert.ok(!fs.existsSync(path.join(dirDoTeste(p), 'fechamentos', 'carrinho.json')), 'marca de comentário de fechamento');
+  assert.equal(frenteDoTeste(p, 'carrinho').fechando, undefined);
   assert.ok(!lerEventos(dirDoTeste(p)).some(e => e.tipo === 'fechamento'));
   const noTicket = p.ghChamadas().slice(antes).filter(c => c.argv[0] === 'issue' && ['comment', 'edit'].includes(c.argv[1]));
   assert.deepEqual(noTicket, [], 'a recusa veio depois de mexer no ticket');

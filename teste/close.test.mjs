@@ -662,7 +662,8 @@ test('worktree trancado: close recusa antes de mexer nos tickets', t => {
   assert.equal(r.codigo, 1, r.saida);
   assert.match(r.erro, /^Recusado: O worktree .* está trancado no git \(teste\); o git não o remove\.\nFaça: .*git worktree unlock /);
   assert.equal(comentarios(p).length, antes);
-  assert.equal(lerFrenteDoTeste(p, 'carrinho').fechamentoComentado, undefined);
+  assert.ok(!fs.existsSync(path.join(p.estado, 'loja', 'fechamentos', 'carrinho.json')), 'marca de comentário de fechamento');
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').fechando, undefined);
   assert.equal(p.git(['worktree', 'unlock', wt]).codigo, 0);
   const c = p.ah(['close']);
   assert.equal(c.codigo, 0, c.erro);

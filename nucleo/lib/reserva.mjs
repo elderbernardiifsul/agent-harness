@@ -6,7 +6,7 @@
 // ticket (o número do comentário): fica só quem tem o primeiro marcador em todos os seus tickets.
 import { createHash } from 'node:crypto';
 import { comentar, criarRotulo, editarTicket, gh } from './github.mjs';
-import { ENVIADO, NA_FILA, PERDIDO, comentarOuEnfileirar, editarOuEnfileirar, enfileirar } from './pendentes.mjs';
+import { ENVIADO, NA_FILA, PERDIDO, comentarOuEnfileirar, editarOuEnfileirar, enfileirar, pendentesDoTicket } from './pendentes.mjs';
 import { idCurto, listarSessoes } from './sessao.mjs';
 
 const ORDEM = ['id', 'nome', 'ramo', 'estado', 'login', 'sessao', 'tickets', 'plano', 'abertaPor', 'abertaEm'];
@@ -366,8 +366,9 @@ export function avisarDaMarcacao(r, avisar) {
 // Fechamento: comentário com o resumo e marcador `fechamento` (livre); tira responsáveis e rótulo da reserva.
 // Os responsáveis a tirar de cada ticket: os da reserva local e os que os marcadores do ticket mostram para esta
 // frente (relido antes de comentar: quem a retomou em outra máquina e passou de volta), menos os logins que outra
-// frente do ticket segura. Sem releitura, só os da reserva local.
-export function liberarTickets({ frente, resumo, login, rotulo, dirEstado, sessao = null }, o = {}) {
+// frente do ticket segura. Sem releitura, só os da reserva local. `pular`: tickets que já têm o comentário de
+// fechamento (de um close que parou no meio); neles só se repete a edição.
+export function liberarTickets({ frente, resumo, login, rotulo, dirEstado, sessao = null, pular = [] }, o = {}) {
   const daReserva = frente.reserva?.logins ?? [];
   const porTicket = new Map();
   for (const n of frente.reserva?.tickets ?? []) {
@@ -388,6 +389,7 @@ export function liberarTickets({ frente, resumo, login, rotulo, dirEstado, sessa
   const evento = { sessao, frente: frente.nome };
   const r = { comentariosNaFila: [], comentariosPerdidos: [], edicoesNaFila: [], edicoesPerdidas: [] };
   for (const n of frente.tickets ?? []) {
+    if (pular.includes(n)) continue;
     anotar(comentarOuEnfileirar(dirEstado, n, corpo, { ...o, evento }), n, r.comentariosNaFila, r.comentariosPerdidos);
   }
   if (frente.reserva) {
@@ -399,6 +401,24 @@ export function liberarTickets({ frente, resumo, login, rotulo, dirEstado, sessa
     }
   }
   return r;
+}
+
+// Tickets da frente que já têm o comentário de fechamento dela (de um close que parou no meio do comentário): o
+// último marcador do id no ticket, relido no servidor, é `fechamento`, ou o comentário espera na fila desta máquina.
+// Ticket que não existe mais não recebe comentário: conta como feito. Devolve {ok: true, feitos} ou {ok: false, motivo}.
+export function ticketsJaFechados({ frente, dirEstado }, o = {}) {
+  const doFechamento = op => op.tipo === 'comentario' && lerMarcadores(op.corpo).some(m => m.tipo === 'fechamento' && m.campos.id === frente.id);
+  const feitos = [];
+  for (const n of frente.tickets ?? []) {
+    let naFila = false;
+    try { naFila = pendentesDoTicket(dirEstado, n).some(doFechamento); } catch { naFila = false; }
+    if (naFila) { feitos.push(n); continue; }
+    const r = lerTicket(n, o);
+    if (!r.ok && r.naoExiste) { feitos.push(n); continue; }
+    if (!r.ok) return { ok: false, motivo: `#${n}: ${r.motivo}` };
+    if (r.ticket.marcadores.filter(m => m.campos.id === frente.id).at(-1)?.tipo === 'fechamento') feitos.push(n);
+  }
+  return { ok: true, feitos };
 }
 
 // Desfaz uma reserva já feita (o open que reservou e depois não criou o worktree). Devolve o texto do que fez.

@@ -7,7 +7,8 @@ import { frentesDa, gravarFrente, lerFrente, linhaDoHistorico, listarFrentesTole
 import { existeRamo, ramoAtual, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
 import { reenviarComAviso, temDoTicket } from '../lib/pendentes.mjs';
-import { confirmarRetomada, desfazerAbertura, liberarTickets, quemTemAFrente, sessoesDaquiDaFrente } from '../lib/reserva.mjs';
+import { apagarFechamento, fechamentoDa, gravarFechamento } from '../lib/fechamento.mjs';
+import { confirmarRetomada, desfazerAbertura, liberarTickets, quemTemAFrente, sessoesDaquiDaFrente, ticketsJaFechados } from '../lib/reserva.mjs';
 import { gravarSessao, idCurto, lerSessao, tocarSinal } from '../lib/sessao.mjs';
 import { aberturaParada, fechamentoEmCurso, inicioDoProcesso, prazoMs, vidaDaSessao } from '../lib/vida.mjs';
 
@@ -19,6 +20,10 @@ const ARQUIVO_DO_HISTORICO = 'docs/agents/historico-das-frentes.md';
 const MAX_LISTA = 20;
 // Prazo do push que apaga o ramo remoto da frente: rede travada não segura o close.
 const PRAZO_DO_PUSH_MS = 20000;
+// Espera pela trava `frentes` depois do comentário de fechamento (fase 3 e retirada da marca), como a do atualizar:
+// o close que já comentou não deve cair por um comando curto de outra sessão. AH_CLOSE_ESPERA_DA_TRAVA_MS troca o
+// valor (testes).
+const ESPERA_DA_TRAVA_MS = 30000;
 // Recusa depois do comentário de fechamento: o close seguinte termina sem comentar de novo.
 const JA_COMENTADO = 'os tickets já receberam o comentário de fechamento, e o próximo ah close não comenta de novo';
 
@@ -71,6 +76,7 @@ export async function executar(args, amb) {
   const g = (a, cwd = raiz) => git(a, { cwd, env });
   const base = cfg.git.base;
   const remoto = cfg.git.remoto;
+  const esperaDaTrava = Number(env.AH_CLOSE_ESPERA_DA_TRAVA_MS) > 0 ? Number(env.AH_CLOSE_ESPERA_DA_TRAVA_MS) : ESPERA_DA_TRAVA_MS;
 
   // 1. Recusas que não dependem do estado.
   const t = git(['rev-parse', '--show-toplevel'], { cwd: amb.cwd, env });
@@ -311,7 +317,7 @@ export async function executar(args, amb) {
       const relida = lerFrente(dirEstado, frente.nome);
       if (relida?.extensoes !== undefined) frente.extensoes = relida.extensoes;
     } catch { /* fica o que já estava no objeto */ }
-    if (frente.estado === 'passada' && (frente.tickets ?? []).length && !frente.fechamentoComentado) {
+    if (frente.estado === 'passada' && (frente.tickets ?? []).length && fechamentoDa(dirEstado, frente)?.situacao !== 'comentado') {
       const presos = frente.tickets.filter(n => temDoTicket(dirEstado, n));
       if (presos.length) {
         throw recusa(`Não fechei ${frente.nome}: há operações desta máquina na fila para ${presos.map(n => `#${n}`).join(', ')} que precisam sair antes.`,
@@ -338,10 +344,25 @@ export async function executar(args, amb) {
   let nosTickets = 'Não comentei nem mexi nos tickets';
   // Este close terminou o passo dos tickets (comentou, ou não havia o que comentar).
   let comentou = false;
+  // O comentário de fechamento de um close anterior (marca em fechamentos/): `comentado` em todos os tickets, ou
+  // `jaComentados`, os tickets onde saiu o de um close que parou no meio dele (marca `comentando`).
+  const marca = temTickets ? fechamentoDa(dirEstado, frente) : null;
+  let comentado = marca?.situacao === 'comentado';
+  let jaComentados = [];
   let primeira;
+  const oGh = { cwd: raiz, env, avisar: amb.avisar };
   try {
-    if (frente.estado === 'passada' && temTickets && !frente.fechamentoComentado) {
-      const oGh = { cwd: raiz, env, avisar: amb.avisar };
+    if (marca?.situacao === 'comentando') {
+      const r = ticketsJaFechados({ frente, dirEstado }, oGh);
+      if (!r.ok) {
+        throw recusa(`Não fechei ${frente.nome}: um ah close anterior parou no meio do comentário de fechamento, e preciso do GitHub para saber em que tickets ele saiu (${r.motivo}).`,
+          `tente de novo com rede: ah close ${frente.nome}; nada foi apagado`);
+      }
+      jaComentados = r.feitos;
+      comentado = frente.tickets.every(n => r.feitos.includes(n));
+    }
+    // O close que comentou o fechamento (em todos os tickets ou em parte) já conferiu quem tem a frente e a tomou.
+    if (frente.estado === 'passada' && temTickets && !comentado && !jaComentados.length) {
       const login = loginAtual(oGh) ?? frente.abertaPor ?? 'local';
       const rotulo = cfg.github.rotuloDeReserva;
       const semRede = motivo => recusa(`Não fechei ${frente.nome}: preciso do GitHub para confirmar que ninguém retomou ${frente.nome} (${motivo}).`,
@@ -373,12 +394,14 @@ export async function executar(args, amb) {
     primeira = resumo.split('\n').map(l => l.trim()).find(Boolean) ?? 'sem resumo';
 
     // 3. Tickets: comentário de fechamento (livre) e, com reserva, sai responsável e rótulo. Não fecha ticket.
-    // Uma vez só, mesmo se o close for repetido.
-    if (!frente.fechamentoComentado && !soLocal) {
+    // Uma vez só, mesmo se o close for repetido: a marca em fechamentos/ é gravada antes (`comentando`) e depois
+    // (`comentado`) do comentário, fora da trava, e sobrevive a recusa, trava ocupada e processo morto.
+    if (!comentado && !soLocal) {
       if (temTickets) {
-        const oGh = { cwd: raiz, env, avisar: amb.avisar };
+        gravarFechamento(dirEstado, frente, 'comentando');
         const login = loginAtual(oGh) ?? frente.abertaPor ?? 'local';
-        const r = liberarTickets({ frente, resumo, login, rotulo: cfg.github.rotuloDeReserva, dirEstado, sessao: amb.sessaoId }, oGh);
+        const r = liberarTickets({ frente, resumo, login, rotulo: cfg.github.rotuloDeReserva, dirEstado, sessao: amb.sessaoId, pular: jaComentados }, oGh);
+        gravarFechamento(dirEstado, frente, 'comentado');
         for (const ticket of r.comentariosNaFila) {
           amb.avisar(`Aviso: não consegui comentar no ticket #${ticket}; o comentário ficou na fila; sai no próximo comando com rede.\n`);
         }
@@ -390,43 +413,54 @@ export async function executar(args, amb) {
       comentou = true;
     }
   } catch (e) {
-    await comTrava(dirEstado, 'frentes', async () => tirarMarca(), { venceMs: 120000 });
+    // A marca sai sob a trava; se nem assim, fica a de um processo que vai morrer, que não vale.
+    try { await comTrava(dirEstado, 'frentes', async () => tirarMarca(), { esperaMs: esperaDaTrava, venceMs: 120000 }); } catch { /* vale a recusa original */ }
     throw e;
   }
+  // Os tickets já têm o comentário de fechamento (deste close ou de um anterior): toda recusa daqui em diante o diz.
+  const ticketsComentados = temTickets && !soLocal && (comentou || comentado);
+  const depoisDoComentario = ticketsComentados ? `; ${JA_COMENTADO}` : '; nada foi apagado';
 
-  // Fase 3, sob a trava: reconfere, remove worktree e ramo, grava o histórico e tira o registro.
-  const fase3 = await comTrava(dirEstado, 'frentes', async () => {
-    const relida = lerFrente(dirEstado, frente.nome);
-    if (!relida || relida.id !== frente.id || !eDeste(relida) || relida.estado !== frente.estado) {
-      if (relida?.id === frente.id && comentou) {
-        relida.fechamentoComentado = true;
-        if (eDeste(relida)) delete relida.fechando;
-        gravarFrente(dirEstado, relida);
+  // Fase 3, sob a trava (com espera longa: os tickets já podem ter o comentário): reconfere, remove worktree e
+  // ramo, grava o histórico e tira o registro.
+  let dentroDaFase3 = false;
+  let fase3;
+  try {
+    fase3 = await comTrava(dirEstado, 'frentes', async () => {
+      dentroDaFase3 = true;
+      const relida = lerFrente(dirEstado, frente.nome);
+      if (!relida || relida.id !== frente.id || !eDeste(relida) || relida.estado !== frente.estado) {
+        tirarMarca();
+        // A marca do comentário é do id desta frente: sem o registro dela, é sobra.
+        if (relida?.id !== frente.id) apagarFechamento(dirEstado, frente.nome, frente.id);
+        throw recusa(`A frente ${frente.nome} mudou durante o fechamento (agora: ${relida ? `${relida.id}, ${relida.estado}` : 'sem registro'}).`,
+          `rode ah board para ver como ela está${depoisDoComentario}`);
       }
-      throw recusa(`A frente ${frente.nome} mudou durante o fechamento (agora: ${relida ? `${relida.id}, ${relida.estado}` : 'sem registro'}).`,
-        `rode ah board para ver como ela está${comentou && temTickets ? `; ${JA_COMENTADO}` : '; nada foi apagado'}`);
-    }
-    // Vale o registro relido (notas e campos de extensão gravados no meio), com o que a fase de rede decidiu.
-    frente = { ...relida, reserva: frente.reserva, ...(comentou ? { fechamentoComentado: true } : {}) };
-    if (comentou) gravarFrente(dirEstado, frente);
-    try {
-      return await fecharSobTrava();
-    } catch (e) {
-      tirarMarca();
-      throw e;
-    }
-  }, { venceMs: 120000 });
+      // Vale o registro relido (notas, dona e campos de extensão gravados no meio), com a reserva que a fase de rede decidiu.
+      frente = { ...relida, reserva: frente.reserva };
+      if (comentou) gravarFrente(dirEstado, frente);
+      try {
+        return await fecharSobTrava();
+      } catch (e) {
+        tirarMarca();
+        throw e;
+      }
+    }, { esperaMs: esperaDaTrava, venceMs: 120000 });
+  } catch (e) {
+    if (!e?.travaPresa || dentroDaFase3) throw e;
+    throw recusa(`${e.message}; o fechamento da frente ${frente.id} ${frente.nome} parou antes de remover o worktree.`,
+      `${e.proximo}; depois rode ah close ${frente.nome} de novo${depoisDoComentario}`);
+  }
 
   async function fecharSobTrava() {
     // Recusa daqui em diante: os tickets já podem ter o comentário de fechamento; o close seguinte não comenta de novo.
-    const jaComentado = Boolean(frente.fechamentoComentado) && temTickets && !soLocal;
-    const depois = jaComentado ? `; ${JA_COMENTADO}` : '; nada foi apagado';
+    const depois = depoisDoComentario;
     if (ramoAtual(raiz, env) !== base) throw foraDaBase(depois);
     // 4. Reconfere (os comentários demoram) e remove o worktree: depois daqui o que falhar vira aviso.
     const refs = lerRefs(frente);
     const { wt, temWt, refRamo, refRemoto, temRamo, temRamoRemoto, soNoRemoto } = refs;
     const novos = conferir(frente, refs);
-    if (novos.length) recusarProblemas(frente, novos, jaComentado ? `\n(${JA_COMENTADO})` : '');
+    if (novos.length) recusarProblemas(frente, novos, ticketsComentados ? `\n(${JA_COMENTADO})` : '');
     if (temWt) {
       // Nunca com --force: o remove simples já apaga os ignorados, e só falha com alteração ou arquivo novo, que
       // pode ser trabalho escrito depois da reconferência.
@@ -467,6 +501,7 @@ export async function executar(args, amb) {
 
     // 6. Estado.
     removerFrente(dirEstado, frente.nome);
+    apagarFechamento(dirEstado, frente.nome, frente.id);
     // O foco que apontava para a frente fechada passa para a frente mais nova que sobrou à sessão (ou nenhuma).
     const soltarFoco = s => {
       if (!s || (s.frente?.nome ?? s.frente) !== frente.nome) return;
