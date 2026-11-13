@@ -7,7 +7,7 @@
 import { createHash } from 'node:crypto';
 import { comentar, criarRotulo, editarTicket, gh } from './github.mjs';
 import { ENVIADO, NA_FILA, PERDIDO, comentarOuEnfileirar, editarOuEnfileirar, enfileirar } from './pendentes.mjs';
-import { idCurto } from './sessao.mjs';
+import { idCurto, listarSessoes } from './sessao.mjs';
 
 const ORDEM = ['id', 'nome', 'ramo', 'estado', 'login', 'sessao', 'tickets', 'plano', 'abertaPor', 'abertaEm'];
 export const ESTADO_DO_TIPO = { frente: 'ativa', retomada: 'ativa', tomada: 'ativa', passagem: 'passada', fechamento: 'livre', desistencia: 'livre' };
@@ -364,7 +364,20 @@ export function avisarDaMarcacao(r, avisar) {
 }
 
 // Fechamento: comentário com o resumo e marcador `fechamento` (livre); tira responsáveis e rótulo da reserva.
+// Os responsáveis a tirar de cada ticket: os da reserva local e os que os marcadores do ticket mostram para esta
+// frente (relido antes de comentar: quem a retomou em outra máquina e passou de volta), menos os logins que outra
+// frente do ticket segura. Sem releitura, só os da reserva local.
 export function liberarTickets({ frente, resumo, login, rotulo, dirEstado, sessao = null }, o = {}) {
+  const daReserva = frente.reserva?.logins ?? [];
+  const porTicket = new Map();
+  for (const n of frente.reserva?.tickets ?? []) {
+    const lido = lerTicket(n, o);
+    if (!lido.ok) continue;
+    const doTicket = situacaoDaFrente(lido.ticket.marcadores.filter(m => m.campos.id === frente.id)).logins;
+    const deOutras = new Set(frentesAtivas(lido.ticket).filter(f => f.id !== frente.id).map(f => f.login));
+    porTicket.set(n, [...new Set([...daReserva, ...doTicket])].filter(l => !deOutras.has(l) || daReserva.includes(l)));
+  }
+  const logins = n => porTicket.get(n) ?? daReserva;
   const marcador = montarMarcador('fechamento', camposDaFrente(frente, 'livre', login, sessao));
   const corpo = `Frente ${frente.id} (${frente.nome}) fechada.\n\n${resumo}\n\n${marcador}\n`;
   const evento = { sessao, frente: frente.nome };
@@ -373,8 +386,8 @@ export function liberarTickets({ frente, resumo, login, rotulo, dirEstado, sessa
     anotar(comentarOuEnfileirar(dirEstado, n, corpo, { ...o, evento }), n, r.comentariosNaFila, r.comentariosPerdidos);
   }
   if (frente.reserva) {
-    const args = [...(frente.reserva.logins ?? []).flatMap(l => ['--remove-assignee', l]), '--remove-label', rotulo];
     for (const n of frente.reserva.tickets ?? []) {
+      const args = [...logins(n).flatMap(l => ['--remove-assignee', l]), '--remove-label', rotulo];
       anotar(editarOuEnfileirar(dirEstado, n, args, { ...o, evento }), n, r.edicoesNaFila, r.edicoesPerdidas);
     }
   }
@@ -503,6 +516,15 @@ export function acharPassagem({ nome, tickets = [], rotulo }, o = {}) {
   return { ok: true, passagem: { ...dadosDoMarcador(s.ultimo, id, nome, ondeApareceu('passagem')), logins: s.logins, login: loginDo(s.ultimo) } };
 }
 
+// Sessões desta máquina que podem ter deixado a frente ativa nos tickets sem passagem (para a situação 'daqui'):
+// `extras` (o `passadaPor` da frente, ou a dona morta no takeover) e as registradas aqui que estão encerradas
+// (`fim`) ou cuja frente em foco é esta. Uma sessão viva daqui que trabalha em outra frente não conta.
+export function sessoesDaquiDaFrente(dirEstado, frente, extras = []) {
+  const daqui = listarSessoes(dirEstado).sessoes
+    .filter(s => s.fim || (s.frente?.nome ?? s.frente) === frente.nome).map(s => s.id);
+  return [...new Set([...extras.filter(x => typeof x === 'string' && x), ...daqui])];
+}
+
 // Quem segura a frente (o `ativa` de acharPassagem) é esta sessão? Pelo `sid`; sem ele, login e sessão curta.
 export const ativaDaSessao = (ativa, { login, sessao }) => Boolean(ativa)
   && marcadorDaSessao({ campos: { sid: ativa.sid ?? undefined, login: ativa.login, sessao: ativa.sessao } }, { login, sessao });
@@ -521,7 +543,8 @@ export function quemTemAFrente({ frente, login, sessao, rotulo, sessoesDaqui = [
   if (a.passagem) return a.passagem.id === frente.id ? { situacao: 'passada', passagem: a.passagem } : { situacao: 'outra', login: a.passagem.login, id: a.passagem.id, passada: true };
   if (a.ativa) {
     if (a.ativa.id === frente.id && ativaDaSessao(a.ativa, { login, sessao })) return { situacao: 'propria', proprios: [a.ativa.numero] };
-    if (a.ativa.id === frente.id && sessoesDaqui.some(id => id && ativaDaSessao(a.ativa, { login: a.ativa.login, sessao: id }))) return { situacao: 'daqui' };
+    // Só pelo `sid`: marcador antigo, sem ele, não casa pelos 8 caracteres neste caminho.
+    if (a.ativa.id === frente.id && a.ativa.sid && sessoesDaqui.some(id => id && sidDe(id) === a.ativa.sid)) return { situacao: 'daqui' };
     return { situacao: 'outra', login: a.ativa.login, id: a.ativa.id };
   }
   return { situacao: 'solta' };
@@ -533,13 +556,25 @@ export function quemTemAFrente({ frente, login, sessao, rotulo, sessoesDaqui = [
 // uma retomada anterior desta sessão vêm em `proprios`); sem url, por login e sessão. Quem perde desfaz pela
 // fila: comentário sem marcador (não muda o estado da frente) e sai de responsável. Quem falha sem perder relê:
 // se ainda segura a frente, comenta de novo a `passagem` (com os dados da frente) para ela voltar a passada.
-// Devolve {ok: true, logins} | {ok: false, vencedor?: {login}, motivo, como}.
+// A retomada também perde quando, relido no servidor, o estado da frente antes do primeiro marcador dela é livre
+// (um fechamento chegou entre a conferência e o comentário): então desfaz com `desistencia`, para o ticket voltar a
+// livre, e tira o responsável e o rótulo que ela pôs.
+// Quem entra de responsável (e com o rótulo) decide-se pelos tickets relidos, não pela reserva local.
+// Devolve {ok: true, logins} | {ok: false, vencedor?: {login}, fechada?: true, motivo, como}.
 // `tipo`: 'retomada' ou 'tomada' (quando quem segura a frente nos tickets é outra sessão desta máquina).
 export function confirmarRetomada({ frente, login, sessao, para = null, rotulo, dirEstado, proprios = [], tipo = 'retomada', esperaMs = ESPERA_DA_RELEITURA_MS }, o = {}) {
   const tickets = frente.tickets ?? [];
   const reservaTickets = frente.reserva?.tickets ?? tickets;
   const antes = frente.reserva?.logins ?? [];
-  const entra = !antes.includes(login);
+  // O que cada ticket da reserva mostra agora: falta este login de responsável, ou o rótulo?
+  const faltam = [];
+  const semMim = new Set();
+  for (const n of reservaTickets) {
+    const r = lerTicket(n, o);
+    if (!r.ok) return { ok: false, motivo: `não consegui ler #${n} para retomar (${r.motivo})`, como: 'nada foi feito nos tickets' };
+    if (!r.ticket.responsaveis.includes(login)) semMim.add(n);
+    if (!r.ticket.responsaveis.includes(login) || !r.ticket.rotulos.includes(rotulo)) faltam.push(n);
+  }
   const corpo = corpoDaMarcacao({ frente, tipo, texto: `Frente ${frente.id} (${frente.nome}) ${tipo === 'tomada' ? 'tomada' : 'retomada'} por @${login}${paraQuem(para)}.`, login, sessao });
   const meus = new Set(proprios);
   let semUrl = false;
@@ -549,12 +584,28 @@ export function confirmarRetomada({ frente, login, sessao, para = null, rotulo, 
   // antigo sem `sid`, só sem url, por login e sessão curta.
   const eMeu = m => Boolean(m) && (m.tipo === 'retomada' || m.tipo === 'tomada')
     && (meus.has(m.ordem) || (m.campos.sid ? m.campos.sid === sidDe(sessao) : semUrl && marcadorDaSessao(m, { login, sessao })));
-  // Situação relida e se algum marcador desta retomada já aparece.
+  // Situação relida, se algum marcador desta retomada já aparece e o estado da frente antes do primeiro deles.
   const reler = () => {
     const lidos = lerOsTickets(tickets, o);
     if (!lidos.ok) return null;
     const ms = marcadoresDoId(lidos.porTicket, frente.id);
-    return { ...situacaoDaFrente(ms), visto: ms.some(eMeu) };
+    const primeiro = ms.findIndex(eMeu);
+    return { ...situacaoDaFrente(ms), visto: primeiro >= 0, antes: primeiro >= 0 ? situacaoDaFrente(ms.slice(0, primeiro)).estado : null };
+  };
+  // A frente foi fechada antes desta retomada: `desistencia` (volta a livre) e tira o responsável e o rótulo
+  // que ela pôs (o rótulo só se nenhuma outra frente segura o ticket).
+  const desfazerFechada = motivo => {
+    const situacoes = [];
+    const evento = { sessao, frente: frente.nome };
+    const corpoLivre = corpoDaMarcacao({ frente, tipo: 'desistencia', texto: `Retomada da frente ${frente.id} (${frente.nome}) por @${login} desfeita: ${motivo}.`, login, sessao });
+    for (const n of comentados) situacoes.push(comentarOuEnfileirar(dirEstado, n, corpoLivre, { ...o, evento }));
+    for (const n of editados) {
+      const lido = lerTicket(n, o);
+      const outras = lido.ok ? frentesAtivas(lido.ticket).filter(f => f.id !== frente.id) : [{}];
+      const args = [...(semMim.has(n) ? ['--remove-assignee', login] : []), ...(outras.length ? [] : ['--remove-label', rotulo])];
+      if (args.length) situacoes.push(editarOuEnfileirar(dirEstado, n, args, { ...o, evento }));
+    }
+    return comoDesfez(contar(situacoes));
   };
   const desfazer = (motivo, vencedor = null) => {
     const situacoes = [];
@@ -568,11 +619,11 @@ export function confirmarRetomada({ frente, login, sessao, para = null, rotulo, 
     for (const n of alvos) situacoes.push(comentarOuEnfileirar(dirEstado, n, corpoDesfeito, { ...o, evento }));
     // Sai de responsável só se entrou agora e quem ficou com a frente não é o mesmo login.
     if (vencedor?.login !== login) {
-      for (const n of editados) situacoes.push(editarOuEnfileirar(dirEstado, n, ['--remove-assignee', login], { ...o, evento }));
+      for (const n of editados.filter(x => semMim.has(x))) situacoes.push(editarOuEnfileirar(dirEstado, n, ['--remove-assignee', login], { ...o, evento }));
     }
     return comoDesfez(contar(situacoes));
   };
-  if (entra && reservaTickets.length && !criarRotulo(rotulo, o)) {
+  if (faltam.length && !criarRotulo(rotulo, o)) {
     return { ok: false, motivo: `não consegui falar com o GitHub para retomar (o rótulo ${rotulo} não foi criado)`, como: 'nada foi feito nos tickets' };
   }
   for (const n of tickets) {
@@ -583,13 +634,11 @@ export function confirmarRetomada({ frente, login, sessao, para = null, rotulo, 
     if (numero === null) semUrl = true;
     else meus.add(numero);
   }
-  if (entra) {
-    for (const n of reservaTickets) {
-      if (!editarTicket(n, ['--add-assignee', login, '--add-label', rotulo], o)) {
-        return { ok: false, motivo: `não consegui pôr @${login} de responsável em #${n}`, como: desfazer('o GitHub falhou no meio da retomada') };
-      }
-      editados.push(n);
+  for (const n of faltam) {
+    if (!editarTicket(n, ['--add-assignee', login, '--add-label', rotulo], o)) {
+      return { ok: false, motivo: `não consegui pôr @${login} de responsável em #${n}`, como: desfazer('o GitHub falhou no meio da retomada') };
     }
+    editados.push(n);
   }
   let s = null;
   for (let tentativa = 0; tentativa < 2; tentativa++) {
@@ -601,10 +650,14 @@ export function confirmarRetomada({ frente, login, sessao, para = null, rotulo, 
     break;
   }
   if (!s) return { ok: false, motivo: 'não consegui confirmar a retomada (o comentário não apareceu na releitura)', como: desfazer('não consegui confirmar a retomada') };
+  if (s.antes !== 'passada' && s.antes !== 'ativa') {
+    const motivo = `a frente ${frente.id} foi fechada antes desta retomada`;
+    return { ok: false, fechada: true, motivo, como: desfazerFechada(motivo) };
+  }
   if (!eMeu(s.segura)) {
     const quem = { login: loginDo(s.segura) };
     const motivo = `@${quem.login} retomou antes`;
     return { ok: false, vencedor: quem, motivo, como: desfazer(motivo, quem) };
   }
-  return { ok: true, logins: entra ? [...antes, login] : [...antes] };
+  return { ok: true, logins: [...new Set([...antes, login])] };
 }

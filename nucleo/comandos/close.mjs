@@ -6,8 +6,8 @@ import { frentesDa, gravarFrente, lerFrente, linhaDoHistorico, listarFrentesTole
 import { existeRamo, ramoAtual, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
 import { reenviarComAviso, temDoTicket } from '../lib/pendentes.mjs';
-import { confirmarRetomada, desfazerAbertura, liberarTickets, quemTemAFrente } from '../lib/reserva.mjs';
-import { gravarSessao, idCurto, lerSessao, listarSessoes, tocarSinal } from '../lib/sessao.mjs';
+import { confirmarRetomada, desfazerAbertura, liberarTickets, quemTemAFrente, sessoesDaquiDaFrente } from '../lib/reserva.mjs';
+import { gravarSessao, idCurto, lerSessao, tocarSinal } from '../lib/sessao.mjs';
 import { aberturaParada, prazoMs, vidaDaSessao } from '../lib/vida.mjs';
 
 export const descricao = 'fecha a frente da sessão sem perder trabalho';
@@ -240,7 +240,7 @@ export async function executar(args, amb) {
       const rotulo = cfg.github.rotuloDeReserva;
       const semRede = motivo => recusa(`Não fechei ${frente.nome}: preciso do GitHub para confirmar que ninguém retomou ${frente.nome} (${motivo}).`,
         `tente de novo com rede: ah close ${frente.nome}; nada foi apagado`);
-      const sessoesDaqui = [...listarSessoes(dirEstado).sessoes.map(x => x.id), frente.passadaPor];
+      const sessoesDaqui = sessoesDaquiDaFrente(dirEstado, frente, [frente.passadaPor]);
       const q = quemTemAFrente({ frente, login, sessao: amb.sessaoId, rotulo, sessoesDaqui }, oGh);
       if (q.situacao === 'sem-rede') throw semRede(q.motivo);
       if (q.situacao === 'outra') soLocal = `a frente ${q.id} está ativa com @${q.login} em outra máquina`;
@@ -249,6 +249,7 @@ export async function executar(args, amb) {
         const tipo = q.situacao === 'daqui' ? 'tomada' : 'retomada';
         const r = confirmarRetomada({ frente, login, sessao: amb.sessaoId, rotulo, dirEstado, proprios: q.proprios ?? [], tipo }, oGh);
         if (!r.ok && r.vencedor) soLocal = `a frente ${frente.id} foi retomada antes por @${r.vencedor.login} em outra máquina (${r.como})`;
+        else if (!r.ok && r.fechada) soLocal = `${r.motivo}, em outra máquina (${r.como})`;
         else if (!r.ok) throw semRede(`${r.motivo}; ${r.como}`);
         else frente.reserva = { ...(frente.reserva ?? { tickets: [...frente.tickets] }), logins: r.logins };
       }

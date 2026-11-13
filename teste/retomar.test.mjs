@@ -513,3 +513,61 @@ test('Q1 (reprodução da revisão): handoff parado na passagem, retomada local 
   assert.match(ra.erro, /na fila para #1 que precisam sair antes/);
   assert.equal(rq.codigo, 0, rq.erro);
 });
+
+// ---- Consertos da revisão da tarefa 8, rodada 3 ----
+
+test('rodada 3, item 1: retomada que chega depois de um fechamento perde, desfaz e deixa o ticket livre', async t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  assert.equal(q.ah(['open', 'carrinho']).codigo, 0);
+  assert.equal(q.ah(['handoff']).codigo, 0);
+  const a = await paradoNoComentario(t, p, ['open', 'carrinho'], 'ah:retomada', { AH_SESSAO: 'sessao-b-0002' });
+  const rq = q.ah(['close', 'carrinho']);
+  assert.equal(rq.codigo, 0, rq.erro);
+  const ra = await a.soltar();
+  assert.equal(ra.codigo, 1, ra.saida);
+  assert.match(ra.erro, /foi fechada/);
+  assert.match(ra.erro, /Faça: .*ah close carrinho/);
+  assert.deepEqual([lerFrenteDoTeste(p, 'carrinho').estado, lerFrenteDoTeste(p, 'carrinho').dona], ['passada', null]);
+  const tk = p.ghTicket(1);
+  assert.deepEqual(tk.assignees, []);
+  assert.ok(!tk.labels.includes('em-andamento'), tk.labels.join(','));
+  assert.deepEqual(acharPassagem({ nome: 'carrinho', tickets: [1], rotulo: 'em-andamento' }, { cwd: p.raiz, env: p.env }), { ok: true, passagem: null });
+});
+
+test('rodada 3, item 1: quem retoma volta a ser responsável pelo que o ticket mostra, não pela reserva local', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  p.ghSemear(1, { assignees: [], labels: [] });
+  const r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.deepEqual(p.ghTicket(1).assignees, ['ana-souza']);
+  assert.ok(p.ghTicket(1).labels.includes('em-andamento'));
+});
+
+test('rodada 3, item 2: sessão registrada aqui que trabalha em outra frente não faz a frente "daqui"', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  assert.equal(q.ah(['open', 'carrinho']).codigo, 0);
+  assert.equal(p.ah(['whoami'], { env: { AH_SESSAO: 'sessao-c-0003' } }).codigo, 0);
+  const r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /ativa com @carla-dias em outra máquina/);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'passada');
+});
+
+test('rodada 3, item 3: close depois de ida e volta tira todos os responsáveis que os marcadores mostram', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  assert.equal(q.ah(['open', 'carrinho']).codigo, 0);
+  assert.equal(q.ah(['handoff']).codigo, 0);
+  assert.deepEqual(p.ghTicket(1).assignees.sort(), ['ana-souza', 'carla-dias']);
+  const r = p.ah(['close', 'carrinho']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Frente as-1 carrinho fechada\./);
+  assert.deepEqual(p.ghTicket(1).assignees, []);
+  assert.equal(tiposNoTicket(p, 1).at(-1), 'fechamento');
+});

@@ -7,7 +7,7 @@ import { frentesDa, gravarFrente, lerFrente, listarFrentes, listarFrentesToleran
 import { existeRamo, git, recusaDoWorktree } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
 import { reenviarComAviso, reenviarPendentes, temDoTicket } from '../lib/pendentes.mjs';
-import { acharPassagem, ativaDaSessao, avisarDaMarcacao, confirmarRetomada, desfazerReserva, marcarTickets, paraQuem, quemTemAFrente, reservar } from '../lib/reserva.mjs';
+import { acharPassagem, ativaDaSessao, avisarDaMarcacao, confirmarRetomada, desfazerReserva, marcarTickets, paraQuem, quemTemAFrente, reservar, sessoesDaquiDaFrente } from '../lib/reserva.mjs';
 import { arquivosDaFrente, caminhosEmComum, tocaOsCaminhos } from '../lib/sobreposicao.mjs';
 import { ESQUEMA_DO_ESTADO, gravarSessao, idCurto, lerSessao, listarSessoes, registrarSessao, resolverSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
 import { aberturaEmCurso, inicioDoProcesso, pidDeComando, vidaDaSessao } from '../lib/vida.mjs';
@@ -412,6 +412,10 @@ async function terminarRetomada(frente, { amb, login, oGh, rotulo, remota = null
           throw recusa(`Não retomei ${frente.nome}: a frente ${frente.id} foi retomada antes por @${r.vencedor.login} (tickets: ${r.como}; aqui: ${local}).`,
             `combine com @${r.vencedor.login}, que está com a frente ${frente.id}; se ela passar a frente de novo (ah handoff), rode ah open ${frente.nome}`);
         }
+        if (r.fechada) {
+          throw recusa(`Não retomei ${frente.nome}: ${r.motivo}, em outra máquina (tickets: ${r.como}; aqui: ${local}).`,
+            `o registro desta máquina ficou velho: ah close ${frente.nome} o tira (só o worktree e o registro daqui; os tickets não mudam)`);
+        }
         throw recusa(`Não retomei a frente ${qual}: ${r.motivo} (tickets: ${r.como}; aqui: ${local}).`,
           `tente de novo com rede: ah open ${frente.nome}`);
       }
@@ -480,7 +484,7 @@ function conferirAntesDeRetomar(local, { amb, login, rotulo, oGh, dona = amb.ses
     throw recusa(`Não retomei a frente ${local.id} ${nome}: há operações desta máquina na fila para ${presos.map(n => `#${n}`).join(', ')} que precisam sair antes.`,
       `tente de novo com rede: ah open ${nome}`);
   }
-  const sessoesDaqui = [...listarSessoes(amb.dirEstado).sessoes.map(x => x.id), local.passadaPor];
+  const sessoesDaqui = sessoesDaquiDaFrente(amb.dirEstado, local, [local.passadaPor]);
   const q = quemTemAFrente({ frente: local, login, sessao: dona, rotulo, sessoesDaqui }, oGh);
   const fechar = `o registro desta máquina ficou velho: ah close ${nome} o tira (só o worktree e o registro daqui; os tickets não mudam)`;
   switch (q.situacao) {

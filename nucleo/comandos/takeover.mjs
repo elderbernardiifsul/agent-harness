@@ -4,8 +4,8 @@ import { comTrava, registrarEvento } from '../lib/estado.mjs';
 import { frentesDa, gravarFrente, lerFrente, listarFrentes, nomeValido } from '../lib/frente.mjs';
 import { loginDeQuemAge } from '../lib/github.mjs';
 import { pendentesDoTicket, reenviarComAviso, temDoTicket } from '../lib/pendentes.mjs';
-import { avisarDaMarcacao, marcarTickets, quemTemAFrente } from '../lib/reserva.mjs';
-import { gravarSessao, idCurto, lerSessao, listarSessoes, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
+import { avisarDaMarcacao, marcarTickets, quemTemAFrente, sessoesDaquiDaFrente } from '../lib/reserva.mjs';
+import { gravarSessao, idCurto, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
 import { aberturaEmCurso, inicioDoProcesso, pidDeComando, prazoMs, vidaDaSessao } from '../lib/vida.mjs';
 
 export const descricao = 'assume a frente de uma sessão que morreu (com a confirmação do executivo)';
@@ -115,7 +115,7 @@ export async function executar(args, amb) {
       throw recusa(`Não assumi a frente ${frente.id} ${nome}: há operações desta máquina na fila para ${presos.map(n => `#${n}`).join(', ')} que precisam sair antes.`,
         `tente de novo com rede: ah takeover ${nome} --confirmado`);
     }
-    const sessoesDaqui = [...listarSessoes(dirEstado).sessoes.map(x => x.id), frente.dona];
+    const sessoesDaqui = sessoesDaquiDaFrente(dirEstado, frente, [frente.dona]);
     const q = quemTemAFrente({ frente, login, sessao: amb.sessaoId, rotulo, sessoesDaqui }, oGh);
     const velho = `confira os tickets (${tickets.map(n => `#${n}`).join(', ')}); se o registro desta máquina ficou velho, encerre-o com ah close ${nome}`;
     switch (q.situacao) {
