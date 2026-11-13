@@ -69,6 +69,7 @@ Decisões do adaptador (`nucleo/adaptadores/claude-code.mjs`, `modelos/claude-co
 - O `model` no `SessionStart` falta no começo normal em `-p` e após `/clear` (ensaio).
 - `SessionEnd` tem 1,5 s de orçamento padrão; trabalho pesado ali é cortado.
 - Comando do usuário fora do agente (terminal comum) não passa por gancho nenhum, em nenhum dos três.
+- A T6 (trabalho pesado fora da fila) é trava de comando: tem o mesmo alcance das outras em cada agente. A fila (`ah pesado`) não depende de agente; subagentes e o terminal comum a usam do mesmo jeito.
 
 **Codex**
 - Os ganchos do projeto não rodam até a pasta `.codex/` ser confiável e cada gancho ser revisado e confiado em `/hooks`; mudar o script do gancho exige nova revisão. Em `codex exec`, sem isso, eles são ignorados em silêncio (ensaio).

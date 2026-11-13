@@ -25,6 +25,10 @@ Várias sessões e várias pessoas no mesmo repositório:
 - Sobreposição de arquivos entre frentes no `open`, no `board` e no começo da sessão.
 - Travas novas: T1 (troca de ramo no checkout principal), T3 (descartar trabalho no checkout principal) e T4 (escrever no worktree ou no ramo de outra sessão viva).
 
+## Trabalho pesado (fatia 3)
+
+Builds e testes ponta a ponta de várias sessões ao mesmo tempo esgotam a memória da máquina. `tools/ah pesado -- <comando>` põe o comando numa fila da máquina (a mesma para todos os projetos com o harness): espera a vez, roda e devolve a saída e o código. As vagas e a memória livre mínima são da máquina; as classes (quais comandos são pesados e quantas vagas pedem) ficam em `pesado.classes` no `.harness/config.json`. Com classes configuradas, a trava T6 recusa rodar um desses comandos fora da fila e diz como rodar por ela. O `board` mostra quem roda e quem espera. Detalhes e limites: `docs/referencia/comandos.md`, seção "pesado".
+
 ## Como preparar um projeto pelo agente
 
 Pré-requisitos do projeto: um repositório git com pelo menos um commit (num repositório recém-criado, faça antes `git commit --allow-empty -m "começo"`; sem commit o `init` recusa), Node 22 ou mais novo e, para tickets e proteção de ramo, o `gh` com login.
@@ -62,7 +66,6 @@ Testes: `node --test teste/`.
 
 ## Próximas fatias
 
-- Fatia 3, máquina: `ah pesado` (fila de trabalho pesado, como builds e testes ponta a ponta) e a trava T6, que recusa rodá-lo fora da fila.
 - Fatia 4, outros agentes: adaptadores do Codex e do OpenCode, com ensaio nos três.
 - Fatia 5, abertura: extensões do projeto em `.harness/extensoes/` com exemplo e guia, `atualizar`, `deps` e números de uso.
 

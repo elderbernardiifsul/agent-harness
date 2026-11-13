@@ -1,6 +1,6 @@
 # Comandos do harness
 
-Referência dos comandos das fatias 1 e 2. Todos rodam como `tools/ah <comando>` dentro do projeto (o `init` roda a partir do clone do agent-harness). Os exemplos usam o projeto fictício `loja`, as pessoas `ana-souza` (sigla `as`) e `carla-dias` (sigla `cd`), os tickets `#1` a `#9` e as sessões `sessao-teste-0001`, `sessao-b-0002` e `sessao-c-0003`. As saídas foram copiadas de um projeto descartável; `<worktrees>` é a pasta dos worktrees das frentes.
+Referência dos comandos das fatias 1 a 3. Todos rodam como `tools/ah <comando>` dentro do projeto (o `init` roda a partir do clone do agent-harness). Os exemplos usam o projeto fictício `loja`, as pessoas `ana-souza` (sigla `as`) e `carla-dias` (sigla `cd`), os tickets `#1` a `#9` e as sessões `sessao-teste-0001`, `sessao-b-0002` e `sessao-c-0003`. As saídas foram copiadas de um projeto descartável; `<worktrees>` é a pasta dos worktrees das frentes.
 
 Toda recusa tem a mesma forma: o motivo em uma linha e o próximo passo concreto. Recusa de comando de linha de comando sai com código 1 (`Recusado: motivo` / `Faça: …`) e também vai para os eventos (`recusa-de-comando`); recusa de trava, no gancho do agente, sai com código 2 (`Recusado (Tn): motivo` / `Faça: …`).
 
@@ -14,8 +14,11 @@ Nas mensagens, a sessão aparece pelo id curto (os 8 primeiros caracteres: `sess
 | `AH_WORKTREES` | pasta dos worktrees das frentes |
 | `AH_SESSAO` | id da sessão, quando o agente não o fornece (terminal comum); tem precedência sobre `CLAUDE_CODE_SESSION_ID` |
 | `AH_PID_AGENTE` | pid do processo do agente desta sessão. O gancho usa o processo pai dele quando a variável falta; os comandos `ah` só gravam pid com ela (o processo do `ah` morre logo). **Não pode ser herdada por outra sessão**: um agente aberto de dentro desta, com a mesma variável, parece o mesmo processo, e no começo dele esta sessão é substituída (ver "Vida da sessão"). Ao abrir outro agente a partir desta sessão, tire a variável (`env -u AH_PID_AGENTE …`) |
-| `AH_GUARD` | `AH_GUARD=off` no começo de um comando libera as travas T1 a T5 só para ele, e a liberação fica nos eventos (`liberacao`); a T0 nunca é liberada |
+| `AH_GUARD` | `AH_GUARD=off` no começo de um comando libera as travas T1 a T6 só para ele, e a liberação fica nos eventos (`liberacao`); a T0 nunca é liberada |
 | `AH_GH` | caminho do `gh` (para ensaio; um `.mjs` roda com o Node) |
+| `AH_FILA` | pasta da fila de trabalho pesado, em vez de `_fila` na base do estado (a mesma para todos os projetos da máquina) |
+| `AH_PESADO_ANINHADO` | posta pelo `ah pesado` no ambiente do comando que ele roda (o número da senha): um `ah pesado` lá dentro roda direto, e a T6 não recusa |
+| `AH_FILA_MEMORIA_LIVRE_MB`, `AH_FILA_PAUSA_MS` | para ensaio: substituem a memória livre medida e o intervalo (100 ms) com que quem espera relê a fila |
 
 Do agente, o harness lê `CLAUDE_CODE_SESSION_ID` (o id da sessão, quando não há `AH_SESSAO`) e, no gancho, `CLAUDE_PROJECT_DIR` (um dos lugares onde procura o projeto).
 
@@ -31,7 +34,7 @@ Recusas que valem para vários comandos:
 | `comando desconhecido: <nome>` | qualquer nome fora da lista | rode `ah --help` |
 | `Opção desconhecida: …` / `Argumento a mais: …` | opção ou argumento que o comando não aceita | `use <uso do comando>` |
 
-Exigem sessão: `open`, `nota`, `whoami`, `papel`, `handoff`, `takeover` e `close`. Não exigem: `board`, `sweep`, `doctor`, `init` (e o `gancho`, que recebe a sessão no evento). Sessão ainda sem registro (rodada à mão, sem gancho) é registrada, com papel `executor`, pelo primeiro `open`, `papel`, `whoami` ou `takeover --confirmado` dela.
+Exigem sessão: `open`, `nota`, `whoami`, `papel`, `handoff`, `takeover` e `close`. Não exigem: `board`, `sweep`, `doctor`, `init`, `pesado` (e o `gancho`, que recebe a sessão no evento). Sessão ainda sem registro (rodada à mão, sem gancho) é registrada, com papel `executor`, pelo primeiro `open`, `papel`, `whoami` ou `takeover --confirmado` dela.
 
 ## init
 
@@ -95,7 +98,7 @@ CI criada desligada: defina ci.comandoDeTeste em .harness/config.json e rode ah 
 ah doctor [--json]
 ```
 
-Confere se o projeto está bem preparado, com 20 verificações: Node 22 ou mais novo; git presente; shell POSIX; `.harness/config.json` válido; cópia do núcleo (`MANIFEST.json`); arquivos de estado legíveis (inclusive o esquema: registro gravado por um harness mais novo falha com "atualize o harness"); sigla sem choque; `gh` presente e autenticado; ramo base e ramos protegidos; ganchos do Claude Code instalados; harness no ramo base (`tools/ah` e `.harness/config.json` commitados na `dev`); gancho responde (o `doctor` ensaia uma recusa T5 de verdade); hora de início do processo; gancho recusa troca de ramo (ensaia uma recusa T1); ganchos vigiam a edição (o seletor do `PreToolUse` pega `Edit`, `Write` e `NotebookEdit`, sem o que a T4 não vê a edição); comentários pendentes; frentes órfãs; proteção no servidor (uma linha por ramo protegido); CI com comando de teste; frentes com worktree (inclusive as em abertura parada). Cada item sai como `ok`, `aviso` (algo a melhorar, com o que fazer) ou `FALHOU` (algo que impede o uso). Código 0 se não houver falha; avisos não mudam o código. `--json` imprime `{"itens":[{"item","estado","fazer"}],"falhas","avisos"}`.
+Confere se o projeto está bem preparado, com 21 verificações: Node 22 ou mais novo; git presente; shell POSIX; `.harness/config.json` válido; cópia do núcleo (`MANIFEST.json`); arquivos de estado legíveis (inclusive o esquema: registro gravado por um harness mais novo falha com "atualize o harness"); sigla sem choque; `gh` presente e autenticado; ramo base e ramos protegidos; ganchos do Claude Code instalados; harness no ramo base (`tools/ah` e `.harness/config.json` commitados na `dev`); gancho responde (o `doctor` ensaia uma recusa T5 de verdade); hora de início do processo; gancho recusa troca de ramo (ensaia uma recusa T1); ganchos vigiam a edição (o seletor do `PreToolUse` pega `Edit`, `Write` e `NotebookEdit`, sem o que a T4 não vê a edição); comentários pendentes; frentes órfãs; proteção no servidor (uma linha por ramo protegido); CI com comando de teste; frentes com worktree (inclusive as em abertura parada); fila de pesado (configuração da máquina legível, estado de versão conhecida, senhas de processo morto). Cada item sai como `ok`, `aviso` (algo a melhorar, com o que fazer) ou `FALHOU` (algo que impede o uso). Código 0 se não houver falha; avisos não mudam o código. `--json` imprime `{"itens":[{"item","estado","fazer"}],"falhas","avisos"}`.
 
 ```
 $ tools/ah doctor
@@ -124,6 +127,8 @@ Os itens novos da fatia 2:
 | Comentários pendentes | aviso com `N operação(ões) na fila (#n, …)`; e um aviso `linha ilegível em pendentes: linha N de <arquivo>` por linha quebrada, com o conserto | `rode ah sweep --reparar com rede`; enquanto um ticket tem operação na fila, o `ah open` não o reserva |
 | Frentes órfãs | um aviso por frente ativa sem dona viva (falha, com o que fazer, se a pasta `frentes/` não se lê) | `ah takeover <nome> com a ordem do executivo` |
 | Frentes com worktree | um aviso por frente (ativa ou passada, o mesmo filtro do `sweep`) cujo worktree sumiu e por registro em abertura parada; um arquivo de frente ilegível não esconde as outras; falha, com o que fazer, se a pasta `frentes/` não se lê | `ah close <nome>` (ou recrie o worktree); `ah open <nome>` para terminar a abertura, ou `ah close <nome>` para desistir |
+
+Item da fatia 3: **Fila de pesado** falha quando o `config.json` ou o `fila.json` da pasta da fila não se lê ou tem versão que este harness não conhece (`corrija o arquivo (ou apague-o para voltar aos padrões)`; `atualize o harness deste projeto`), e avisa das senhas de processo morto (`saem sozinhas na próxima chamada de ah pesado`).
 
 Exemplos de falha: `FALHOU  .harness/config.json válido: não há .harness/config.json; rode ah init`; `FALHOU  Arquivos de estado legíveis: <estado>/loja/sessoes/sessao-ruim-0009.json ilegível; apague ou conserte o arquivo`; `FALHOU  Harness no ramo base: tools/ah e .harness/config.json não estão no ramo dev, de onde as frentes partem; faça o commit do harness em dev: git switch dev e o git add/git commit que o ah init mostrou (se o commit já está em outro ramo: git switch dev && git merge <esse ramo>)`.
 
@@ -249,7 +254,7 @@ Mostra as frentes do estado em tabela e, embaixo, as sessões vivas. Sem frente:
 | SOBREPÕE | IDs das outras frentes (ativas ou passadas) que mudaram algum arquivo em comum, pelo ramo desde a base e pelo worktree; `?` quando o git passou do prazo total (3 s) antes de conferir a frente |
 | PLANO, ÚLTIMA NOTA | o plano e a última nota, cortados |
 
-Depois da tabela: `Sobreposições:` com cada arquivo e as frentes que o mudaram (até 20); `Sessões vivas: <id curto> (<papel>, <frente em foco>); …`, com `, sem processo` no fim do parêntese da sessão sem pid gravado (um `ah` rodado à mão, sem `AH_PID_AGENTE`: vive só pelo sinal; a regra de vida não muda); e `Sessões ilegíveis: …` quando há registro de sessão que não se lê. Arquivo de frente ilegível não derruba o quadro: vira aviso na saída de erro. `--json` imprime `{"frentes","sessoes","sessoesIlegiveis","sobreposicoes","sobreposicaoIncompleta"}`, cada sessão com `semProcesso`, cada frente com o registro inteiro mais `donaViva`, `donaIlegivel`, `sobrepoe`, `sobreposicaoConferida` e, em abertura, `aberturaParada`.
+Depois da tabela: `Sobreposições:` com cada arquivo e as frentes que o mudaram (até 20); `Sessões vivas: <id curto> (<papel>, <frente em foco>); …`, com `, sem processo` no fim do parêntese da sessão sem pid gravado (um `ah` rodado à mão, sem `AH_PID_AGENTE`: vive só pelo sinal; a regra de vida não muda); `Sessões ilegíveis: …` quando há registro de sessão que não se lê; e, quando a fila de pesado da máquina não está vazia, `Fila de pesado (N vaga(s)):` com uma linha por senha: `rodando` ou `esperando`, a senha, a classe, há quanto tempo (desde o começo, ou desde a chegada para quem espera), projeto e pasta do worktree, `(processo morto)` se for o caso, e o comando. A fila é da máquina: o quadro de qualquer projeto mostra as senhas de todos. Arquivo de frente ilegível não derruba o quadro: vira aviso na saída de erro. `--json` imprime `{"frentes","sessoes","sessoesIlegiveis","sobreposicoes","sobreposicaoIncompleta","fila"}` (`fila`: `dir`, `vagas`, `memoriaLivreMinimaMb`, `erro` e `entradas`, cada uma com o registro mais `estado`, `desde`, `haMs` e `morta`), cada sessão com `semProcesso`, cada frente com o registro inteiro mais `donaViva`, `donaIlegivel`, `sobrepoe`, `sobreposicaoConferida` e, em abertura, `aberturaParada`.
 
 ```
 $ tools/ah board
@@ -469,6 +474,60 @@ A linha `Falta: git push …` só aparece quando o projeto tem remoto. O `close`
 | `Não consegui conferir …` | resolva o que o git descreve; nada foi apagado |
 | `O git não removeu o worktree <wt>: … (apareceu alteração ou arquivo novo depois da conferência?)` | confira o que apareceu (`git -C <wt> status`), guarde ou apague e rode `ah close` de novo; nada foi apagado |
 
+## pesado
+
+```
+ah pesado -- <comando>
+ah pesado --classe <comando>
+```
+
+Roda um comando de trabalho pesado (build, testes ponta a ponta) pela fila da máquina: espera a vez, roda, repassa a saída e devolve o código do comando (128 + o número do sinal, se ele morrer por sinal). Não exige sessão. Com um argumento só depois do `--`, o texto vai para o shell (`ah pesado -- "npm run build && npm test"`); com vários, roda direto, sem shell (`ah pesado -- npm run build`). `--classe` diz a classe do comando sem rodar nem entrar na fila.
+
+**A fila é da máquina.** Dois projetos com o harness na mesma máquina disputam as mesmas vagas. Ela mora em `AH_FILA` ou, sem a variável, em `_fila` na base do estado (`~/.local/state/agent-harness/_fila` no Linux, `~/Library/Application Support/agent-harness/_fila` no macOS, `%LOCALAPPDATA%\agent-harness\estado\_fila` no Windows), com dois arquivos: `config.json`, da máquina, criado com os padrões na primeira chamada, e `fila.json`, o estado.
+
+```json
+{ "versao": 1, "vagas": 2, "memoriaLivreMinimaMb": 4096 }
+```
+
+`vagas` vai de 1 a 64; `memoriaLivreMinimaMb`, de 0 a 1048576. O `fila.json` tem versão de formato: gravado por um harness mais novo, o `pesado` para com `atualize o harness deste projeto` (e o `board` e o `doctor` o acusam).
+
+**Classes, do projeto**, em `.harness/config.json`:
+
+```json
+"pesado": {
+  "classes": {
+    "exclusivo": { "vagas": "todas", "padroes": ["npm run e2e*", "npx playwright*"] },
+    "grande": { "vagas": 1, "padroes": ["npm run build*"] }
+  }
+}
+```
+
+Um padrão são palavras separadas por espaço; casa quando as primeiras palavras do comando casam uma a uma (`*` e `?` valem dentro da palavra; o programa é comparado sem a pasta e sem `.exe`). Num texto com vários comandos (`a && b`, `bash -c '…'`, `env X=1 …`), vale a classe mais restritiva entre os que casam. **Comando que não casa com nenhuma cai na mais restritiva** (a de mais vagas; `"todas"` ganha). Sem classes, todo comando da fila pede todas as vagas, e a T6 não recusa nada. Chaves de `pesado` que começam com `_` são comentário: o `init` instala `classes` vazio e um `_exemplo` para copiar.
+
+**Quem roda.** Ordem de chegada estrita, por senha: só o primeiro da espera pode começar, então quem pede todas as vagas não é ultrapassado (o custo: um comando leve atrás dele espera, mesmo com vaga). Para começar ao lado de outro, precisa caber nas vagas, ter pelo menos `memoriaLivreMinimaMb` livres e nenhum dos que rodam ser do mesmo worktree. Senha de processo morto (pid que não existe, ou com outra hora de início) é descartada a cada passagem.
+
+**Interrupção.** Com SIGINT (Ctrl-C), SIGTERM ou SIGHUP, o `pesado` mata a árvore inteira do comando (SIGTERM ao grupo, SIGKILL depois de 3 s; no Windows, `taskkill /T /F`), só então solta a vaga, e sai com 130, 143 ou 129.
+
+**Aninhada.** O comando recebe `AH_PESADO_ANINHADO=<senha>`; um `ah pesado` lá dentro roda direto, sem fila (e a T6 deixa passar).
+
+Enquanto espera, escreve na saída de erro `ah pesado: esperando a vez (senha 2, classe exclusivo): <motivo>` a cada motivo novo (`à frente na espera: senha 1`, `sem vaga (1 de 1 em uso; esta pede 1)`, `a senha 3 roda no mesmo worktree`, `memória livre 900 MB, abaixo do mínimo de 4096 MB para rodar ao lado de outro`) e, na vez, quanto esperou.
+
+```
+$ tools/ah pesado --classe npm run build:prod
+grande (1 vaga(s); casou com um padrão)
+$ tools/ah pesado --classe echo oi
+exclusivo (todas as vagas; não casou com nenhum padrão: vale a classe mais restritiva)
+```
+
+| Recusa | Faça |
+|---|---|
+| `Falta o -- antes do comando` / `Opção desconhecida: …` | `use ah pesado -- <comando> (ou ah pesado --help)` |
+| `Falta o comando depois do --` / `… depois de --classe` | `use ah pesado -- <comando>` |
+| `O estado da fila tem formato N, que este harness não conhece` | atualize o harness deste projeto |
+| `O estado da fila não se lê` | confira que nenhum `ah pesado` está rodando (`ah board`) e apague o `fila.json` |
+| `Configuração da fila inválida` / `não é JSON válido` / `versão N, mais nova` | corrija o arquivo (ou apague-o para voltar aos padrões); atualize o harness |
+| `Não consegui rodar o comando` | confira o nome do programa e o PATH |
+
 ## gancho
 
 ```
@@ -499,6 +558,7 @@ Mais: docs/agents/sessoes-paralelas.md · tools/ah board
 | T2 | no checkout principal: `git add -A`, `.`, `-u`, `*` solto, caminho que resolve para a raiz ou acima (`cd src && git add ..`), `git commit -a`, `git commit .`; e `git add`/`git commit` com caminho que não dá para ler (`git add $(git ls-files -m)`) | `git add README.md`, `git commit -m x` | `git add <caminhos>` só com o que você mudou, ou trabalhe no worktree da frente; caminhos ilegíveis: escreva-os por extenso |
 | T3 | no checkout principal: `git reset --hard/--keep/--merge`, `git clean -f` (sem `-n`), `git checkout -f`, `git checkout .` e `git restore .` (caminho que pega tudo, ou ilegível), `git switch -f/--discard-changes`, `git stash` e `git stash pop/drop/…`, `git rebase main` | `git reset --soft HEAD~1`, `git clean -n`, `git restore README.md`, `git stash list`, `git stash show`, `git rebase --abort`, `git rebase --quit` | faça isso no worktree da sua frente; no checkout principal, guarde por caminho (`git add <caminhos>` e `git commit`) ou combine com a dona das mudanças |
 | T4 | escrita no worktree (ou no ramo) da frente ativa de **outra sessão viva**: subcomando do git que escreve rodado lá (`cd <wt> && git commit -am x`, `git -C <wt> commit …`; vale para `add`, `commit`, `reset`, `checkout`, `switch`, `restore`, `rebase`, `merge`, `pull`, `push`, `stash`, `clean`, `cherry-pick`, `revert`, `am`, `apply`, `mv`, `rm`, `tag`, `notes`); `git branch -d/-D/-m/-M/-f feat/alheia`; `git worktree remove/move <wt>`; `rm`, `rmdir`, `touch`, `mkdir`, `tee`, `truncate`, `chmod`, `chown`, `chgrp`, `mv`, `cp`, `install`, `ln`, `sed -i`, `perl -i`, `dd of=` com destino lá dentro; redirecionamento (`echo x > <wt>/a.txt`); edição de arquivo pela ferramenta (`Edit`, `Write`, `NotebookEdit`). Com `rm -r`, `rmdir`, `mv` e `chmod/chown/chgrp -R`, também a pasta que contém o worktree (`rm -rf <worktrees>`). Caminho com curinga do shell (`*`, `?`, `[`) recusa quando pode casar o worktree alheio, algo dentro dele ou, nos comandos de árvore, uma pasta acima dele (`rm -rf <worktrees>/*`, `cd <worktrees> && rm -rf *`, `rm -rf <worktrees>/al?eia`); `rm -rf <worktrees>/x*` passa quando nenhum worktree alheio vivo casa. O caminho é comparado depois de normalizado (link simbólico, `..`, `/private/var` × `/var` no macOS, caixa no Windows) | ler (`cat <wt>/a.txt`, `git -C <wt> status`, `cd <wt> && git log`, `git stash list`); escrever no worktree da própria frente; o worktree de frente passada, órfã ou de dona morta | escreva só no worktree da sua frente; para mexer em `alheia`, peça à sessão dona (`ah handoff`) ou, se ela morrer, `ah takeover alheia` |
+| T6 | comando que casa com uma classe de `pesado.classes` (em qualquer posição: `a && npm run build`, `(cd x && npm run build)`, `bash -c 'npm run build'`, `env CI=1 npm run build`) rodado fora do `ah pesado`. Sem classes configuradas, nada | `tools/ah pesado -- npm run build`; dentro de um comando da fila (`AH_PESADO_ANINHADO`); comando que não casa com padrão nenhum | `tools/ah pesado -- <o comando>` |
 | T5 | `git push` para ramo protegido (ou destino que pode atingi-lo, ou sem destino com o ramo protegido em uso, inclusive depois de `git checkout main` ou `git switch main` na mesma linha; `--all`, `--mirror`); `gh pr merge` cuja base é protegida, ou cuja base o gancho não consegue consultar em 5 segundos | `git push origin feat/carrinho` | abra um PR e peça a ordem do executivo; empurre o ramo da frente |
 
 Exemplos (o evento simplificado; o texto é o que o agente recebe):
@@ -535,7 +595,7 @@ Variável nos **argumentos** de um comando legível não é T0: no `git add`/`gi
 
 Arquivo de frente ilegível não faz o gancho recusar as ferramentas do agente: a T4 o pula, e o evento `estado-ilegivel` sai uma vez por conjunto de arquivos ilegíveis. Registro ilegível da dona conta como dona viva (na dúvida, protege).
 
-`AH_GUARD=off` no começo do comando libera T1 a T5 só para ele (evento `liberacao`), mas nunca a T0. Com o harness quebrado, só passam `tools/ah …` (para rodar o `doctor`) e a edição de `.harness/config.json`.
+`AH_GUARD=off` no começo do comando libera T1 a T6 só para ele (evento `liberacao`), mas nunca a T0. Com o harness quebrado, só passam `tools/ah …` (para rodar o `doctor`) e a edição de `.harness/config.json`.
 
 ## Vida da sessão
 
@@ -571,6 +631,7 @@ O gancho e os comandos acrescentam uma linha JSON a `<estado>/eventos.jsonl` a c
 | `recusa` | `sessao`, `trava`, `comando` (até 500 caracteres) ou `ferramenta` e `caminho` (edição) | gancho |
 | `liberacao` | `sessao`, `trava`, `comando` | gancho (`AH_GUARD=off`) |
 | `recusa-de-comando` | `comando`, `sessao`, `motivo` | todo comando que recusa |
+| `pesado` | `sessao`, `senha`, `classe`, `esperaMs`, `duracaoMs`, `codigo` | `pesado`, ao terminar o comando |
 | `papel` | `sessao`, `papel`, `anterior` | `papel` |
 | `nota` | `sessao`, `frente` | `nota` |
 | `abertura` | `sessao` (a dona), `frente`, `id`, `tickets` | `open` |
@@ -605,7 +666,11 @@ As travas pegam engano, não má-fé: elas leem o texto do comando antes de ele 
   - a leitura dos arquivos que `sed -i`, `perl -i` e `cp -t` escrevem é aproximada (opções raras podem confundir qual argumento é o arquivo).
 - `cd <pasta>; <comando>`: o comando também é avaliado na pasta de antes (o `cd` pode falhar). Isso vale quando o que vem antes do `;` é uma lista simples; em `cd x && a; b`, o `b` só é avaliado no cwd do caminho em que tudo deu certo.
 - T5 e troca de ramo na mesma linha: só `git checkout` e `git switch` contam (o ramo de antes continua entre os possíveis, e destino ilegível vira ramo desconhecido, que recusa o push sem destino). Ramo trocado por outro meio (`git worktree add` seguido de `cd`, script) é lido do disco na hora da avaliação, antes de o comando rodar.
-- Gravar arquivo fora do worktree da própria frente (no checkout principal ou numa pasta qualquer que não seja worktree de outra sessão viva) não é recusado; a T4 só protege o worktree e o ramo das outras sessões vivas. A T6 (trabalho pesado fora da fila) é da próxima fatia.
+- Gravar arquivo fora do worktree da própria frente (no checkout principal ou numa pasta qualquer que não seja worktree de outra sessão viva) não é recusado; a T4 só protege o worktree e o ramo das outras sessões vivas.
+- T6 lê o texto, como as outras: `npm run build` dentro de um script (`./build.sh`), de um `Makefile` ou de outro programa passa; ponha o script na classe (`./build.sh`) ou rode-o pela fila. Comando digitado no terminal, fora do agente, não passa por gancho.
+- Fila de pesado: a memória livre é a de `os.freemem()`. No Linux é a memória disponível; no macOS ela não conta o cache que o sistema devolveria, então tende a ser menor que a real e a fila serializa mais; no Windows é a memória física livre. Ninguém mede o que o comando vai consumir: a mínima é o que precisa sobrar para começar ao lado de outro.
+- Fila de pesado: o comando roda em grupo de processos próprio (POSIX) e a árvore é morta pelo grupo; um neto que abre sessão nova (`setsid`) escapa. No Windows, `taskkill /T /F`. Um `kill -9` no próprio `ah pesado` não deixa matar a árvore: a senha sai como morta na próxima passagem, mas o comando segue rodando.
+- Fila de pesado: com o `ah pesado` num terminal, o comando não lê do terminal (a entrada fica fechada); por cano ou arquivo, a entrada é repassada.
 - A reserva de ticket é aviso, não trava atômica: duas aberturas no mesmo segundo podem passar da primeira leitura; a segunda descobre ao reler o ticket, desiste e recusa (as duas podem desistir uma diante da outra e tentar de novo).
 - No Windows, a hora de início do processo não é conferida: um pid reaproveitado conta como vivo até o sinal vencer, e a continuação não herda a frente (ver "Vida da sessão").
 - Frente sem ticket só se retoma na mesma máquina: a passagem de outra máquina é achada pelos tickets.
