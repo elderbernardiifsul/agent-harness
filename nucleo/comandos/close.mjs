@@ -307,7 +307,12 @@ export async function executar(args, amb) {
 
     // 7. Saída.
     amb.escrever(`Frente ${frente.id} ${frente.nome} fechada.\n`);
-    if (daEncerrada) {
+    if (daEncerrada && frente.estado === 'passada') {
+      const por = !frente.passadaPor ? ''
+        : frente.passadaPor === 'continuacao-sem-vinculo' ? ' numa continuação de sessão sem vínculo'
+          : ` pela sessão ${idCurto(frente.passadaPor)}`;
+      amb.escrever(`A frente estava passada${por}, sem dona; esta sessão a fechou.\n`);
+    } else if (daEncerrada) {
       const como = vidaDaDona?.estado === 'morta' ? `que não está viva (${vidaDaDona.motivo})` : 'já encerrada';
       amb.escrever(`A frente era da sessão ${frente.dona ?? '(sem dona)'}, ${como}; esta sessão a fechou.\n`);
     }

@@ -299,9 +299,14 @@ function anotar(situacao, n, naFila, perdidos) {
 // Comenta `texto` + marcador do `tipo` em cada ticket da frente (pela fila). Com `reatribuir` e um login
 // fora da reserva, põe esse login de responsável (e o rótulo) e devolve a lista nova de logins.
 // Devolve também os tickets cujo comentário ou edição ficou na fila e os que se perderam.
-export function marcarTickets({ frente, tipo, texto, login, sessao, rotulo, dirEstado, reatribuir = false }, o = {}) {
+// Corpo do comentário de marcação: `texto` + marcador do `tipo` (o estado vem do tipo).
+export function corpoDaMarcacao({ frente, tipo, texto, login, sessao }) {
   const estado = ESTADO_DO_TIPO[tipo] ?? 'ativa';
-  const corpo = `${texto}\n\n${montarMarcador(tipo, camposCompletos(frente, estado, login, sessao))}\n`;
+  return `${texto}\n\n${montarMarcador(tipo, camposCompletos(frente, estado, login, sessao))}\n`;
+}
+
+export function marcarTickets({ frente, tipo, texto, login, sessao, rotulo, dirEstado, reatribuir = false }, o = {}) {
+  const corpo = corpoDaMarcacao({ frente, tipo, texto, login, sessao });
   const evento = { sessao, frente: frente.nome };
   const r = { comentariosNaFila: [], comentariosPerdidos: [], edicoesNaFila: [], edicoesPerdidas: [] };
   let logins = [...(frente.reserva?.logins ?? [])];

@@ -52,11 +52,19 @@ export function contarPendentes(dirEstado) {
   return lerLinhas(dirEstado).length;
 }
 
-// Há operação na fila para o ticket? (A nova vai atrás dela, para não passar na frente.)
-function temDoTicket(dirEstado, ticket) {
-  return lerLinhas(dirEstado).some(l => {
-    try { return JSON.parse(l).ticket === ticket; } catch { return false; }
+// Operações da fila para o ticket, em ordem (linhas ilegíveis ficam de fora).
+export function pendentesDoTicket(dirEstado, ticket) {
+  return lerLinhas(dirEstado).flatMap(l => {
+    try {
+      const op = JSON.parse(l);
+      return op?.ticket === ticket ? [op] : [];
+    } catch { return []; }
   });
+}
+
+// Há operação na fila para o ticket? (A nova vai atrás dela, para não passar na frente.)
+export function temDoTicket(dirEstado, ticket) {
+  return pendentesDoTicket(dirEstado, ticket).length > 0;
 }
 
 const executarOp = (op, o) => (op.tipo === 'comentario'

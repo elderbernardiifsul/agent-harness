@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync, realpathSync, readFileSync, mkdirSync, existsSync, utimesSync, chmodSync, readdirSync, lstatSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -79,6 +79,9 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
   delete env.GH_FALSO_RESPOSTAS;
   delete env.GH_FALSO_LOGIN;
   delete env.GH_FALSO_CORRIDA;
+  delete env.GH_FALSO_PAUSA;
+  delete env.GH_FALSO_PAUSA_COMENTARIO;
+  delete env.GH_FALSO_PAUSA_TEXTO;
   const exigir = (args, cwd) => {
     const r = executar(args, { cwd, env });
     if (r.codigo !== 0) throw new Error(`git ${args.join(' ')} falhou: ${r.erro}`);
@@ -140,6 +143,16 @@ function montarProjeto({ base, raiz, remoto, estado, env }) {
         cwd, env: { ...env, ...extra }, encoding: 'utf8', input: entrada, maxBuffer: 64 * 1024 * 1024,
       });
       return { codigo: r.status ?? 1, saida: r.stdout ?? '', erro: r.stderr ?? '' };
+    },
+    // Como `ah`, mas sem esperar: devolve o processo e a promessa do fim ({codigo, saida, erro}).
+    ahAoFundo(args, { cwd = raiz, env: extra = {} } = {}) {
+      const processo = spawn(process.execPath, [join(RAIZ_HARNESS, 'nucleo', 'bin', 'ah.mjs'), ...args], { cwd, env: { ...env, ...extra } });
+      let saida = '';
+      let erro = '';
+      processo.stdout.on('data', d => { saida += d; });
+      processo.stderr.on('data', d => { erro += d; });
+      const fim = new Promise(resolve => processo.on('close', (codigo, sinal) => resolve({ codigo: codigo ?? 1, sinal, saida, erro })));
+      return { processo, fim };
     },
     limpar() {
       apagarPastaDeTeste(base);

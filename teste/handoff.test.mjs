@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { criarProjeto, dirDoTeste, envelhecerSinal } from './apoio/repo.mjs';
+import { criarProjeto, dirDoTeste, envelhecerSinal, outraMaquina } from './apoio/repo.mjs';
+import { contarPendentes, enfileirar, reenviarPendentes } from '../nucleo/lib/pendentes.mjs';
 
 const arquivoDaFrente = (p, nome) => path.join(dirDoTeste(p), 'frentes', `${nome}.json`);
 const lerFrenteDoTeste = (p, nome) => JSON.parse(fs.readFileSync(arquivoDaFrente(p, nome), 'utf8'));
@@ -225,4 +226,151 @@ test('quadro e doctor: frente passada não é órfã nem abertura parada', t => 
   envelhecerSinal(p, 'sessao-teste-0001', 500);
   assert.match(p.ah(['board']).saida, /carrinho\s+—\s+passada/);
   assert.doesNotMatch(p.ah(['doctor']).saida, /carrinho/);
+});
+
+// ---- Consertos da revisão da tarefa 7 ----
+
+const esperarArquivo = async (arquivo, ms = 15000) => {
+  const ate = Date.now() + ms;
+  while (!fs.existsSync(arquivo)) {
+    if (Date.now() > ate) throw new Error(`não apareceu: ${arquivo}`);
+    await new Promise(r => setTimeout(r, 25));
+  }
+};
+// Tipos dos marcadores dos comentários do ticket, em ordem.
+const tiposNoTicket = (p, n) => p.ghTicket(n).comments.map(c => c.body.match(/<!-- ah:([a-z]+)/)?.[1]).filter(Boolean);
+
+// Handoff parado no comentário de passagem (gh lento). Devolve o processo, a pausa e o soltar.
+async function handoffParado(t, p) {
+  const pausa = path.join(path.dirname(dirDoTeste(p)), 'pausa');
+  const h = p.ahAoFundo(['handoff'], { env: { GH_FALSO_PAUSA_COMENTARIO: pausa } });
+  t.after(() => { h.processo.kill('SIGKILL'); try { fs.writeFileSync(`${pausa}.solta`, ''); } catch { /* pasta já limpa */ } });
+  await esperarArquivo(`${pausa}.chegou`);
+  return { h, pausa, soltar: async () => { fs.writeFileSync(`${pausa}.solta`, ''); return h.fim; } };
+}
+
+test('gh lento na passagem: a retomada no meio comenta atrás dela', async t => {
+  const { p } = comFrente(t);
+  const { soltar } = await handoffParado(t, p);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'passada');
+  const r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 0, r.erro);
+  const fim = await soltar();
+  assert.equal(fim.codigo, 0, fim.erro);
+  await reenviarPendentes(dirDoTeste(p), { cwd: p.raiz, env: p.env });
+  assert.deepEqual(tiposNoTicket(p, 1), ['frente', 'passagem', 'retomada']);
+});
+
+test('gh lento na passagem: o close no meio comenta atrás dela', async t => {
+  const { p } = comFrente(t);
+  const { soltar } = await handoffParado(t, p);
+  const r = p.ah(['close', 'carrinho'], B);
+  assert.equal(r.codigo, 0, r.erro);
+  const fim = await soltar();
+  assert.equal(fim.codigo, 0, fim.erro);
+  await reenviarPendentes(dirDoTeste(p), { cwd: p.raiz, env: p.env });
+  assert.deepEqual(tiposNoTicket(p, 1), ['frente', 'passagem', 'fechamento']);
+  assert.deepEqual(p.ghTicket(1).assignees, []);
+});
+
+test('handoff morto depois de gravar: a passagem está na fila e sai no próximo comando', async t => {
+  const { p } = comFrente(t);
+  const { h, pausa } = await handoffParado(t, p);
+  process.kill(Number(fs.readFileSync(`${pausa}.chegou`, 'utf8')), 'SIGKILL');
+  h.processo.kill('SIGKILL');
+  await h.fim;
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'passada');
+  assert.equal(contarPendentes(dirDoTeste(p)), 1);
+  assert.deepEqual(tiposNoTicket(p, 1), ['frente']);
+  // A trava do reenvio do processo morto vence (1 min): aqui, envelhecida à mão.
+  const dono = path.join(dirDoTeste(p), 'travas', 'pendentes-reenvio', 'dono.json');
+  if (fs.existsSync(dono)) fs.writeFileSync(dono, JSON.stringify({ ...JSON.parse(fs.readFileSync(dono, 'utf8')), em: new Date(Date.now() - 3600000).toISOString() }));
+  const r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.deepEqual(tiposNoTicket(p, 1), ['frente', 'passagem', 'retomada']);
+});
+
+test('handoff com cherry-pick em conflito aponta a operação, não o commit wip', t => {
+  const { p, wt } = comFrente(t);
+  fs.writeFileSync(path.join(wt, 'a.txt'), 'b');
+  p.git(['commit', '-am', 'feat: b'], { cwd: wt });
+  const b = p.git(['rev-parse', 'HEAD'], { cwd: wt }).saida.trim();
+  p.git(['reset', '--hard', 'HEAD~1'], { cwd: wt });
+  fs.writeFileSync(path.join(wt, 'a.txt'), 'c');
+  p.git(['commit', '-am', 'feat: c'], { cwd: wt });
+  assert.notEqual(p.git(['cherry-pick', b], { cwd: wt }).codigo, 0);
+  const r = p.ah(['handoff']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /cherry-pick em andamento[\s\S]*Faça: .*git cherry-pick --abort/);
+  assert.doesNotMatch(r.erro, /wip/);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'ativa');
+});
+
+test('retomar recusa worktree fora do ramo; alterações soltas só avisam', t => {
+  const { p, wt } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  p.git(['switch', '--detach'], { cwd: wt });
+  let r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /fora do ramo feat\/carrinho[\s\S]*Faça: .*ah open carrinho/);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'passada');
+  p.git(['switch', 'feat/carrinho'], { cwd: wt });
+  fs.writeFileSync(path.join(wt, 'b.txt'), 'b');
+  r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.erro, /alterações não commitadas[\s\S]*b\.txt/);
+});
+
+test('retomar recusa worktree com merge em andamento', t => {
+  const { p, wt } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  fs.writeFileSync(path.join(p.git(['rev-parse', '--absolute-git-dir'], { cwd: wt }).saida.trim(), 'MERGE_HEAD'), p.git(['rev-parse', 'HEAD'], { cwd: wt }).saida);
+  const r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /merge em andamento/);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'passada');
+});
+
+test('retomar de outra máquina com operação desta máquina na fila do ticket recusa e desfaz', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = outraMaquina(p, { sessao: 'sessao-c-0003', login: 'carla-dias', sigla: 'cd' });
+  t.after(() => q.limpar());
+  const dirQ = dirDoTeste(q);
+  enfileirar(dirQ, { tipo: 'comentario', ticket: 1, corpo: 'antes' });
+  // Outro reenvio em andamento nesta máquina: a fila não sai agora.
+  fs.mkdirSync(path.join(dirQ, 'travas', 'pendentes-reenvio'), { recursive: true });
+  fs.writeFileSync(path.join(dirQ, 'travas', 'pendentes-reenvio', 'dono.json'), JSON.stringify({ pid: 1, em: new Date().toISOString(), marca: 'outra' }));
+  const r = q.ah(['open', 'carrinho']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /na fila para #1/);
+  assert.equal(fs.existsSync(path.join(dirQ, 'frentes', 'carrinho.json')), false);
+  assert.ok(!tiposNoTicket(p, 1).includes('retomada'));
+});
+
+test('close de frente passada diz por quem foi passada', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const r = p.ah(['close', 'carrinho'], B);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /A frente estava passada pela sessão sessao-t, sem dona; esta sessão a fechou\./);
+});
+
+test('push que falha porque outro handoff passou a frente: "mudou durante o handoff"', { skip: process.platform === 'win32' ? 'gancho do git em node sem extensão' : false }, t => {
+  const { p } = comFrente(t);
+  const arq = arquivoDaFrente(p, 'carrinho');
+  const gancho = path.join(p.raiz, '.git', 'hooks', 'pre-push');
+  fs.writeFileSync(gancho, `#!/usr/bin/env node
+const fs = require('fs');
+const arq = ${JSON.stringify(arq)};
+const f = JSON.parse(fs.readFileSync(arq, 'utf8'));
+fs.writeFileSync(arq, JSON.stringify({ ...f, estado: 'passada', dona: null, passadaPor: 'sessao-b-0002' }));
+process.stderr.write('error: cannot lock ref\\n');
+process.exit(1);
+`);
+  fs.chmodSync(gancho, 0o755);
+  const r = p.ah(['handoff']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /mudou durante o handoff/);
+  assert.doesNotMatch(r.erro, /cannot lock ref/);
 });

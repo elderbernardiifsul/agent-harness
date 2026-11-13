@@ -1,13 +1,12 @@
 import fs from 'node:fs';
 import os from 'node:os';
-import path from 'node:path';
 import { ErroDeUso, arquivoDaMaquina } from '../lib/caminhos.mjs';
 import { comTrava, lerJson, registrarEvento } from '../lib/estado.mjs';
 import { frentesDa, gravarFrente, lerFrente, listarFrentes, listarFrentesTolerante, nomeValido } from '../lib/frente.mjs';
-import { git, ramoAtual } from '../lib/git.mjs';
+import { SAIDA_DA_OPERACAO, git, operacaoEmAndamento, ramoAtual } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
-import { reenviarComAviso } from '../lib/pendentes.mjs';
-import { marcarTickets } from '../lib/reserva.mjs';
+import { enfileirar, pendentesDoTicket, reenviarComAviso } from '../lib/pendentes.mjs';
+import { corpoDaMarcacao } from '../lib/reserva.mjs';
 import { gravarSessao, idCurto, lerSessao, tocarSinal } from '../lib/sessao.mjs';
 
 export const descricao = 'passa a frente adiante sem fechá-la: empurra o ramo, comenta a passagem e solta a frente';
@@ -17,12 +16,6 @@ export const requisitos = { config: true, sessao: true };
 const recusa = (motivo, saida) => new ErroDeUso(`${motivo}\nPróximo passo: ${saida}`);
 const primeiraLinha = r => (r.erro || r.saida || `código ${r.codigo}`).trim().split('\n')[0].slice(0, 300);
 const COMMITS_NO_COMENTARIO = 3;
-const OPERACOES = [['rebase-merge', 'rebase'], ['rebase-apply', 'rebase'], ['MERGE_HEAD', 'merge'], ['CHERRY_PICK_HEAD', 'cherry-pick']];
-const SAIDA_DA_OPERACAO = {
-  rebase: 'git rebase --continue (ou git rebase --abort)',
-  merge: 'git commit para terminar o merge (ou git merge --abort)',
-  'cherry-pick': 'git cherry-pick --continue (ou git cherry-pick --abort)',
-};
 
 function lerOpcoes(args) {
   const o = { nome: null, nota: undefined };
@@ -61,12 +54,17 @@ export function avisarDaMarcacao(r, avisar) {
 
 const temRemoto = (amb, remoto) => git(['remote'], { cwd: amb.raiz, env: amb.env }).saida.split('\n').includes(remoto);
 
-// Operação do git em andamento no worktree (rebase, merge, cherry-pick) ou null.
-function operacaoEmAndamento(wt, env) {
-  for (const [arquivo, nome] of OPERACOES) {
-    const r = git(['rev-parse', '--git-path', arquivo], { cwd: wt, env });
-    if (r.codigo !== 0) continue;
-    if (fs.existsSync(path.resolve(wt, r.saida.trim()))) return nome;
+// Operação em andamento ou worktree fora do ramo da frente: a recusa (com `comando` na saída) ou null.
+// A operação vem antes: com conflito, mandar commitar as alterações concluiria a operação com os marcadores.
+export function recusaDoWorktree(frente, wt, env, comando) {
+  const op = operacaoEmAndamento(wt, env);
+  if (op) {
+    return recusa(`O worktree ${wt} tem um ${op} em andamento.`, `termine ou aborte a operação no worktree (${SAIDA_DA_OPERACAO[op]}) e rode ${comando} de novo`);
+  }
+  const ramo = ramoAtual(wt, env);
+  if (ramo !== frente.ramo) {
+    return recusa(`O worktree ${wt} está fora do ramo ${frente.ramo} (${ramo ? `no ramo ${ramo}` : 'HEAD solto'}).`,
+      `volte ao ramo da frente (git -C ${wt} switch ${frente.ramo}), trazendo para ele os commits que fez fora (git cherry-pick ou git merge), e rode ${comando} de novo`);
   }
   return null;
 }
@@ -78,21 +76,14 @@ function conferirWorktree(frente, env) {
     throw recusa(`O worktree da frente ${frente.id} ${frente.nome} não existe (${wt}).`,
       `se o trabalho já está no ramo ou na base, encerre a frente com ah close ${frente.nome}; senão recrie o worktree (git worktree add ${wt} ${frente.ramo}) e rode ah handoff de novo`);
   }
+  const fora = recusaDoWorktree(frente, wt, env, 'ah handoff');
+  if (fora) throw fora;
   const st = git(['status', '--porcelain'], { cwd: wt, env });
   if (st.codigo !== 0) throw recusa(`Não consegui conferir o worktree ${wt}: ${primeiraLinha(st)}`, 'resolva o que o git descreve e rode ah handoff de novo; nada mudou');
   const sujos = st.saida.split('\n').filter(Boolean);
   if (sujos.length) {
     throw recusa(`O worktree ${wt} tem alterações não commitadas (${sujos.length}): ${sujos.slice(0, 5).map(l => l.trim()).join('; ').slice(0, 200)}.`,
       `faça o commit no worktree (git -C ${wt} add -A && git -C ${wt} commit -m "wip: ..."; um commit wip: serve) e rode ah handoff de novo`);
-  }
-  const op = operacaoEmAndamento(wt, env);
-  if (op) {
-    throw recusa(`O worktree ${wt} tem um ${op} em andamento.`, `termine ou aborte a operação no worktree (${SAIDA_DA_OPERACAO[op]}) e rode ah handoff de novo`);
-  }
-  const ramo = ramoAtual(wt, env);
-  if (ramo !== frente.ramo) {
-    throw recusa(`O worktree ${wt} está fora do ramo ${frente.ramo} (${ramo ? `no ramo ${ramo}` : 'HEAD solto'}).`,
-      `volte ao ramo da frente (git -C ${wt} switch ${frente.ramo}), trazendo para ele os commits que fez fora (git cherry-pick ou git merge), e rode ah handoff de novo`);
   }
   const topo = git(['rev-parse', `refs/heads/${frente.ramo}`], { cwd: wt, env });
   if (topo.codigo !== 0) throw recusa(`Não consegui ler o ramo ${frente.ramo}: ${primeiraLinha(topo)}`, 'resolva o que o git descreve e rode ah handoff de novo; nada mudou');
@@ -154,6 +145,15 @@ export async function executar(args, amb) {
     const ref = `refs/heads/${frente.ramo}`;
     const p = git(['push', '-u', remoto, `${ref}:${ref}`], { cwd: amb.raiz, env });
     if (p.codigo !== 0) {
+      // Outro handoff (ou close) da mesma frente pode ter passado na frente: então o erro do git não é a causa.
+      const mudou = await comTrava(dirEstado, 'frentes', async () => {
+        const f = lerFrente(dirEstado, frente.nome);
+        return !f || f.id !== frente.id || f.dona !== amb.sessaoId || f.estado !== 'ativa' ? (f ?? { estado: 'sem registro' }) : null;
+      }, { venceMs: 120000 });
+      if (mudou) {
+        throw recusa(`A frente ${frente.nome} mudou durante o handoff (agora: ${mudou.estado}${mudou.dona !== undefined ? `, dona ${mudou.dona ?? '—'}` : ''}); o push dela não foi deste handoff.`,
+          'rode ah board para ver quem está com ela; o estado local não mudou');
+      }
       throw recusa(`O git push do ramo ${frente.ramo} para ${remoto} falhou: ${primeiraLinha(p)}`,
         `resolva o que o git descreve (rede, permissão, ramo divergente no remoto) e rode ah handoff de novo; nada mudou`);
     }
@@ -164,7 +164,7 @@ export async function executar(args, amb) {
   const texto = textoDaPassagem({ frente, login, nota: o.nota, remoto, comRemoto, base: cfg.git.base, amb });
 
   // Fase 2, sob a trava: confere que nada mudou desde a fase 1 e solta a frente.
-  const passada = await comTrava(dirEstado, 'frentes', async () => {
+  const { f: passada, corpo } = await comTrava(dirEstado, 'frentes', async () => {
     const f = lerFrente(dirEstado, frente.nome);
     if (!f || f.id !== frente.id || f.dona !== amb.sessaoId || f.estado !== 'ativa') {
       throw recusa(`A frente ${frente.nome} mudou durante o handoff (agora: ${f ? `${f.estado}, dona ${f.dona ?? '—'}` : 'sem registro'}).`,
@@ -186,15 +186,19 @@ export async function executar(args, amb) {
       sessao.frente = frentesDa(listarFrentesTolerante(dirEstado).frentes, amb.sessaoId).at(-1)?.nome ?? null;
       gravarSessao(dirEstado, sessao);
     }
+    // A passagem entra na fila ainda sob a trava: quem retomar ou fechar a frente depois daqui comenta atrás
+    // dela (comentarOuEnfileirar), e um handoff que morra agora não a perde (sai no próximo comando).
+    const corpo = corpoDaMarcacao({ frente: f, tipo: 'passagem', texto, login, sessao: amb.sessaoId });
+    for (const n of f.tickets ?? []) enfileirar(dirEstado, { tipo: 'comentario', ticket: n, corpo });
     registrarEvento(dirEstado, { tipo: 'passagem', sessao: amb.sessaoId, frente: f.nome, id: f.id, remoto: comRemoto ? remoto : null });
-    return f;
+    return { f, corpo };
   }, { venceMs: 120000 });
 
-  // Fora da trava: a passagem nos tickets (sem rede vai para a fila; a reserva continua).
+  // Fora da trava: a fila sai (a passagem com ela); sem rede, fica para o próximo comando. A reserva continua.
   if ((passada.tickets ?? []).length) {
-    const oGh = { cwd: amb.raiz, env, avisar: amb.avisar };
-    const r = marcarTickets({ frente: passada, tipo: 'passagem', texto, login, sessao: amb.sessaoId, rotulo: cfg.github.rotuloDeReserva, dirEstado }, oGh);
-    avisarDaMarcacao(r, amb.avisar);
+    await reenviarComAviso(dirEstado, { cwd: amb.raiz, env }, amb.avisar);
+    const naFila = passada.tickets.filter(n => pendentesDoTicket(dirEstado, n).some(op => op.tipo === 'comentario' && op.corpo === corpo));
+    avisarDaMarcacao({ comentariosNaFila: naFila, edicoesNaFila: [] }, amb.avisar);
   }
   amb.escrever(`Frente ${passada.id} ${passada.nome} passada.\nPara retomar: tools/ah open ${passada.nome}\n`);
   return 0;

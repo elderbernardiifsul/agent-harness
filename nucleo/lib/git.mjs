@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 
 // Executa o git com lista de argumentos (sem shell). Nunca lança. Processo que não rodou
 // ou que morreu por sinal (status nulo, inclusive pelo `timeoutMs`) sai com código 127.
@@ -27,4 +29,23 @@ export function limpo(cwd, env) {
 export function existeRamo(cwd, ramo, { remoto = false, env } = {}) {
   const ref = remoto ? `refs/remotes/${remoto === true ? 'origin' : remoto}/${ramo}` : `refs/heads/${ramo}`;
   return git(['show-ref', '--verify', '--quiet', ref], { cwd, env }).codigo === 0;
+}
+
+const OPERACOES = [['rebase-merge', 'rebase'], ['rebase-apply', 'rebase'], ['MERGE_HEAD', 'merge'], ['CHERRY_PICK_HEAD', 'cherry-pick']];
+// Como terminar ou abortar cada operação.
+export const SAIDA_DA_OPERACAO = {
+  rebase: 'git rebase --continue (ou git rebase --abort)',
+  merge: 'git commit para terminar o merge (ou git merge --abort)',
+  'cherry-pick': 'git cherry-pick --continue (ou git cherry-pick --abort)',
+};
+
+// Operação do git em andamento no worktree (`rebase`, `merge`, `cherry-pick`) ou null; o caminho de cada
+// marca vem de `git rev-parse --git-path`, resolvido no próprio worktree.
+export function operacaoEmAndamento(wt, env) {
+  for (const [arquivo, nome] of OPERACOES) {
+    const r = git(['rev-parse', '--git-path', arquivo], { cwd: wt, env });
+    if (r.codigo !== 0) continue;
+    if (fs.existsSync(path.resolve(wt, r.saida.trim()))) return nome;
+  }
+  return null;
 }

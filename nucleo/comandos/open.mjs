@@ -6,11 +6,11 @@ import { comTrava, lerJson, registrarEvento } from '../lib/estado.mjs';
 import { frentesDa, gravarFrente, lerFrente, listarFrentes, listarFrentesTolerante, nomeValido, novaFrente, proximoId, removerFrente, siglaValida } from '../lib/frente.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
-import { reenviarComAviso } from '../lib/pendentes.mjs';
+import { reenviarComAviso, reenviarPendentes, temDoTicket } from '../lib/pendentes.mjs';
 import { acharPassagem, confirmarRetomada, desfazerReserva, marcarTickets, reservar } from '../lib/reserva.mjs';
 import { arquivosDaFrente, caminhosEmComum, tocaOsCaminhos } from '../lib/sobreposicao.mjs';
 import { ESQUEMA_DO_ESTADO, gravarSessao, idCurto, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
-import { avisarDaMarcacao } from './handoff.mjs';
+import { avisarDaMarcacao, recusaDoWorktree } from './handoff.mjs';
 import { aberturaEmCurso, inicioDoProcesso, pidDeComando, vidaDaSessao } from '../lib/vida.mjs';
 
 export const descricao = 'abre uma frente de trabalho: ramo, worktree, registro e reserva dos tickets';
@@ -320,6 +320,13 @@ function retomarSobTrava(f, { amb, cfg, login, plano, caminhos, remoto }) {
         `resolva o que o git descreve e rode ah open ${f.nome} de novo; a frente continua passada`);
     }
   }
+  // O worktree que ficou (ou o recriado) precisa estar no ramo da frente e sem operação em andamento.
+  const fora = recusaDoWorktree(f, wt, env, `ah open ${f.nome}`);
+  if (fora) throw fora;
+  const sujos = git(['status', '--porcelain'], { cwd: wt, env }).saida.split('\n').filter(Boolean);
+  if (sujos.length) {
+    amb.avisar(`Aviso: o worktree ${wt} tem alterações não commitadas (${sujos.length}) deixadas por quem passou a frente; confira antes de seguir:\n${sujos.slice(0, 10).map(l => `  ${l}`).join('\n')}\n`);
+  }
   const de = f.passadaPor ?? null;
   const retomada = { ...f, worktree: wt, dona: amb.sessaoId, estado: 'ativa', retomadaEm: new Date().toISOString() };
   if (plano !== null) retomada.plano = plano;
@@ -337,6 +344,15 @@ async function terminarRetomada(frente, { amb, login, oGh, rotulo, remota = fals
   if ((frente.tickets ?? []).length) {
     let r;
     if (remota) {
+      // A confirmação fala direto com o GitHub: operação da fila desta máquina num desses tickets passaria para trás.
+      const presos = async () => (frente.tickets ?? []).filter(n => temDoTicket(amb.dirEstado, n));
+      if ((await presos()).length) await reenviarPendentes(amb.dirEstado, { cwd: amb.raiz, env: amb.env });
+      const ainda = await presos();
+      if (ainda.length) {
+        const local = await desfazerRetomada(frente, amb);
+        throw recusa(`Não retomei a frente ${frente.id} ${frente.nome}: há operações desta máquina na fila para ${ainda.map(n => `#${n}`).join(', ')} que precisam sair antes (aqui: ${local}).`,
+          `tente de novo com rede: ah open ${frente.nome}`);
+      }
       r = confirmarRetomada({ frente, login, sessao: amb.sessaoId, rotulo, dirEstado: amb.dirEstado }, oGh);
       if (!r.ok) {
         const local = await desfazerRetomada(frente, amb);

@@ -465,7 +465,7 @@ test('close aceita frente passada, sem dona', () => {
   fs.writeFileSync(arquivoDaFrente(p, 'carrinho'), JSON.stringify(f));
   const r = p.ah(['close', 'carrinho'], OUTRA);
   assert.equal(r.codigo, 0, r.erro);
-  assert.match(r.saida, /A frente era da sessão \(sem dona\)/);
+  assert.match(r.saida, /A frente estava passada, sem dona; esta sessão a fechou\./);
   p.limpar();
 });
 

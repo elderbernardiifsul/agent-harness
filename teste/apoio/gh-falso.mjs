@@ -127,6 +127,15 @@ if (argv[0] === 'issue' && argv[1] === 'list') {
 if (argv[0] === 'issue' && ['view', 'comment', 'edit'].includes(argv[1])) {
   const n = String(argv[2] ?? '').replace(/^#/, '');
   if (!/^\d+$/.test(n)) responder(1, '', `argumento inválido: ${argv[2]}\n`);
+  // GH_FALSO_PAUSA_COMENTARIO=<arquivo>: o `issue comment` cujo corpo tem GH_FALSO_PAUSA_TEXTO (padrão `ah:passagem`)
+  // grava o próprio pid em <arquivo>.chegou e espera <arquivo>.solta (até 20 s) antes de ler e gravar os tickets.
+  const pausaDoComentario = process.env.GH_FALSO_PAUSA_COMENTARIO;
+  if (argv[1] === 'comment' && pausaDoComentario && entrada.includes(process.env.GH_FALSO_PAUSA_TEXTO || 'ah:passagem')) {
+    writeFileSync(`${pausaDoComentario}.chegou`, String(process.pid));
+    const ate = Date.now() + 20000;
+    const espera = new Int32Array(new SharedArrayBuffer(4));
+    while (!existsSync(`${pausaDoComentario}.solta`) && Date.now() < ate) Atomics.wait(espera, 0, 0, 50);
+  }
   const t = lerTickets();
   if (t[n]?.apagado) responder(1, '', NAO_ACHEI.replace('%n', n));
   const tk = ticketDe(t, n);
