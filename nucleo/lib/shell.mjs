@@ -248,6 +248,7 @@ function lerCorpos(texto, i, pendentes, prof) {
     if (!achou) throw new ErroDeShell(`heredoc sem a linha final "${h.delimitador}"`, i);
     const corpo = linhas.map(l => `${l}\n`).join('');
     h.token.corpo = corpo;
+    h.token.expande = !h.citado;
     h.token.subs = [];
     if (!h.citado) {
       // Sem aspas no delimitador, o shell expande $( … ) e crases do corpo.
@@ -607,14 +608,15 @@ function resolverDir(base, dir, temExpansao) {
 
 // Opções curtas e longas de um envoltório. `comValor` são as letras que levam
 // valor; `longosComValor`, as longas que levam o valor na palavra seguinte.
-// `aoVer(opcao, valor)` recebe as que interessam. Devolve o índice do comando.
+// `aoVer(opcao, valor, item)` recebe as que interessam (`item`: a palavra de onde veio o valor, junto
+// ou na seguinte). Devolve o índice do comando.
 function pularOpcoes(itens, k, comValor, longosComValor = new Set(), aoVer = () => {}) {
   while (k < itens.length) {
     const a = itens[k].s;
     if (a === '--') return k + 1;
     if (a.startsWith('--')) {
       const igual = a.indexOf('=');
-      if (igual > 0) { aoVer(a.slice(0, igual), a.slice(igual + 1)); k++; continue; }
+      if (igual > 0) { aoVer(a.slice(0, igual), a.slice(igual + 1), itens[k]); k++; continue; }
       if (longosComValor.has(a)) { aoVer(a, itens[k + 1]?.s, itens[k + 1]); k += 2; continue; }
       aoVer(a, null); k++;
       continue;
@@ -624,7 +626,7 @@ function pularOpcoes(itens, k, comValor, longosComValor = new Set(), aoVer = () 
     for (let j = 1; j < a.length; j++) {
       const letra = a[j];
       if (comValor.has(letra)) {
-        if (j < a.length - 1) aoVer(`-${letra}`, a.slice(j + 1));
+        if (j < a.length - 1) aoVer(`-${letra}`, a.slice(j + 1), itens[k]);
         else { aoVer(`-${letra}`, itens[k + 1]?.s, itens[k + 1]); usou = 2; }
         break;
       }
@@ -671,12 +673,18 @@ class Leitor {
 
   // Texto relido como shell (eval, bash -c, …): orçamento total por chamada,
   // conferido antes de tokenizar, contra cadeias de eval que multiplicam a entrada.
-  lerTexto(texto, ctx, pos) {
+  // `expandido`: o texto veio de palavra com expansão (`bash -c "… '$X'"`); a camada de fora troca o `$`
+  // antes da releitura, até dentro das aspas simples de dentro, então nada ali é literal (ctx.textoExpandido,
+  // que vale também para o que é relido dentro dele).
+  lerTexto(texto, ctx, pos, expandido = false) {
     this.orcamentoDeTexto -= texto.length;
     if (this.orcamentoDeTexto < 0) throw new ErroDeShell('texto relido demais (eval, bash -c …)', pos);
     this.entrar(pos);
     const { tokens } = tokenizar(texto, 0, 'topo', this.profundidade);
+    const expandidoAntes = ctx.textoExpandido;
+    if (expandido) ctx.textoExpandido = true;
     const sucesso = this.lerTudo(tokens, ctx);
+    ctx.textoExpandido = expandidoAntes;
     this.sair();
     return sucesso;
   }
@@ -740,30 +748,42 @@ class Leitor {
     let condicional = false;
     let certo = new Set([ctx.cwd]);
     let falhou = new Set();
+    // Os alternativos (cwds de um cd anterior que pode ter falhado) seguem a mesma simulação: um cd que
+    // dá certo os leva ao destino (o absoluto faz todos convergirem), e falhando ficam como estavam.
+    let altCerto = new Set(ctx.alternativos);
+    let altFalhou = new Set();
     let operador = '&&';
     for (let n = 0; ; n++) {
       const roda = operador === '&&' ? certo : falhou;
+      const altRoda = operador === '&&' ? altCerto : altFalhou;
       ctx.cwd = roda.size === 1 ? [...roda][0] : null;
+      ctx.alternativos = [];
+      acrescentarAlternativos(ctx, [...altRoda]);
       ctx.garantidos = soE ? garantidos : garantidosDeFora;
       const antes = ctx.cwd;
       const mudancas = this.mudancasDeCwd;
       const info = this.lerPipeline(cur, ctx) ?? {};
       garantidos = unir(garantidos, info.sucesso);
       const depois = ctx.cwd;
+      const altDepois = new Set(ctx.alternativos);
       // Com o cwd de entrada desconhecido, um cd relativo deixa null em null: o contador diz que mudou.
       const mudou = depois !== antes || (antes === null && this.mudancasDeCwd !== mudancas);
       let rCerto = roda;
       let rFalhou = roda;
+      let aCerto = altDepois;
+      let aFalhou = altDepois;
+      if (info.ehCd && !info.negado) aFalhou = altRoda;
+      else if (mudou) aCerto = aFalhou = juntar(altRoda, altDepois);
       if (mudou) {
         sequencial = depois;
         if (n > 0) condicional = true;
         if (info.ehCd && !info.negado) rCerto = new Set([depois]);
         else rCerto = rFalhou = juntar(roda, [depois]);
       }
-      if (info.negado) rCerto = rFalhou = juntar(rCerto, rFalhou);
-      if (info.termina) rCerto = rFalhou = new Set(); // exit/return: nada roda depois dele
-      if (operador === '&&') { certo = rCerto; falhou = juntar(falhou, rFalhou); }
-      else { falhou = rFalhou; certo = juntar(certo, rCerto); }
+      if (info.negado) { rCerto = rFalhou = juntar(rCerto, rFalhou); aCerto = aFalhou = juntar(aCerto, aFalhou, altRoda); }
+      if (info.termina) rCerto = rFalhou = aCerto = aFalhou = new Set(); // exit/return: nada roda depois dele
+      if (operador === '&&') { certo = rCerto; falhou = juntar(falhou, rFalhou); altCerto = aCerto; altFalhou = juntar(altFalhou, aFalhou); }
+      else { falhou = rFalhou; certo = juntar(certo, rCerto); altFalhou = aFalhou; altCerto = juntar(altCerto, aCerto); }
       if (!ehOp(cur.tokens[cur.i], '&&', '||')) break;
       operador = cur.tokens[cur.i].valor;
       if (operador === '||') soE = false;
@@ -777,7 +797,8 @@ class Leitor {
       ctx.cwd = condicional ? null : sequencial;
       // A lista pode ter terminado num cwd diferente (cd que não achou a pasta, antes ou no
       // meio de `cd x && a`): esses cwds viram alternativos para o que vem depois do `;`.
-      if (!condicional) acrescentarAlternativos(ctx, [...juntar(certo, falhou)]);
+      ctx.alternativos = [];
+      acrescentarAlternativos(ctx, [...juntar(certo, falhou, altCerto, altFalhou)]);
     }
     return sucesso;
   }
@@ -804,9 +825,9 @@ class Leitor {
     partes.forEach((p, k) => { if (k > 0 && p.shellLendoEntrada) ultimoShell = k; });
     for (const anterior of partes.slice(0, Math.max(ultimoShell, 0))) {
       for (const fonte of anterior.saidaTexto ?? []) {
-        const texto = typeof fonte === 'function' ? fonte() : fonte;
+        const texto = typeof fonte.texto === 'function' ? fonte.texto() : fonte.texto;
         const m = this.marcar(ctx);
-        this.lerTexto(texto, ctx, null);
+        this.lerTexto(texto, ctx, null, fonte.expandido);
         this.desfazer(ctx, m);
       }
     }
@@ -986,8 +1007,10 @@ class Leitor {
         const alvo = cur.tokens[cur.i + 1];
         if (alvo?.tipo !== 'palavra') throw new ErroDeShell(`redirecionamento "${t.valor}" sem destino`, t.pos);
         subs.push(...(t.subs ?? []), ...alvo.subs);
-        if (t.valor === '<<' || t.valor === '<<-') entradas.push(t.corpo ?? '');
-        if (t.valor === '<<<') entradas.push(alvo.texto);
+        // Entradas: {texto, expandido}; o heredoc sem aspas no delimitador e a palavra com expansão do `<<<`
+        // passam pela expansão antes de chegar a quem lê.
+        if (t.valor === '<<' || t.valor === '<<-') entradas.push({ texto: t.corpo ?? '', expandido: t.expande === true });
+        if (t.valor === '<<<') entradas.push({ texto: alvo.texto, expandido: alvo.expande });
         const e = escritaDe(t, alvo);
         if (e != null) escritas.push(e);
         cur.i += 2;
@@ -1033,12 +1056,25 @@ class Leitor {
     // Devolve o que certamente deu certo se o comando deu (ele mesmo, pelo índice na saída).
     const comEscritas = (argv, cwd, env) => {
       let i;
-      const extras = { literais: literaisDe(itens), xargs: viaXargs };
+      const extras = { literais: ctx.textoExpandido ? [] : literaisDe(itens), xargs: viaXargs, alternativos: alternativosEm(cwd) };
       if (escritas.length && cwd !== ctx.cwd) { soEscritas(); i = this.emitir(argv, cwd, ctx, env, [], extras); } else i = this.emitir(argv, cwd, ctx, env, escritas, extras);
       return semSucesso ? null : { i };
     };
     const env = { ...envLocal };
     let cwd = ctx.cwd;
+    // `git -C`, `env -C` e `sudo -D` mudam a pasta; `mapear` aplica as mesmas mudanças a cada cwd alternativo
+    // (com pasta absoluta, todos convergem nela e somem).
+    let mapear = a => a;
+    const mudarDir = (dir, exp) => {
+      const anterior = mapear;
+      cwd = resolverDir(cwd, dir, exp);
+      mapear = a => resolverDir(anterior(a), dir, exp);
+    };
+    const alternativosEm = c => {
+      const r = [];
+      for (const a of ctx.alternativos) { const x = mapear(a); if (x !== c && !r.includes(x)) r.push(x); }
+      return r;
+    };
     let original = itens;
     // `xargs -r` pode não rodar o comando e dar 0; `setsid` pode devolver antes de o comando terminar.
     let semSucesso = false;
@@ -1049,9 +1085,10 @@ class Leitor {
       let k = null;
       if (nome === 'env') {
         let dividir = null;
+        let dividirExpande = false;
         k = pularOpcoes(itens, 1, new Set(['u', 'C', 'S']), new Set(['--unset', '--chdir', '--split-string']), (o, v, item) => {
-          if ((o === '-C' || o === '--chdir') && v != null) cwd = resolverDir(cwd, v, item?.exp);
-          if ((o === '-S' || o === '--split-string') && v != null) dividir = v;
+          if ((o === '-C' || o === '--chdir') && v != null) mudarDir(v, item?.exp);
+          if ((o === '-S' || o === '--split-string') && v != null) { dividir = v; dividirExpande = item?.exp !== false; }
         });
         while (k < itens.length && (itens[k].s === '-' || itens[k].s.indexOf('=') > 0)) {
           const s = itens[k].s;
@@ -1062,14 +1099,15 @@ class Leitor {
           this.orcamentoDeTexto -= dividir.length;
           if (this.orcamentoDeTexto < 0) throw new ErroDeShell('texto relido demais (env -S)', null);
           const palavrasDivididas = tokenizar(dividir, 0, 'topo', 1).tokens.filter(t => t.tipo === 'palavra');
-          itens = [...palavrasDivididas.map(p => ({ s: p.texto, exp: p.expande })), ...itens.slice(k)];
+          // Com expansão na palavra de fora, o `$` já foi trocado antes de o env dividir: nada ali é literal.
+          itens = [...palavrasDivididas.map(p => ({ s: p.texto, exp: p.expande || dividirExpande })), ...itens.slice(k)];
           continue;
         }
       } else if (nome === 'sudo' || nome === 'doas') {
         const comValor = nome === 'sudo' ? 'ugCDhprtTUc' : 'uC';
         k = pularOpcoes(itens, 1, new Set(comValor),
           new Set(['--user', '--group', '--close-from', '--chdir', '--host', '--prompt', '--role', '--type', '--command-timeout', '--other-user', '--login-class']),
-          (o, v, item) => { if (nome === 'sudo' && (o === '-D' || o === '--chdir') && v != null) cwd = resolverDir(cwd, v, item?.exp); });
+          (o, v, item) => { if (nome === 'sudo' && (o === '-D' || o === '--chdir') && v != null) mudarDir(v, item?.exp); });
         while (k < itens.length && atribuicaoDeTexto(itens[k].s)) {
           const a = atribuicaoDeTexto(itens[k].s);
           definir(env, a.nome, a.valor);
@@ -1105,49 +1143,51 @@ class Leitor {
 
     if (SHELLS.has(nome)) {
       const texto = textoDoDashC(itens);
-      const filho = (t) => {
+      const filho = (t, expandido) => {
         const m = this.marcar(ctx);
         this.herdar(ctx, env);
-        if (cwd !== ctx.cwd) ctx.alternativos = [];
+        ctx.alternativos = alternativosEm(cwd);
         ctx.cwd = cwd;
-        const sucesso = this.lerTexto(t, ctx, null);
+        const sucesso = this.lerTexto(t, ctx, null, expandido);
         this.desfazer(ctx, m);
         return sucesso;
       };
       if (texto !== undefined) {
         soEscritas();
-        const sucesso = texto !== null ? filho(texto) : null;
+        const sucesso = texto !== null ? filho(texto.s, texto.exp) : null;
         return { sucesso: semSucesso ? null : sucesso };
       }
       comEscritas(argv, cwd, env);
-      for (const e of entradas) filho(e);
+      for (const e of entradas) filho(e.texto, e.expandido);
       return { shellLendoEntrada: !argv.slice(1).some(a => !a.startsWith('-') && !a.startsWith('+')) };
     }
     if (nome === 'su') {
       // su [usuário] -c '<texto>': o texto roda num shell novo.
       let texto = null;
+      let expandido = false;
       for (let k = 1; k < argv.length; k++) {
-        if ((argv[k] === '-c' || argv[k] === '--command') && k + 1 < argv.length) texto = argv[k + 1];
-        else if (argv[k].startsWith('--command=')) texto = argv[k].slice('--command='.length);
+        if ((argv[k] === '-c' || argv[k] === '--command') && k + 1 < argv.length) { texto = argv[k + 1]; expandido = itens[k + 1].exp; }
+        else if (argv[k].startsWith('--command=')) { texto = argv[k].slice('--command='.length); expandido = itens[k].exp; }
       }
       if (texto == null) return { sucesso: comEscritas(argv, cwd, env) };
       soEscritas();
       const m = this.marcar(ctx);
       this.herdar(ctx, env);
-      const sucesso = this.lerTexto(texto, ctx, null);
+      const sucesso = this.lerTexto(texto, ctx, null, expandido);
       this.desfazer(ctx, m);
       return { sucesso: semSucesso ? null : sucesso };
     }
     if (nome === 'eval') {
       // eval roda no shell atual: o cd vaza; o prefixo vale só para o texto.
       const texto = argv.slice(1).join(' ');
+      const expandido = itens.slice(1).some(x => x.exp);
       itens.length = 0;
       argv.length = 0;
       soEscritas();
       if (!texto.trim()) return null;
       const herdado = ctx.herdado;
       this.herdar(ctx, env);
-      const sucesso = this.lerTexto(texto, ctx, null);
+      const sucesso = this.lerTexto(texto, ctx, null, expandido);
       ctx.herdado = herdado;
       return { sucesso: semSucesso ? null : sucesso };
     }
@@ -1159,15 +1199,15 @@ class Leitor {
         const m = this.marcar(ctx);
         const garantidos = ctx.garantidos;
         ctx.garantidos = null;
-        this.lerTexto(itens[k].s, ctx, null);
+        this.lerTexto(itens[k].s, ctx, null, itens[k].exp);
         ctx.garantidos = garantidos;
         this.desfazer(ctx, m);
       }
       return null;
     }
     if (nome === 'git') {
-      const r = tirarDashC(itens, cwd);
-      return { sucesso: comEscritas(r.argv, r.cwd, env) };
+      const gitArgv = tirarDashC(itens, mudarDir);
+      return { sucesso: comEscritas(gitArgv, cwd, env) };
     }
     const sucesso = comEscritas(argv, cwd, env);
     const termina = nome === 'exit' || nome === 'return' || nome === 'logout';
@@ -1175,33 +1215,40 @@ class Leitor {
 
     const ehCd = nome === 'cd' || nome === 'pushd' || nome === 'popd';
     if (ehCd) {
+      // Se deu certo, cada alternativo vai para onde o cd o leva (o absoluto, ao mesmo lugar); o caso de
+      // falhar fica com lerAndOr.
       const alternativos = ctx.alternativos.map(a => novoCwd(nome, itens, a));
       this.mudancasDeCwd++;
       ctx.cwd = novoCwd(nome, itens, ctx.cwd);
+      ctx.alternativos = [];
       acrescentarAlternativos(ctx, alternativos);
     }
-    // Texto que este comando escreve na saída, caso vá para um shell. Montado
-    // só se for mesmo para um shell (printf sem como montar lança erro).
+    // Texto que este comando escreve na saída, caso vá para um shell ({texto, expandido}, ver lerTexto).
+    // Montado só se for mesmo para um shell (printf sem como montar lança erro; com expansão, também).
     const saidaTexto = [...entradas];
-    if (nome === 'echo') saidaTexto.push(...saidaDoEcho(itens));
-    else if (nome === 'printf') {
+    if (nome === 'echo') {
+      const expandido = itens.slice(1).some(x => x.exp);
+      saidaTexto.push(...saidaDoEcho(itens).map(texto => ({ texto, expandido })));
+    } else if (nome === 'printf') {
       let k = 1;
       if (argv[k] === '-v') k += 2;
       if (argv[k] === '--') k++;
-      if (k < itens.length) saidaTexto.push(() => saidaDoPrintf(itens.slice(k), this.orcamentoDeSaida));
+      if (k < itens.length) saidaTexto.push({ texto: () => saidaDoPrintf(itens.slice(k), this.orcamentoDeSaida), expandido: false });
     }
     return { saidaTexto, ehCd, termina, sucesso };
   }
 
   // Cada comando leva a cópia do ambiente conhecido; o teto evita que milhares
   // de atribuições vezes milhares de comandos esgotem a memória.
-  emitir(argv, cwd, ctx, env, escritas, { literais, xargs } = {}) {
+  // `alternativos`: os cwds alternativos já levados pelo `git -C`/`env -C` do comando; sem eles, os da
+  // lista quando o cwd é o dela.
+  emitir(argv, cwd, ctx, env, escritas, { literais, xargs, alternativos } = {}) {
     const completo = { ...ctx.herdado, ...env };
     this.entradasDeAmbiente += Object.keys(completo).length + 1;
     if (this.entradasDeAmbiente > LIMITE_ENTRADAS_DE_AMBIENTE) throw new ErroDeShell('texto grande demais para ler (ambiente × comandos)', null);
     const saida = { argv, cwd, env: completo };
-    // Os alternativos valem para o cwd da lista; com git -C ou env -C o cwd é outro.
-    if (ctx.alternativos.length && cwd === ctx.cwd) saida.cwdsAlternativos = [...ctx.alternativos];
+    const alts = alternativos ?? (cwd === ctx.cwd ? ctx.alternativos : []);
+    if (alts.length) saida.cwdsAlternativos = [...alts];
     if (escritas?.length) saida.escritas = [...escritas];
     if (literais?.length) saida.literais = literais;
     if (xargs) saida.xargs = true;
@@ -1363,7 +1410,7 @@ function atribuicaoDeTexto(s) {
   return nomeValido(nome) ? { nome, valor: s.slice(k + 1) } : null;
 }
 
-// bash -c '<texto>': devolve o texto (null se faltar), ou undefined sem -c.
+// bash -c '<texto>': devolve a palavra do texto ({s, exp}; null se faltar), ou undefined sem -c.
 function textoDoDashC(itens) {
   let temC = false;
   let k = 1;
@@ -1376,18 +1423,18 @@ function textoDoDashC(itens) {
     k += a.includes('o') || a.includes('O') ? 2 : 1;
   }
   if (!temC) return undefined;
-  return itens[k]?.s ?? null;
+  return itens[k] ?? null;
 }
 
-// git -C <dir>: o cwd passa a ser <dir> e o par sai do argv.
+// git -C <dir>: `mudarDir(dir, exp)` leva o cwd para <dir>, e o par sai do argv (devolvido).
 const GIT_COM_VALOR = new Set(['-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env']);
-function tirarDashC(itens, cwd) {
+function tirarDashC(itens, mudarDir) {
   const argv = [itens[0].s];
   let k = 1;
   while (k < itens.length) {
     const a = itens[k].s;
     if (a === '-C' && k + 1 < itens.length) {
-      cwd = resolverDir(cwd, itens[k + 1].s, itens[k + 1].exp);
+      mudarDir(itens[k + 1].s, itens[k + 1].exp);
       k += 2;
       continue;
     }
@@ -1397,7 +1444,7 @@ function tirarDashC(itens, cwd) {
     k++;
   }
   for (; k < itens.length; k++) argv.push(itens[k].s);
-  return { argv, cwd };
+  return argv;
 }
 
 // Junta cwds alternativos sem repetir o atual; passado o teto, um null (desconhecido) fica no lugar.
@@ -1436,6 +1483,6 @@ export function comandosSimples(texto, cwd) {
   leitor.orcamentoDeTexto = Math.max(4 * texto.length, LIMITE_TEXTO_RELIDO_MINIMO);
   leitor.orcamentoDeSaida.resta = leitor.orcamentoDeTexto;
   const { tokens } = tokenizar(texto, 0, 'topo', 0);
-  leitor.lerTudo(tokens, { cwd: cwd ?? null, herdado: {}, alternativos: [], garantidos: null });
+  leitor.lerTudo(tokens, { cwd: cwd ?? null, herdado: {}, alternativos: [], garantidos: null, textoExpandido: false });
   return leitor.saida;
 }

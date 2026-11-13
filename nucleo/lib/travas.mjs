@@ -226,6 +226,8 @@ function recusaAtual(ramo, saida, protegidos) {
 }
 
 const GH_COM_VALOR = new Set(['-R', '--repo']);
+// O `gh` lê o repositório de GH_REPO: no prefixo do comando, ou na linha (`export GH_REPO=…`, `ctx.ghRepo`).
+const repoDeFora = (cmd, ctx) => cmd.env?.GH_REPO !== undefined || ctx.ghRepo === true;
 const GH_MERGE_COM_VALOR = new Set(['-b', '--body', '-F', '--body-file', '-t', '--subject', '--match-head-commit', '-A', '--author-email']);
 
 function travaT5Merge(args, ctx, cmd) {
@@ -240,6 +242,7 @@ function travaT5Merge(args, ctx, cmd) {
     if (a.startsWith('-')) continue;
     pos.push(a);
   }
+  if (repoDeFora(cmd, ctx)) outroRepo = true;
   const saida = 'abra ou atualize o PR e peça a ordem do executivo para o merge em ramo protegido';
   const alvo = pos[0];
   let numero = null;
@@ -262,9 +265,9 @@ function recusaPelaBase(numero, ctx, cmd, forma, saida) {
 }
 
 // `gh api …/repos/<dono>/<repo>/pulls/<n>/merge` com método que não seja GET (o PUT da API de merge; sem -X,
-// campo -f/-F/--input vira POST) mescla o PR como o `gh pr merge`. Dono e repositório escritos por extenso
-// podem ser outro repositório: não dá para saber a base. Endpoint em variável e a mutação do GraphQL
-// (mergePullRequest) não são avaliados.
+// campo -f/-F/--input vira POST) mescla o PR como o `gh pr merge`. Dono e repositório escritos por extenso,
+// ou `{owner}/{repo}` com o repositório vindo de GH_REPO ou de `--repo`/`-R`, podem ser outro repositório:
+// não dá para saber a base. Endpoint em variável e a mutação do GraphQL (mergePullRequest) não são avaliados.
 const GH_API_COM_VALOR = new Set(['-X', '--method', '-H', '--header', '-f', '--raw-field', '-F', '--field', '--input', '-q', '--jq',
   '-t', '--template', '--hostname', '--cache', '-p', '--preview']);
 const GH_API_CAMPOS = new Set(['-f', '--raw-field', '-F', '--field', '--input']);
@@ -274,10 +277,13 @@ function travaT5Api(args, ctx, cmd) {
   let metodo = null;
   let comCampo = false;
   let endpoint = null;
+  let outroRepo = repoDeFora(cmd, ctx);
   for (let k = 0; k < args.length; k++) {
     const a = args[k];
     const igual = a.startsWith('--') ? a.indexOf('=') : -1;
     const opcao = igual > 0 ? a.slice(0, igual) : a;
+    if (opcao === '-R' || opcao === '--repo') { outroRepo = true; if (igual < 0) k++; continue; }
+    if (/^-R./.test(a)) { outroRepo = true; continue; }
     if (opcao === '-X' || opcao === '--method') { metodo = igual > 0 ? a.slice(igual + 1) : args[++k] ?? ''; continue; }
     if (/^-X./.test(a)) { metodo = a.slice(2); continue; }
     if (GH_API_COM_VALOR.has(opcao)) { if (GH_API_CAMPOS.has(opcao)) comCampo = true; if (igual < 0) k++; continue; }
@@ -293,6 +299,7 @@ function travaT5Api(args, ctx, cmd) {
   const [, dono, repo, n] = m;
   const esteRepo = /^(\{owner\}|:owner)$/.test(dono) && /^(\{repo\}|:repo)$/.test(repo);
   if (!esteRepo || !/^\d+$/.test(n)) return recusa('T5', 'não consigo saber para qual ramo o PR será mesclado pela API', saida);
+  if (outroRepo) return recusa('T5', 'não consigo saber para qual ramo o PR será mesclado pela API: o repositório vem de GH_REPO ou de --repo', saida);
   return recusaPelaBase(Number(n), ctx, cmd, 'gh api …/merge', saida);
 }
 
@@ -311,7 +318,8 @@ function travaT5(cmd, ctx) {
       const antes = cmd.argv.slice(1, k);
       return travaT5Merge([...antes, ...resto.slice(2)], ctx, cmd);
     }
-    if (resto[0] === 'api') return travaT5Api(resto.slice(1), ctx, cmd);
+    // -R antes do subcomando também vale
+    if (resto[0] === 'api') return travaT5Api([...cmd.argv.slice(1, k), ...resto.slice(1)], ctx, cmd);
   }
   return null;
 }
@@ -375,16 +383,18 @@ function switchTrocaRamo(args, base) {
   return posicionais.length > 0 && (posicionais[0] === '-' || posicionais[0] !== base);
 }
 
-// `git checkout` troca de ramo: -b, -B, --orphan, --detach, `-`, ou um único posicional (sem `--`)
-// que não é a base e é uma referência, mesmo que também exista como caminho (o git prefere o ramo).
-// Sem `ehRef` no ctx, o posicional solto não recusa.
+// `git checkout` troca de ramo: -b, -B, --orphan, --detach, `-`, ou um único posicional (sem caminhos
+// depois do `--`) que não é a base e é uma referência, mesmo que também exista como caminho (o git prefere
+// o ramo). Com `--` sem caminhos, o posicional é referência com certeza. Sem `ehRef` no ctx, o posicional
+// solto não recusa.
 function checkoutTrocaRamo(args, cwd, ctx) {
-  const { opcoes, posicionais, comTraco } = lerArgs(args, CHECKOUT_CURTAS, CHECKOUT_LONGAS);
+  const { opcoes, posicionais, depois, comTraco } = lerArgs(args, CHECKOUT_CURTAS, CHECKOUT_LONGAS);
   if (opcoes.some(o => o === '-b' || o === '-B' || ehLonga(o, '--orphan', 4) || ehLonga(o, '--detach', 4))) return true;
-  if (comTraco || posicionais.length !== 1) return false;
+  if (depois.length || posicionais.length !== 1) return false;
   const [alvo] = posicionais;
   if (alvo === '-') return true;
   if (alvo === ctx.config.git.base || naoLiteral(alvo)) return false;
+  if (comTraco) return true;
   if (typeof ctx.ehRef !== 'function') return false;
   return ctx.ehRef(cwd ?? ctx.raiz, alvo) === true;
 }
@@ -762,9 +772,14 @@ function destinoDaTroca(sub, args) {
   const posicionais = [];
   let novo;
   let comTrack = false;
+  let comTraco = false;
   for (let k = 0; k < args.length; k++) {
     const a = args[k];
-    if (a === '--') { if (novo === undefined && sub === 'checkout') return null; break; }
+    if (a === '--') {
+      // `checkout <x> -- <caminhos>` restaura arquivos; sem caminhos, o `--` só diz que <x> é referência.
+      if (novo === undefined && sub === 'checkout') { if (k + 1 < args.length) return null; comTraco = true; }
+      break;
+    }
     if (a === '--detach' || (sub === 'switch' && a === '-d')) return { ramos: [null] };
     if (a === '-p' || a === '--patch' || a.startsWith('--pathspec-from-file')) return null;
     if (a === '-t' || a === '--track' || a.startsWith('--track=')) { comTrack = true; continue; }
@@ -783,15 +798,17 @@ function destinoDaTroca(sub, args) {
   const alvo = ler(posicionais[0]);
   // --track origin/main cria `main`; sem saber o remoto, os dois nomes contam.
   if (comTrack && alvo?.includes('/')) return { ramos: [alvo, alvo.slice(alvo.indexOf('/') + 1)] };
-  return { ramos: [alvo], solta: sub === 'checkout' };
+  return { ramos: [alvo], solta: sub === 'checkout' && !comTraco };
 }
 
 const ANTES = Symbol('ramo de antes');
 
 // Acompanha as trocas de ramo feitas pelos comandos já lidos; `ramoAtual(cwd, cmd)` responde com elas.
 // Uma troca que certamente deu certo antes de `cmd` (só `&&` entre as duas, ver deuCerto) e cujo destino
-// é ramo com certeza substitui os ramos possíveis; as outras (podem ter falhado, ou o checkout pode ter
-// sido de um arquivo) só somam possibilidades ao que já havia.
+// é ramo com certeza substitui o ramo de antes e as trocas que certamente rodaram antes dela (de novo pelo
+// deuCerto); as outras (podem ter falhado, o checkout pode ter sido de um arquivo) só somam possibilidades.
+// A ordem da lista não é a do tempo: corpo de função, texto de `trap`, segundo plano e `coproc` aparecem
+// antes e podem rodar depois da troca que substitui, então continuam possíveis.
 function novasTrocas(ctx) {
   const porTopo = new Map();
   let tudoIncerto = false;
@@ -809,16 +826,21 @@ function novasTrocas(ctx) {
       const [alvo] = destino.ramos;
       let ehRamo = destino.solta ? undefined : true;
       const certo = () => (ehRamo ??= alvo != null && typeof ctx.ehRef === 'function' && ctx.ehRef(cmd.cwd, alvo) === true);
-      porTopo.set(topo, [...(porTopo.get(topo) ?? []), { indice, ramos: destino.ramos, certo }]);
+      porTopo.set(topo, [...(porTopo.get(topo) ?? []), { indice, cmd, ramos: destino.ramos, certo }]);
     },
     get vazio() { return !tudoIncerto && porTopo.size === 0; },
     ramoAtual(cwd, cmd) {
       if (tudoIncerto) return null;
       const trocas = porTopo.get(ctx.topoDe(cwd));
       if (!trocas) return ctx.ramoAtual(cwd);
-      let possiveis = [ANTES];
-      for (const t of trocas) possiveis = deuCerto(cmd, t.indice) && t.certo() ? [...t.ramos] : [...possiveis, ...t.ramos];
-      const ramos = possiveis.map(r => (r === ANTES ? ctx.ramoAtual(cwd) : r));
+      // Cada possível guarda a troca de onde veio (ANTES: o ramo de antes de tudo).
+      let possiveis = [{ ramo: ANTES, de: null }];
+      for (const t of trocas) {
+        const daqui = t.ramos.map(ramo => ({ ramo, de: t }));
+        if (deuCerto(cmd, t.indice) && t.certo()) possiveis = [...possiveis.filter(p => p.de && !deuCerto(t.cmd, p.de.indice)), ...daqui];
+        else possiveis = [...possiveis, ...daqui];
+      }
+      const ramos = possiveis.map(p => (p.ramo === ANTES ? ctx.ramoAtual(cwd) : p.ramo));
       if (ramos.includes(null)) return null;
       return ramos.find(r => ctx.config.git.protegidos.includes(r)) ?? ramos[0];
     },
@@ -870,11 +892,38 @@ function travasDeExtensao(acao, comandos, ctx, liberadaAntes) {
   return liberada ? { permite: true, liberada } : { permite: true };
 }
 
+// ---------------------------------------------------------------- dotglob na linha
+// Com dotglob (bash, ou GLOBIGNORE) ou globdots (zsh) ligado na própria linha, o curinga casa o ponto (T4).
+// O nome é procurado no texto cru e nos argumentos já lidos, sem aspas, escapes, caixa nem `_` (o zsh ignora
+// caixa e `_` no nome da opção: GLOB_DOTS, NO_GLOB_DOTS). `shopt`, `setopt`, `unsetopt` ou `set` com opção
+// que não dá para ler, ou o `-4` do zsh (GLOB_DOTS), ligam por precaução.
+const OPCAO_DO_PONTO = /dotglob|globdots|globignore/;
+const semEnfeite = s => s.replace(/['"\\_]/g, '').toLowerCase();
+const ilegivelOuQuatro = a => naoLiteral(a) || /^[-+][^-]*4/.test(a);
+
+function opcaoDoPontoIncerta(nome, args) {
+  if (nome === 'shopt') return args.some(naoLiteral);
+  if (nome === 'setopt' || nome === 'unsetopt') return args.some(ilegivelOuQuatro);
+  if (nome !== 'set') return false;
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    if (a === '--' || a === '-') return false; // o resto são os parâmetros posicionais
+    if (naoLiteral(a)) return true;
+    if (!/^[-+]/.test(a)) return false;
+    if (/^[-+]o$/.test(a)) { if (naoLiteral(args[k + 1] ?? '')) return true; k++; continue; }
+    if (ilegivelOuQuatro(a)) return true;
+  }
+  return false;
+}
+
+function ligaDotglob(texto, comandos) {
+  if (OPCAO_DO_PONTO.test(semEnfeite(texto))) return true;
+  return comandos.some(c => c.argv.some(a => OPCAO_DO_PONTO.test(semEnfeite(a))) || opcaoDoPontoIncerta(nomeDe(c.argv[0]), c.argv.slice(1)));
+}
+
 export function avaliar(acao, ctx) {
   if (acao?.tipo === 'edicao') return travaT4Edicao(acao, ctx) ?? travasDeExtensao(acao, null, ctx);
   if (acao?.tipo !== 'comando') throw new TypeError(`avaliar: tipo de ação desconhecido: ${acao?.tipo}`);
-  // Com dotglob (bash, ou GLOBIGNORE) ou globdots (zsh) ligado na própria linha, o curinga casa o ponto.
-  if (/(?<![A-Za-z0-9_])(dotglob|globdots|GLOBIGNORE)(?![A-Za-z0-9_])/.test(acao.comando)) ctx = { ...ctx, dotglob: true };
   let comandos;
   try {
     comandos = comandosSimples(acao.comando, acao.cwd ?? null);
@@ -882,6 +931,9 @@ export function avaliar(acao, ctx) {
     if (!(e instanceof ErroDeShell)) throw e;
     return PALAVRA_GIT.test(acao.comando) ? recusaT0(`não consegui ler o comando (${e.message}) e ele menciona git ou gh`) : travasDeExtensao(acao, null, ctx);
   }
+  if (ligaDotglob(acao.comando, comandos)) ctx = { ...ctx, dotglob: true };
+  // GH_REPO mencionado na linha (`export GH_REPO=…`) pode mudar o repositório do `gh` que vem depois.
+  if (/GH_REPO/.test(acao.comando)) ctx = { ...ctx, ghRepo: true };
   let liberada;
   const trocas = novasTrocas(ctx);
   for (const [indice, cmd] of comandos.entries()) {
