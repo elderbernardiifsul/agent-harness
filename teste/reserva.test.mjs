@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { criarProjeto, dirDoTeste } from './apoio/repo.mjs';
 import { lerMarcadores, lerTicket, liberarTickets, marcarTickets, montarMarcador, situacaoDoTicket } from '../nucleo/lib/reserva.mjs';
+import { criarRotulo } from '../nucleo/lib/github.mjs';
 
 const lerFrenteDoTeste = (p, nome) => {
   const arq = path.join(p.estado, 'loja', 'frentes', `${nome}.json`);
@@ -152,6 +153,7 @@ test('marcarTickets comenta com o marcador do tipo e reatribui quem não estava'
   const p = criarProjeto();
   const o = { cwd: p.raiz, env: p.env };
   const frente = { id: 'as-1', nome: 'carrinho', ramo: 'feat/carrinho', tickets: [1, 2], reserva: { logins: ['ana-souza'], tickets: [1, 2] } };
+  assert.equal(criarRotulo('em-andamento', o), true); // a reserva anterior criou o rótulo
   const r = marcarTickets({ frente, tipo: 'tomada', texto: 'Frente tomada.', login: 'carla-dias', sessao: 'sessao-b-0002', rotulo: 'em-andamento', dirEstado: dirDoTeste(p), reatribuir: true }, o);
   assert.deepEqual(r.logins, ['ana-souza', 'carla-dias']);
   for (const n of [1, 2]) {

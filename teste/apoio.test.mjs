@@ -2,6 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { criarRepo } from './apoio/repo.mjs';
 import { gh } from '../nucleo/lib/github.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 test('criarRepo entrega ramos e remoto', () => {
   const r = criarRepo();
@@ -16,6 +20,7 @@ test('criarRepo entrega ramos e remoto', () => {
 test('gh falso guarda comentário, responsável e rótulo por ticket', () => {
   const p = criarRepo();
   gh(['issue', 'comment', '3', '--body-file', '-'], { cwd: p.raiz, env: p.env, entrada: 'oi' });
+  gh(['label', 'create', 'em-andamento'], { cwd: p.raiz, env: p.env });
   gh(['issue', 'edit', '3', '--add-assignee', '@me', '--add-label', 'em-andamento'], { cwd: p.raiz, env: p.env });
   assert.deepEqual(p.ghTicket(3), { state: 'OPEN', assignees: ['ana-souza'], labels: ['em-andamento'], comments: [{ author: 'ana-souza', body: 'oi' }] });
   const v = JSON.parse(gh(['issue', 'view', '3', '--json', 'assignees,comments'], { cwd: p.raiz, env: { ...p.env, GH_FALSO_LOGIN: 'carla-dias' } }).saida);
@@ -61,4 +66,39 @@ test('gh falso simula a corrida: outro comenta e se põe de responsável antes d
   assert.deepEqual(t.comments.map(c => [c.author, c.body]), [['carla-dias', 'dela'], ['ana-souza', 'minha'], ['ana-souza', 'outra']]);
   assert.deepEqual(t.assignees, ['carla-dias']);
   p.limpar();
+});
+
+test('gh falso: rótulo criado fica guardado; rótulo que não existe e campo desconhecido saem com 1', () => {
+  const p = criarRepo();
+  const o = { cwd: p.raiz, env: p.env };
+  const sem = gh(['issue', 'edit', '1', '--add-label', 'em-andamento'], o);
+  assert.equal(sem.codigo, 1);
+  assert.match(sem.erro, /'em-andamento' not found/);
+  assert.deepEqual(p.ghTicket(1).labels, []);
+  assert.equal(gh(['label', 'create', 'em-andamento', '--force'], o).codigo, 0);
+  assert.equal(gh(['issue', 'edit', '1', '--add-label', 'em-andamento'], o).codigo, 0);
+  assert.deepEqual(p.ghTicket(1).labels, ['em-andamento']);
+  // O rótulo semeado num ticket também existe.
+  p.ghSemear(2, { labels: ['urgente'] });
+  assert.equal(gh(['issue', 'edit', '3', '--add-label', 'urgente'], o).codigo, 0);
+  for (const args of [['issue', 'view', '1', '--json', 'state,titulo'], ['issue', 'list', '--label', 'x', '--json', 'number,corpo']]) {
+    const r = gh(args, o);
+    assert.equal(r.codigo, 1);
+    assert.match(r.erro, /Unknown JSON field/);
+  }
+  p.limpar();
+});
+
+test('pasta de teste esquecida (até sem permissão de escrita) é apagada na saída do processo', () => {
+  const repo = pathToFileURL(path.join(import.meta.dirname, 'apoio', 'repo.mjs')).href;
+  const codigo = `import { criarRepo } from ${JSON.stringify(repo)};
+import fs from 'node:fs'; import path from 'node:path';
+const a = criarRepo(); const b = criarRepo();
+if (process.platform !== 'win32') { const d = path.join(a.raiz, 'trancada'); fs.mkdirSync(d); fs.writeFileSync(path.join(d, 'x'), 'x'); fs.chmodSync(d, 0o500); }
+b.limpar();
+console.log(JSON.stringify([path.dirname(a.raiz), path.dirname(b.raiz)]));`;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', codigo], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const pastas = JSON.parse(r.stdout);
+  for (const pasta of pastas) assert.ok(!fs.existsSync(pasta), `sobrou ${pasta}`);
 });

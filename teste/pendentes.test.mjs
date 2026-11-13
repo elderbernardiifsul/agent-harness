@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { criarProjeto, criarRepo, dirDoTeste } from './apoio/repo.mjs';
-import { comentarOuEnfileirar, contarPendentes, editarOuEnfileirar, enfileirar, reenviarPendentes } from '../nucleo/lib/pendentes.mjs';
+import { MAX_TENTATIVAS, comentarOuEnfileirar, contarPendentes, editarOuEnfileirar, enfileirar, reenviarComAviso, reenviarPendentes } from '../nucleo/lib/pendentes.mjs';
 import { criarRotulo, editarTicket } from '../nucleo/lib/github.mjs';
 
 const eventos = p => fs.readFileSync(path.join(dirDoTeste(p), 'eventos.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
+const lerFila = dir => fs.readFileSync(path.join(dir, 'pendentes.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
 const preparar = () => {
   const p = criarRepo();
   return { p, dir: dirDoTeste(p), o: { cwd: p.raiz, env: p.env }, fora: { cwd: p.raiz, env: { ...p.env, GH_FALSO_FORA: '1' } } };
@@ -14,6 +15,8 @@ const preparar = () => {
 
 test('editarTicket e criarRotulo chamam o gh com os argumentos do desenho', () => {
   const { p, o, fora } = preparar();
+  assert.equal(editarTicket(2, ['--add-label', 'em-andamento'], o), false); // rótulo que não existe
+  assert.equal(criarRotulo('em-andamento', o), true);
   assert.equal(editarTicket(2, ['--add-assignee', '@me', '--add-label', 'em-andamento'], o), true);
   assert.deepEqual(p.ghTicket(2).assignees, ['ana-souza']);
   assert.equal(criarRotulo('em-andamento', o), true);
@@ -45,6 +48,7 @@ test('comentário sem rede vai para a fila e sai no reenvio', async () => {
 
 test('edição sem rede vai para a fila e sai no reenvio', async () => {
   const { p, dir, o, fora } = preparar();
+  assert.equal(criarRotulo('em-andamento', o), true);
   assert.equal(editarOuEnfileirar(dir, 2, ['--add-assignee', '@me', '--add-label', 'em-andamento'], fora), false);
   assert.ok(eventos(p).some(e => e.tipo === 'edicao-falhou' && e.ticket === 2));
   assert.deepEqual(await reenviarPendentes(dir, o), { enviados: 1, restam: 0, descartados: 0 });
@@ -180,4 +184,112 @@ test('falha do reenvio não vira recusa do open', () => {
   assert.equal(r.codigo, 0, r.erro);
   assert.match(r.erro, /Aviso: não consegui reenviar/);
   p.limpar();
+});
+
+const TRANCADO = 'GraphQL: Unable to create comment because issue is locked (addComment)';
+
+test('erro em que o GitHub respondeu segura só o ticket dele, conta tentativas e avisa o que ficou', async () => {
+  const { p, dir, o } = preparar();
+  p.ghResponder([{ prefixo: ['issue', 'comment', '1'], codigo: 1, erro: `${TRANCADO}\n` }]);
+  enfileirar(dir, { tipo: 'comentario', ticket: 1, corpo: 'a' });
+  enfileirar(dir, { tipo: 'comentario', ticket: 1, corpo: 'b' });
+  enfileirar(dir, { tipo: 'comentario', ticket: 2, corpo: 'c' });
+  const avisos = [];
+  const r = await reenviarComAviso(dir, o, t => avisos.push(t));
+  assert.deepEqual(r, { enviados: 1, restam: 2, descartados: 0 });
+  assert.equal(p.ghTicket(2).comments[0].body, 'c');
+  // O segundo do ticket 1 nem foi tentado: a ordem do ticket fica.
+  assert.equal(p.ghChamadas().filter(c => c.argv[1] === 'comment' && c.argv[2] === '1').length, 1);
+  assert.deepEqual(lerFila(dir).map(l => [l.corpo, l.tentativas]), [['a', 1], ['b', undefined]]);
+  assert.match(lerFila(dir)[0].ultimoErro, /locked/);
+  const texto = avisos.join('');
+  assert.match(texto, /2 operações pendentes para o GitHub; a primeira falha com: GraphQL: Unable to create comment because issue is locked/);
+  assert.match(texto, /Próximo passo: /);
+  p.limpar();
+});
+
+test(`depois de ${MAX_TENTATIVAS} falhas com resposta do GitHub a operação é estacionada nos descartados, com aviso`, async () => {
+  const { p, dir, o } = preparar();
+  p.ghResponder([{ prefixo: ['issue', 'comment', '1'], codigo: 1, erro: `${TRANCADO}\n` }]);
+  enfileirar(dir, { tipo: 'comentario', ticket: 1, corpo: 'a' });
+  enfileirar(dir, { tipo: 'comentario', ticket: 1, corpo: 'b' });
+  for (let i = 1; i < MAX_TENTATIVAS; i++) {
+    assert.deepEqual(await reenviarPendentes(dir, o), { enviados: 0, restam: 2, descartados: 0 });
+  }
+  const avisos = [];
+  assert.deepEqual(await reenviarComAviso(dir, o, t => avisos.push(t)), { enviados: 0, restam: 1, descartados: 1 });
+  assert.match(avisos.join(''), new RegExp(`desisti de reenviar um comentário do ticket #1 depois de ${MAX_TENTATIVAS} falhas`));
+  const desc = JSON.parse(fs.readFileSync(path.join(dir, 'pendentes-descartados.jsonl'), 'utf8').trim());
+  assert.equal(desc.corpo, 'a');
+  assert.equal(desc.tentativas, MAX_TENTATIVAS);
+  assert.match(desc.erro, /locked/);
+  // Com o ticket destrancado, a fila anda.
+  p.ghResponder([]);
+  assert.deepEqual(await reenviarPendentes(dir, o), { enviados: 1, restam: 0, descartados: 0 });
+  assert.equal(p.ghTicket(1).comments[0].body, 'b');
+  p.limpar();
+});
+
+test('falta de rede não conta tentativa', async () => {
+  const { p, dir, fora } = preparar();
+  enfileirar(dir, { tipo: 'comentario', ticket: 1, corpo: 'a' });
+  for (let i = 0; i < MAX_TENTATIVAS + 1; i++) await reenviarPendentes(dir, fora);
+  assert.equal(contarPendentes(dir), 1);
+  assert.equal(lerFila(dir)[0].tentativas, undefined);
+  const avisos = [];
+  await reenviarComAviso(dir, fora, t => avisos.push(t));
+  assert.match(avisos.join(''), /1 operação pendente para o GitHub; a primeira falha com: sem rede/);
+  p.limpar();
+});
+
+test('a trava do reenvio é renovada a cada item e vence em 1 min sem renovação', async () => {
+  const { p, dir, o } = preparar();
+  const dono = path.join(dir, 'travas', 'pendentes-reenvio', 'dono.json');
+  // Trava de um ah morto há 2 min: vencida, o reenvio a toma.
+  fs.mkdirSync(path.dirname(dono), { recursive: true });
+  fs.writeFileSync(dono, JSON.stringify({ pid: 1, em: new Date(Date.now() - 120000).toISOString(), marca: 'morta' }));
+  enfileirar(dir, { tipo: 'comentario', ticket: 1, corpo: 'a' });
+  enfileirar(dir, { tipo: 'comentario', ticket: 2, corpo: 'b' });
+  p.env.GH_FALSO_ESPIA = dono;
+  assert.deepEqual(await reenviarPendentes(dir, o), { enviados: 2, restam: 0, descartados: 0 });
+  const vistos = p.ghChamadas().filter(c => c.argv[1] === 'comment').map(c => JSON.parse(c.espia));
+  assert.equal(vistos.length, 2);
+  assert.notEqual(vistos[0].marca, 'morta');
+  assert.ok(Date.parse(vistos[1].em) > Date.parse(vistos[0].em), 'o em do dono.json foi renovado entre os itens');
+  p.limpar();
+});
+
+test('com a trava da fila presa, comentar e editar não lançam: avisam que nada foi guardado', () => {
+  const { p, dir, fora } = preparar();
+  const trava = path.join(dir, 'travas', 'pendentes');
+  fs.mkdirSync(trava, { recursive: true });
+  fs.writeFileSync(path.join(trava, 'dono.json'), JSON.stringify({ pid: 1, em: new Date().toISOString(), marca: 'outra' }));
+  const avisos = [];
+  assert.equal(comentarOuEnfileirar(dir, 1, 'a', { ...fora, avisar: t => avisos.push(t) }), false);
+  assert.match(avisos.join(''), /comentário no ticket #1 não foi enviada nem guardada na fila .*Faça à mão: gh issue comment 1/);
+  assert.equal(contarPendentes(dir), 0);
+  assert.ok(eventos(p).some(e => e.tipo === 'comentario-falhou' && e.ticket === 1 && e.guardada === false));
+  fs.rmSync(trava, { recursive: true });
+  // Arquivo da fila inacessível (uma pasta no lugar): a edição também só avisa.
+  fs.mkdirSync(path.join(dir, 'pendentes.jsonl'));
+  const avisos2 = [];
+  assert.equal(editarOuEnfileirar(dir, 2, ['--add-label', 'x'], { ...fora, avisar: t => avisos2.push(t) }), false);
+  assert.match(avisos2.join(''), /edição no ticket #2 não foi enviada nem guardada.*gh issue edit 2 --add-label x/);
+  p.limpar();
+});
+
+test('o reenvio do começo do comando usa prazo curto por chamada do gh', async (t) => {
+  const { p, dir } = preparar();
+  t.after(() => p.limpar());
+  const lento = path.join(path.dirname(p.raiz), 'gh-lento.mjs');
+  fs.writeFileSync(lento, 'setTimeout(() => process.exit(0), 30000);\n');
+  enfileirar(dir, { tipo: 'comentario', ticket: 1, corpo: 'a' });
+  const inicio = Date.now();
+  const avisos = [];
+  const r = await reenviarComAviso(dir, { cwd: p.raiz, env: { ...p.env, AH_GH: lento } }, x => avisos.push(x));
+  const demorou = Date.now() - inicio;
+  assert.ok(demorou < 10000, `demorou ${demorou} ms`);
+  assert.deepEqual(r, { enviados: 0, restam: 1, descartados: 0 });
+  assert.equal(lerFila(dir)[0].tentativas, undefined);
+  assert.match(avisos.join(''), /1 operação pendente/);
 });

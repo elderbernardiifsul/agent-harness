@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, realpathSync, readFileSync, mkdirSync, existsSync, utimesSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, realpathSync, readFileSync, mkdirSync, existsSync, utimesSync, chmodSync, readdirSync, lstatSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,12 +16,44 @@ function executar(args, { cwd, env }) {
   }
 }
 
+// Pastas de teste ainda não limpas: apagadas na saída do processo (cada arquivo de teste roda no seu),
+// para não sobrar pasta quando o teste falha ou esquece o `limpar`.
+const PASTAS_A_LIMPAR = new Set();
+
+// Devolve a escrita às pastas (um teste pode ter tirado) para o rm conseguir apagar.
+function liberarEscrita(pasta) {
+  try { chmodSync(pasta, 0o700); } catch { /* segue */ }
+  let itens = [];
+  try { itens = readdirSync(pasta); } catch { return; }
+  for (const item of itens) {
+    const caminho = join(pasta, item);
+    let st;
+    try { st = lstatSync(caminho); } catch { continue; }
+    if (st.isDirectory()) liberarEscrita(caminho);
+  }
+}
+
+export function apagarPastaDeTeste(pasta) {
+  try {
+    rmSync(pasta, { recursive: true, force: true, maxRetries: 3 });
+  } catch {
+    liberarEscrita(pasta);
+    try { rmSync(pasta, { recursive: true, force: true, maxRetries: 3 }); } catch { /* sobra: nada mais a fazer */ }
+  }
+  if (!existsSync(pasta)) PASTAS_A_LIMPAR.delete(pasta);
+}
+
+process.on('exit', () => {
+  for (const pasta of [...PASTAS_A_LIMPAR]) apagarPastaDeTeste(pasta);
+});
+
 function lerTicketsFalsos(arquivo) {
   return existsSync(arquivo) ? JSON.parse(readFileSync(arquivo, 'utf8')) : {};
 }
 
 export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, sufixo = '' } = {}) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), `ah-teste${sufixo}-`)));
+  PASTAS_A_LIMPAR.add(base);
   const raiz = join(base, 'repo');
   const estado = join(base, 'estado');
   const configVazia = join(base, 'gitconfig');
@@ -94,6 +126,8 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
     ghSemear(n, parcial) {
       const t = lerTicketsFalsos(env.GH_FALSO_TICKETS);
       t[String(n)] = { state: 'OPEN', assignees: [], labels: [], comments: [], ...(t[String(n)] ?? {}), ...parcial };
+      // O rótulo semeado num ticket existe no repositório.
+      t._rotulos = [...new Set([...(t._rotulos ?? []), ...(parcial.labels ?? [])])];
       writeFileSync(env.GH_FALSO_TICKETS, JSON.stringify(t, null, 2));
     },
     ah(args, { cwd = raiz, env: extra = {}, entrada } = {}) {
@@ -103,7 +137,7 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
       return { codigo: r.status ?? 1, saida: r.stdout ?? '', erro: r.stderr ?? '' };
     },
     limpar() {
-      rmSync(base, { recursive: true, force: true, maxRetries: 3 });
+      apagarPastaDeTeste(base);
     },
   };
 }

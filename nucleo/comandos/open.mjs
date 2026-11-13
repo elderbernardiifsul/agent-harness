@@ -168,7 +168,7 @@ export async function executar(args, amb) {
 
     // Reserva dos tickets no servidor: depois das recusas locais e antes de criar qualquer coisa no disco.
     const rotulo = cfg.github.rotuloDeReserva;
-    const oGh = { cwd: amb.raiz, env: amb.env };
+    const oGh = { cwd: amb.raiz, env: amb.env, avisar: amb.avisar };
     let reserva = null;
     if (tickets.length) {
       const r = reservar({ tickets, frente, login, sessao: amb.sessaoId, rotulo, dirEstado }, oGh);

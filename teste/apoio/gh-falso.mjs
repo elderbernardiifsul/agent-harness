@@ -10,7 +10,12 @@ try {
 } catch {
   entrada = '';
 }
-if (process.env.GH_FALSO_LOG) appendFileSync(process.env.GH_FALSO_LOG, `${JSON.stringify({ argv, entrada })}\n`);
+// GH_FALSO_ESPIA: arquivo cujo conteúdo vai junto no registro da chamada (para ver o estado no meio de um comando).
+let espia;
+if (process.env.GH_FALSO_ESPIA) {
+  try { espia = readFileSync(process.env.GH_FALSO_ESPIA, 'utf8'); } catch { espia = null; }
+}
+if (process.env.GH_FALSO_LOG) appendFileSync(process.env.GH_FALSO_LOG, `${JSON.stringify({ argv, entrada, ...(espia !== undefined ? { espia } : {}) })}\n`);
 
 function responder(codigo, saida, erro = '') {
   if (saida) process.stdout.write(saida);
@@ -29,7 +34,7 @@ if (process.env.GH_FALSO_RESPOSTAS) {
   }
 }
 const casa = lista.find(r => r.prefixo.every((p, i) => argv[i] === p));
-if (casa) responder(casa.codigo ?? 0, casa.saida ?? '');
+if (casa) responder(casa.codigo ?? 0, casa.saida ?? '', casa.erro ?? '');
 
 const login = process.env.GH_FALSO_LOGIN || 'ana-souza';
 if (argv[0] === 'api' && argv[1] === 'user') responder(0, `${JSON.stringify({ login })}\n`);
@@ -50,6 +55,17 @@ function gravarTickets(t) {
   const temp = `${arqTickets}.${process.pid}.tmp`;
   writeFileSync(temp, JSON.stringify(t, null, 2));
   renameSync(temp, arqTickets);
+}
+// Rótulos criados por `label create` ficam em `_rotulos`; um rótulo já posto num ticket também existe.
+const CHAVE_ROTULOS = '_rotulos';
+const numeros = t => Object.keys(t).filter(k => /^\d+$/.test(k));
+const rotuloExiste = (t, l) => (t[CHAVE_ROTULOS] ?? []).includes(l) || numeros(t).some(n => (t[n].labels ?? []).includes(l));
+const CAMPOS = ['number', 'state', 'assignees', 'labels', 'comments'];
+function camposPedidos(padrao) {
+  const campos = (opcao('--json') ?? padrao).split(',');
+  const errado = campos.find(c => !CAMPOS.includes(c));
+  if (errado) responder(1, '', `Unknown JSON field: "${errado}"\nAvailable fields:\n${CAMPOS.map(c => `  ${c}`).join('\n')}\n`);
+  return campos;
 }
 const vazio = () => ({ state: 'OPEN', assignees: [], labels: [], comments: [] });
 const ticketDe = (t, n) => ({ ...vazio(), ...(t[n] ?? {}) });
@@ -73,15 +89,23 @@ function noFormatoDoGh(n, tk, campos) {
   return Object.fromEntries(campos.map(c => [c, tudo[c] ?? null]));
 }
 
-if (argv[0] === 'label' && argv[1] === 'create') responder(0, '');
+if (argv[0] === 'label' && argv[1] === 'create') {
+  const t = lerTickets();
+  const rotulos = t[CHAVE_ROTULOS] ?? [];
+  if (argv[2] && !rotulos.includes(argv[2])) {
+    t[CHAVE_ROTULOS] = [...rotulos, argv[2]];
+    gravarTickets(t);
+  }
+  responder(0, '');
+}
 
 if (argv[0] === 'issue' && argv[1] === 'list') {
   const t = lerTickets();
   const rotulos = opcoes('--label');
   const estado = (opcao('--state') ?? 'open').toUpperCase();
   const limite = Number(opcao('--limit') ?? 30);
-  const campos = (opcao('--json') ?? 'number').split(',');
-  const achados = Object.keys(t).filter(n => !t[n].apagado).map(n => [n, ticketDe(t, n)])
+  const campos = camposPedidos('number');
+  const achados = numeros(t).filter(n => !t[n].apagado).map(n => [n, ticketDe(t, n)])
     .filter(([, tk]) => estado === 'ALL' || tk.state === estado)
     .filter(([, tk]) => rotulos.every(r => tk.labels.includes(r)))
     .sort((a, b) => Number(b[0]) - Number(a[0]))
@@ -98,7 +122,7 @@ if (argv[0] === 'issue' && ['view', 'comment', 'edit'].includes(argv[1])) {
   const tk = ticketDe(t, n);
 
   if (argv[1] === 'view') {
-    const campos = (opcao('--json') ?? 'number,state').split(',');
+    const campos = camposPedidos('number,state');
     responder(0, `${JSON.stringify(noFormatoDoGh(n, tk, campos))}\n`);
   }
 
@@ -121,7 +145,10 @@ if (argv[0] === 'issue' && ['view', 'comment', 'edit'].includes(argv[1])) {
   // edit
   for (const a of opcoes('--add-assignee').flatMap(s => s.split(','))) if (!tk.assignees.includes(quem(a))) tk.assignees.push(quem(a));
   for (const a of opcoes('--remove-assignee').flatMap(s => s.split(','))) tk.assignees = tk.assignees.filter(x => x !== quem(a));
-  for (const l of opcoes('--add-label').flatMap(s => s.split(','))) if (!tk.labels.includes(l)) tk.labels.push(l);
+  const novos = opcoes('--add-label').flatMap(s => s.split(','));
+  const semRotulo = novos.find(l => !rotuloExiste(t, l));
+  if (semRotulo) responder(1, '', `failed to update https://github.com/exemplo/loja/issues/${n}: '${semRotulo}' not found\n`);
+  for (const l of novos) if (!tk.labels.includes(l)) tk.labels.push(l);
   for (const l of opcoes('--remove-label').flatMap(s => s.split(','))) tk.labels = tk.labels.filter(x => x !== l);
   t[n] = tk;
   gravarTickets(t);

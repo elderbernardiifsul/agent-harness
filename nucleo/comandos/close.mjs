@@ -206,7 +206,7 @@ export async function executar(args, amb) {
     // Uma vez só, mesmo se o close for repetido.
     if (!frente.fechamentoComentado) {
       if ((frente.tickets ?? []).length) {
-        const oGh = { cwd: raiz, env };
+        const oGh = { cwd: raiz, env, avisar: amb.avisar };
         const login = loginAtual(oGh) ?? frente.abertaPor ?? 'local';
         const r = liberarTickets({ frente, resumo, login, rotulo: cfg.github.rotuloDeReserva, dirEstado, sessao: amb.sessaoId }, oGh);
         for (const ticket of r.comentariosNaFila) {
