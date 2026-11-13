@@ -2,7 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { casaGlob, sobreposicoes, arquivosDaFrente, tocaOsCaminhos, caminhosEmComum } from '../nucleo/lib/sobreposicao.mjs';
+import { casaGlob, sobreposicoes, arquivosDaFrente, arquivosDaFrenteOuNulo, tocaOsCaminhos, caminhosEmComum } from '../nucleo/lib/sobreposicao.mjs';
+import { git as gitReal } from '../nucleo/lib/git.mjs';
+import { executar as executarBoard } from '../nucleo/comandos/board.mjs';
+import { avisarDasOutrasSemFalhar } from '../nucleo/comandos/open.mjs';
+import { ErroDeUso } from '../nucleo/lib/caminhos.mjs';
 import { tratar } from '../nucleo/adaptadores/contrato.mjs';
 import { criarProjeto, amb, dirDoTeste } from './apoio/repo.mjs';
 
@@ -215,4 +219,65 @@ test('linha de sobreposição do resumo cabe em 200 e guarda os IDs', async () =
   const l = t.split('\n').find(x => x.startsWith('Sobreposição: '));
   assert.ok(l.length <= 200, `${l.length}`);
   assert.match(l, /… com as-1, cd-4$/);
+});
+
+// ------------------------------------------------------------ consertos da revisão
+
+test('status no worktree alheio roda sem o lock opcional do índice', t => {
+  const p = criarProjeto();
+  t.after(() => p.limpar());
+  assert.equal(p.ah(['open', 'carrinho']).codigo, 0);
+  const wt = commitar(p, 'carrinho', 'a.js', 'a\n');
+  fs.writeFileSync(path.join(wt, 'b.js'), 'b\n');
+  const chamadas = [];
+  const rodarGit = (args, o) => { chamadas.push({ args, cwd: o.cwd }); return gitReal(args, o); };
+  assert.deepEqual(arquivosDaFrenteOuNulo(lerFrenteDoTeste(p, 'carrinho'), { raiz: p.raiz, base: 'dev', env: p.env, rodarGit }), ['a.js', 'b.js']);
+  const noWorktree = chamadas.filter(c => c.cwd === wt);
+  assert.ok(noWorktree.length > 0);
+  for (const c of noWorktree) assert.equal(c.args[0], '--no-optional-locks', c.args.join(' '));
+});
+
+test('caminhosEmComum compara pasta por pasta', () => {
+  assert.deepEqual(caminhosEmComum(['*.md'], ['src/**']), [], 'prefixo vazio não colide com pasta');
+  assert.deepEqual(caminhosEmComum(['src'], ['src2/**']), [], 'src não é ancestral de src2');
+  assert.deepEqual(caminhosEmComum(['src/**'], ['src/carrinho/*.js']), ['src/**']);
+  assert.deepEqual(caminhosEmComum(['src/carrinho/*.js'], ['src/**']), ['src/carrinho/*.js']);
+  assert.deepEqual(caminhosEmComum(['*.md'], ['*.js']), ['*.md'], 'dois de prefixo vazio colidem');
+  assert.deepEqual(caminhosEmComum(['*.md'], ['*.md']), ['*.md']);
+  assert.deepEqual(caminhosEmComum(['src'], ['src/a.js']), ['src']);
+  assert.deepEqual(caminhosEmComum(['src/carr*'], ['src/frete/**']), ['src/carr*'], 'mesma pasta src');
+});
+
+// Ambiente do board chamado no próprio processo, com a saída e os avisos guardados.
+function ambDoBoard(p, extra = {}) {
+  const saida = [];
+  const erro = [];
+  const a = { ...amb(p), sessaoId: null, escrever: x => saida.push(x), avisar: x => erro.push(x), ...extra };
+  return { a, saida: () => saida.join(''), erro: () => erro.join('') };
+}
+
+test('board com o prazo da sobreposição estourado: ? na coluna, aviso e JSON incompleto, código 0', async t => {
+  const p = duasFrentes(t);
+  const b = ambDoBoard(p, { prazoDaSobreposicaoMs: 0 });
+  assert.equal(await executarBoard([], b.a), 0);
+  assert.match(b.saida(), /as-1\s+carrinho\s+\S+\s+ativa\s+—\s+\?\s/);
+  assert.match(b.saida(), /as-2\s+frete\s+\S+\s+ativa\s+—\s+\?\s/);
+  assert.doesNotMatch(b.saida(), /Sobreposições:/);
+  assert.match(b.erro(), /Aviso: a sobreposição ficou incompleta.*2 frente\(s\) com \?/);
+  const j = ambDoBoard(p, { prazoDaSobreposicaoMs: 0 });
+  assert.equal(await executarBoard(['--json'], j.a), 0);
+  const obj = JSON.parse(j.saida());
+  assert.equal(obj.sobreposicaoIncompleta, true);
+  assert.deepEqual(obj.frentes.map(f => f.sobreposicaoConferida), [false, false]);
+  const ok = ambDoBoard(p);
+  assert.equal(await executarBoard(['--json'], ok.a), 0);
+  assert.equal(JSON.parse(ok.saida()).sobreposicaoIncompleta, false);
+  assert.equal(ok.erro(), '');
+});
+
+test('erro nos avisos do open, inclusive ErroDeUso, vira aviso e não lança', () => {
+  const avisos = [];
+  const ambQuebrado = { avisar: x => avisos.push(x), get dirEstado() { throw new ErroDeUso('estado sumiu\nPróximo passo: x'); } };
+  assert.doesNotThrow(() => avisarDasOutrasSemFalhar({ nome: 'cupom' }, ['src/**'], ambQuebrado));
+  assert.match(avisos.join(''), /^Aviso: não consegui conferir as outras frentes \(estado sumiu\)\.\n$/);
 });

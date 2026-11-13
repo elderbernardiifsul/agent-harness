@@ -46,17 +46,29 @@ export function tocaOsCaminhos(arquivos, globs) {
   return arquivos.filter(a => globs.some(g => casaGlob(a, g)));
 }
 
-// Parte literal do glob: até o primeiro curinga.
-const literal = g => g.slice(0, g.search(/[*?]|$/));
+// Pasta literal do glob: a parte antes do primeiro curinga, cortada na última `/` (sem curinga, o próprio
+// caminho, sem a `/` final). Vazia quando o curinga vem antes de qualquer pasta (`*.md`).
+function pastaLiteral(g) {
+  const i = g.search(/[*?]/);
+  if (i < 0) return g.replace(/\/+$/, '');
+  const antes = g.slice(0, i);
+  const j = antes.lastIndexOf('/');
+  return j < 0 ? '' : antes.slice(0, j);
+}
 
-// Os globs de `deles` iguais a um dos `meus`, ou em que a parte literal de um é prefixo da do outro.
+// Uma pasta é a outra ou ancestral dela, comparando pasta por pasta.
+const mesmaLinha = (a, b) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+
+// Os globs de `deles` iguais a um dos `meus`, ou cuja pasta literal é a mesma, ancestral ou descendente da de
+// um dos `meus`. Pasta vazia só colide com glob igual ou com outro de pasta vazia.
 export function caminhosEmComum(deles, meus) {
   if (!deles?.length || !meus?.length) return [];
   return deles.filter(d => meus.some(m => {
     if (d === m) return true;
-    const a = literal(d);
-    const b = literal(m);
-    return a.startsWith(b) || b.startsWith(a);
+    const a = pastaLiteral(d);
+    const b = pastaLiteral(m);
+    if (a === '' || b === '') return a === b;
+    return mesmaLinha(a, b);
   }));
 }
 
@@ -77,7 +89,8 @@ function caminhosDoStatus(saida) {
 
 // Arquivos da frente, ou null se o git falhou ou demorou (ramo ausente e worktree sumido contam como nada).
 // `prazo` (opcional) é o instante, em ms, depois do qual o git não roda mais.
-export function arquivosDaFrenteOuNulo(frente, { raiz, base, env, prazo = null, tempoPorChamadaMs = null }) {
+// `rodarGit` (opcional, para os testes) troca o executor do git.
+export function arquivosDaFrenteOuNulo(frente, { raiz, base, env, prazo = null, tempoPorChamadaMs = null, rodarGit = git }) {
   if (!frente || frente.estado === 'abrindo' || typeof frente.ramo !== 'string' || !frente.ramo) return [];
   const rodar = (args, cwd) => {
     let timeoutMs = tempoPorChamadaMs;
@@ -86,8 +99,7 @@ export function arquivosDaFrenteOuNulo(frente, { raiz, base, env, prazo = null, 
       if (resta <= 0) return null;
       timeoutMs = timeoutMs === null ? resta : Math.min(timeoutMs, resta);
     }
-    const r = git(args, { cwd, env, timeoutMs: timeoutMs ?? undefined });
-    return r;
+    return rodarGit(args, { cwd, env, timeoutMs: timeoutMs ?? undefined });
   };
   const todos = new Set();
   const d = rodar(['diff', '--name-only', '--no-renames', '-z', `refs/heads/${base}...refs/heads/${frente.ramo}`, '--'], raiz);
@@ -101,7 +113,8 @@ export function arquivosDaFrenteOuNulo(frente, { raiz, base, env, prazo = null, 
   }
   // Só um worktree de verdade (com o arquivo .git): uma pasta comum cairia no repositório de cima.
   if (typeof frente.worktree === 'string' && frente.worktree && fs.existsSync(path.join(frente.worktree, '.git'))) {
-    const s = rodar(['status', '--porcelain', '-z', '--untracked-files=all'], frente.worktree);
+    // Worktree de outra sessão: sem o lock opcional do índice, para não fazer falhar um add/commit da dona.
+    const s = rodar(['--no-optional-locks', 'status', '--porcelain', '-z', '--untracked-files=all'], frente.worktree);
     if (s === null || s.codigo !== 0) return null;
     for (const a of caminhosDoStatus(s.saida)) todos.add(a);
   }

@@ -271,13 +271,17 @@ export async function executar(args, amb) {
   }, { venceMs: 120000 });
 
   // Fora da trava (o git das outras frentes pode demorar): avisos sobre quem já mexe no mesmo lugar. Nunca recusa.
+  avisarDasOutrasSemFalhar(frente, caminhos, amb);
+  return 0;
+}
+
+// A frente já está ativa: qualquer erro aqui vira aviso, e o open sai com 0.
+export function avisarDasOutrasSemFalhar(minha, caminhos, amb) {
   try {
-    avisarDasOutras(frente, caminhos, amb);
+    avisarDasOutras(minha, caminhos, amb);
   } catch (e) {
-    if (e?.name === 'ErroDeUso') throw e;
     amb.avisar(`Aviso: não consegui conferir as outras frentes (${String(e?.message ?? e).split('\n')[0].slice(0, 120)}).\n`);
   }
-  return 0;
 }
 
 const LIMITE_NOTA = 120;

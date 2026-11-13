@@ -1,6 +1,6 @@
 import { ErroDeUso } from '../lib/caminhos.mjs';
 import { listarFrentes } from '../lib/frente.mjs';
-import { arquivosDaFrente, contaNaSobreposicao, sobreposicoes as calcularSobreposicoes } from '../lib/sobreposicao.mjs';
+import { arquivosDaFrenteOuNulo, contaNaSobreposicao, sobreposicoes as calcularSobreposicoes } from '../lib/sobreposicao.mjs';
 import { idCurto, listarSessoes } from '../lib/sessao.mjs';
 import { aberturaParada, vidaDaSessao } from '../lib/vida.mjs';
 
@@ -13,6 +13,9 @@ const LIMITE_NOTA = 40;
 const LIMITE_SOBREPOSICOES = 20;
 // Um git que trava numa frente não pode prender o quadro.
 const TEMPO_DO_GIT_POR_CHAMADA_MS = 5000;
+// Prazo total do cálculo de sobreposição; estourado, o quadro sai com `?` nas frentes não conferidas.
+// `amb.prazoDaSobreposicaoMs` troca o valor (testes).
+const PRAZO_DA_SOBREPOSICAO_MS = 3000;
 
 // Uma linha só: quebras e controles viram espaço; texto longo é cortado com reticências.
 function linhaUnica(texto, limite) {
@@ -60,21 +63,45 @@ export async function executar(args, amb) {
     .map(s => ({ id: s.id, curto: idCurto(s.id), papel: s.papel, frente: s.frente ? (s.frente.nome ?? s.frente) : null }));
   const sessoesIlegiveis = lidas.ilegiveis;
   // Arquivos de cada frente (ramo desde a base e worktree); falha numa frente conta como lista vazia.
+  // Passado o prazo total, as frentes que faltam ficam sem conferir (`?`).
+  const prazoMs = amb.prazoDaSobreposicaoMs ?? PRAZO_DA_SOBREPOSICAO_MS;
+  const prazo = Date.now() + Math.max(0, prazoMs);
   const porFrente = new Map();
+  const naoConferidas = new Set();
   for (const f of frentes) {
-    const arquivos = contaNaSobreposicao(f)
-      ? arquivosDaFrente(f, { raiz: amb.raiz, base: amb.config.git.base, env: amb.env, tempoPorChamadaMs: TEMPO_DO_GIT_POR_CHAMADA_MS })
-      : [];
+    let arquivos = [];
+    if (contaNaSobreposicao(f)) {
+      if (Date.now() >= prazo) {
+        naoConferidas.add(f.id);
+        continue;
+      }
+      let r;
+      try {
+        r = arquivosDaFrenteOuNulo(f, { raiz: amb.raiz, base: amb.config.git.base, env: amb.env, prazo, tempoPorChamadaMs: TEMPO_DO_GIT_POR_CHAMADA_MS });
+      } catch {
+        r = [];
+      }
+      if (r === null && Date.now() >= prazo) {
+        naoConferidas.add(f.id);
+        continue;
+      }
+      arquivos = r ?? [];
+    }
     porFrente.set(f.id, [...(porFrente.get(f.id) ?? []), ...arquivos]);
+  }
+  const sobreposicaoIncompleta = naoConferidas.size > 0;
+  if (sobreposicaoIncompleta) {
+    amb.avisar(`Aviso: a sobreposição ficou incompleta: o git passou de ${Math.round(prazoMs / 100) / 10} s; ${naoConferidas.size} frente(s) com ? não foram conferidas.\n`);
   }
   const sobreposicoes = calcularSobreposicoes(porFrente);
   const sobrepoe = f => [...new Set(sobreposicoes.filter(s => s.frentes.includes(f.id)).flatMap(s => s.frentes))].filter(id => id !== f.id).sort();
+  const conferida = f => !naoConferidas.has(f.id);
   if (json) {
     const lista = frentes.map(f => ({
-      ...f, donaViva: donaViva(f), donaIlegivel: donaIlegivel(f), sobrepoe: sobrepoe(f),
+      ...f, donaViva: donaViva(f), donaIlegivel: donaIlegivel(f), sobrepoe: sobrepoe(f), sobreposicaoConferida: conferida(f),
       ...(f.estado === 'abrindo' ? { aberturaParada: aberturaParada(f, donaViva(f)) } : {}),
     }));
-    amb.escrever(`${JSON.stringify({ frentes: lista, sessoes, sessoesIlegiveis, sobreposicoes })}\n`);
+    amb.escrever(`${JSON.stringify({ frentes: lista, sessoes, sessoesIlegiveis, sobreposicoes, sobreposicaoIncompleta })}\n`);
     return 0;
   }
   const linhaDasSessoes = () => {
@@ -103,7 +130,7 @@ export async function executar(args, amb) {
       rotuloDaDona(f),
       linhaUnica(estadoNoQuadro(f, donaViva(f)), 20),
       f.tickets?.length ? f.tickets.map(n => `#${n}`).join(',') : '—',
-      (ids => (ids.length ? linhaUnica(ids.join(','), 40) : '—'))(sobrepoe(f)),
+      !conferida(f) ? '?' : (ids => (ids.length ? linhaUnica(ids.join(','), 40) : '—'))(sobrepoe(f)),
       f.plano ? linhaUnica(f.plano, LIMITE_PLANO) : '—',
       ultima ? linhaUnica(ultima, LIMITE_NOTA) : '—',
     ]);

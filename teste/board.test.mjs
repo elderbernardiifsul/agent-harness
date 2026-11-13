@@ -12,7 +12,7 @@ const SEM_SESSAO = { env: { AH_SESSAO: '' } };
 test('board lista a frente; vazio diz que não há', () => {
   const vazio = criarProjeto();
   assert.match(vazio.ah(['board']).saida, /Nenhuma frente aberta\./);
-  assert.deepEqual(JSON.parse(vazio.ah(['board', '--json']).saida), { frentes: [], sessoes: [], sessoesIlegiveis: [], sobreposicoes: [] });
+  assert.deepEqual(JSON.parse(vazio.ah(['board', '--json']).saida), { frentes: [], sessoes: [], sessoesIlegiveis: [], sobreposicoes: [], sobreposicaoIncompleta: false });
   vazio.limpar();
 
   const p = criarProjeto();
