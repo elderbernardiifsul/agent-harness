@@ -198,6 +198,21 @@ test('C2. troca que deu certo antes do push define o ramo do push (pendência 7)
   // E o último destino conhecido protegido recusa, mesmo vindo de um ramo livre.
   assert.equal(av('git switch dev && AH_GUARD=off git switch main && git push', '/w').trava, 'T5');
 });
+test('C2. a troca que deu certo só descarta as que certamente rodaram antes dela (terceira revisão)', () => {
+  // Corpo de função, texto de trap, segundo plano e coproc rodam em outro momento: podem trocar depois.
+  for (const c of ['f() { git switch main; }; git switch dev && f && git push', 'function f { git switch main; }; git switch dev && f && git push',
+    'f() { git switch main; } && git switch dev && f && git push', 'f() { git switch main; }\ngit switch dev && f && git push',
+    'trap "git switch main" DEBUG; git switch dev && git push', `trap 'git switch main' RETURN; git switch dev && git push`,
+    '(sleep 1; git switch main) & git switch dev && sleep 2 && git push', 'git switch main & git switch dev && sleep 2 && git push',
+    'coproc { sleep 1; git switch main; }; git switch dev && sleep 2 && git push', 'coproc git switch main; git switch dev && git push',
+    'git switch dev && f() { git switch main; } && f && git push', `eval 'f() { git switch main; }'; git switch dev && f && git push`])
+    assert.equal(av(c, '/w').trava, 'T5', c);
+  // A que certamente rodou antes (só && entre as duas) continua descartada, também dentro do corpo e do trap.
+  for (const c of ['git switch main && git pull && git switch dev && git push', 'f() { git status; }; git switch main && git switch dev && f && git push',
+    'trap "git status" EXIT; git switch main && git switch dev && git push', 'f() { git switch main && git switch dev && git push; }; f',
+    '(sleep 1; git status) & git switch main && git switch dev && git push', 'git switch main && { git switch feat/x && git switch dev; } && git push'])
+    assert.ok(av(c, '/w').permite, c);
+});
 
 // ---- onda final: I4 (formas de "tudo" no checkout principal)
 test('I4. pathspec que cobre a raiz, * solto e caminho que não dá para ler', () => {

@@ -790,8 +790,10 @@ const ANTES = Symbol('ramo de antes');
 
 // Acompanha as trocas de ramo feitas pelos comandos já lidos; `ramoAtual(cwd, cmd)` responde com elas.
 // Uma troca que certamente deu certo antes de `cmd` (só `&&` entre as duas, ver deuCerto) e cujo destino
-// é ramo com certeza substitui os ramos possíveis; as outras (podem ter falhado, ou o checkout pode ter
-// sido de um arquivo) só somam possibilidades ao que já havia.
+// é ramo com certeza substitui o ramo de antes e as trocas que certamente rodaram antes dela (de novo pelo
+// deuCerto); as outras (podem ter falhado, o checkout pode ter sido de um arquivo) só somam possibilidades.
+// A ordem da lista não é a do tempo: corpo de função, texto de `trap`, segundo plano e `coproc` aparecem
+// antes e podem rodar depois da troca que substitui, então continuam possíveis.
 function novasTrocas(ctx) {
   const porTopo = new Map();
   let tudoIncerto = false;
@@ -809,16 +811,21 @@ function novasTrocas(ctx) {
       const [alvo] = destino.ramos;
       let ehRamo = destino.solta ? undefined : true;
       const certo = () => (ehRamo ??= alvo != null && typeof ctx.ehRef === 'function' && ctx.ehRef(cmd.cwd, alvo) === true);
-      porTopo.set(topo, [...(porTopo.get(topo) ?? []), { indice, ramos: destino.ramos, certo }]);
+      porTopo.set(topo, [...(porTopo.get(topo) ?? []), { indice, cmd, ramos: destino.ramos, certo }]);
     },
     get vazio() { return !tudoIncerto && porTopo.size === 0; },
     ramoAtual(cwd, cmd) {
       if (tudoIncerto) return null;
       const trocas = porTopo.get(ctx.topoDe(cwd));
       if (!trocas) return ctx.ramoAtual(cwd);
-      let possiveis = [ANTES];
-      for (const t of trocas) possiveis = deuCerto(cmd, t.indice) && t.certo() ? [...t.ramos] : [...possiveis, ...t.ramos];
-      const ramos = possiveis.map(r => (r === ANTES ? ctx.ramoAtual(cwd) : r));
+      // Cada possível guarda a troca de onde veio (ANTES: o ramo de antes de tudo).
+      let possiveis = [{ ramo: ANTES, de: null }];
+      for (const t of trocas) {
+        const daqui = t.ramos.map(ramo => ({ ramo, de: t }));
+        if (deuCerto(cmd, t.indice) && t.certo()) possiveis = [...possiveis.filter(p => p.de && !deuCerto(t.cmd, p.de.indice)), ...daqui];
+        else possiveis = [...possiveis, ...daqui];
+      }
+      const ramos = possiveis.map(p => (p.ramo === ANTES ? ctx.ramoAtual(cwd) : p.ramo));
       if (ramos.includes(null)) return null;
       return ramos.find(r => ctx.config.git.protegidos.includes(r)) ?? ramos[0];
     },
