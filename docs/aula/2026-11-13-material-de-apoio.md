@@ -4,7 +4,9 @@ Material de apoio · Programação Agêntica · IFSul · professor elderbernardi
 
 Leia antes ou depois da aula. Em cada questão há um quadro **Pare e proponha**: antes de ler a balança e a solução, escreva a sua proposta (três linhas bastam). A leitura da solução antes da proposta anula o exercício.
 
-A solução apresentada em cada questão, o `agent-harness`, é **uma** alternativa entre várias: a que o professor escolheu para o projeto dele. Ela entra como mais uma linha da balança, para comparar com a sua.
+O assunto é o **harness de agentes de código**: o programa e as regras em volta do modelo. Um agente de código é um modelo que trabalha em laço: lê o contexto, pede uma ferramenta (rodar um comando, editar um arquivo), recebe o resultado e decide o próximo passo. O **harness do agente** é o programa que conduz esse laço (Claude Code, Codex, OpenCode): ferramentas, permissões, ganchos, gestão do contexto, leitura das instruções do projeto. O **harness do projeto** é o que a equipe acrescenta: instruções escritas, comandos próprios, ganchos configurados com as regras do projeto, proteção de ramo e CI no servidor. Com uma sessão, o harness do agente basta. Com várias sessões e várias pessoas no mesmo repositório, surgem os problemas de coordenação que este material trata, e as respostas ficam a cargo do harness do projeto.
+
+Cada questão apresenta o problema e a causa dele, pede a sua proposta, compara alternativas e só então descreve um mecanismo geral, com condições e custo. O repositório `agent-harness` entra como **um exemplo de implementação** desses mecanismos, uma linha a mais da balança, para comparar com a sua proposta.
 
 Os exemplos usam um projeto fictício, a `loja` (repositório `exemplo/loja`), e duas pessoas fictícias, `ana-souza` e `carla-dias`.
 
@@ -12,15 +14,15 @@ Os exemplos usam um projeto fictício, a `loja` (repositório `exemplo/loja`), e
 
 1. Fundamentos de git e GitHub e vocabulário do agente
 2. Problema geral: três sessões no mesmo repositório
-3. As questões (13), cada uma com: situação, pare e proponha, balança, quanto custa não resolver, o que o harness faz, como aplicar, limites, trabalho final
-4. Visão geral do agent-harness e primeiro ciclo
+3. As questões (13), cada uma com: situação, pare e proponha, balança, quanto custa não resolver, solução proposta e o exemplo, como aplicar, limites, trabalho final
+4. Visão geral do exemplo (agent-harness) e primeiro ciclo
 5. Uso com OpenCode e Codex
 6. Trabalho final: decisões do harness × cenários
 7. Exercícios
 8. Gabarito comentado
 9. Glossário
 
-Estado do harness descrito aqui: conferido no código com as fatias 3 e 4 prontas (referência em `docs/referencia/comandos.md` no clone). Fatia 3: a fila de trabalho pesado (`pesado`) e a trava T6, sem ensaio com agente real nem em Windows ou macOS. Fatia 4: o roteiro de adaptação para outros agentes (`docs/agentes/`), com testes de contrato, não ensaiado com o Codex nem com o OpenCode; só o Claude Code tem adaptador. Fatia 5: a atualização do harness instalado (`tools/ah atualizar --de <clone>`), pronta, não ensaiada com agente real. Peças marcadas **em construção** estão só no desenho: os números de uso (`board --numeros`), da fatia 5. Para conferir o que existe na sua cópia: `tools/ah --help`.
+Sobre o exemplo: estado do `agent-harness` descrito aqui, conferido no código com as fatias 3 e 4 prontas (referência em `docs/referencia/comandos.md` no clone). Fatia 3: a fila de trabalho pesado (`pesado`) e a trava T6, sem ensaio com agente real nem em Windows ou macOS. Fatia 4: o roteiro de adaptação para outros agentes (`docs/agentes/`), com testes de contrato, não ensaiado com o Codex nem com o OpenCode; só o Claude Code tem adaptador. Fatia 5: a atualização do harness instalado (`tools/ah atualizar --de <clone>`), pronta, não ensaiada com agente real. Peças marcadas **em construção** estão só no desenho: os números de uso (`board --numeros`), da fatia 5. Para conferir o que existe na sua cópia: `tools/ah --help`.
 
 ---
 
@@ -109,7 +111,7 @@ Limites de uma instrução mais bem escrita (prompt):
 
 ## 3. As questões
 
-Formato de cada uma: **situação**, **pare e proponha**, **balança** (custo de adotar × custo de não ter), **não resolver custa**, **o que o harness faz** (uma alternativa, comparada com as da balança), **como aplicar**, **limites** e **trabalho final**.
+Formato de cada uma: **situação**, **pare e proponha**, **balança** (custo de adotar × custo de não ter), **não resolver custa**, **solução proposta** (nas questões 1 a 6, o mecanismo geral, seguido do que o exemplo `agent-harness` faz; nas demais, o que o exemplo faz, comparado com as linhas da balança), **como aplicar**, **limites** e **trabalho final**.
 
 Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, infraestrutura, disciplina); "custo de não ter" é o estrago quando ela falta; "—" quer dizer nada além do que as outras linhas já dizem. "Não resolver custa" é o preço de deixar o problema como está.
 
@@ -131,7 +133,9 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 
 **Não resolver custa:** trabalho sem dono depois de cada limpeza, ou com dois donos; retrabalho.
 
-**O que o harness faz.** Fica perto de "id da conversa mais vínculo": um nome por conversa que não depende da pessoa lembrar. Custo: na dúvida, solta um trabalho que era da conversa.
+**Solução proposta (identidade fornecida pelo agente e herança condicionada).** A sessão usa como identidade o id de conversa que o agente fornece; o vínculo entre a sessão e o trabalho fica registrado fora da conversa; a conversa nova herda o trabalho só com prova de continuidade e, na dúvida, não herda. Vale quando o agente fornece o id e avisa o começo de cada conversa.
+
+**No exemplo (agent-harness).** Fica perto de "id da conversa mais vínculo": um nome por conversa que não depende da pessoa lembrar. Custo: na dúvida, solta um trabalho que era da conversa.
 
 - **Sessão** é a conversa de um agente, identificada pelo id que o agente fornece. No Claude Code, o agente entrega esse id ao harness a cada ação (e o deixa na variável `CLAUDE_CODE_SESSION_ID`). Num agente que o harness ainda não sabe ler, `AH_SESSAO=<nome>` diz quem é. **Pronto.**
 - **Frente** é um trabalho com nome (o carrinho), um ID curto (`as-1`) e, como se verá na questão 2, um lugar próprio. Cada sessão tem no máximo uma frente.
@@ -177,7 +181,9 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 
 **Não resolver custa:** commit que leva junto o trabalho pela metade de outro; horas de trabalho no ramo errado, difíceis de rastrear.
 
-**O que o harness faz.** Junta "uma cópia por sessão" com "um ramo por trabalho", sem copiar o histórico. Custo: uma pasta a mais por trabalho, com a sua cópia das dependências, e o conflito fica todo para o merge.
+**Solução proposta (isolamento por `git worktree`, um ramo por unidade de trabalho).** Cada trabalho recebe um ramo e uma pasta próprios; as pastas compartilham o repositório e o histórico, e cada uma tem o seu ramo em uso e o seu índice. A pasta principal fica reservada para integrar.
+
+**No exemplo (agent-harness).** Junta "uma cópia por sessão" com "um ramo por trabalho", sem copiar o histórico. Custo: uma pasta a mais por trabalho, com a sua cópia das dependências, e o conflito fica todo para o merge.
 
 - `tools/ah open carrinho` cria o ramo `feat/carrinho` a partir da `dev` e um **worktree** próprio: uma segunda pasta de trabalho do mesmo repositório, com o seu ramo, fora da pasta do projeto. **Pronto.**
   ```
@@ -217,7 +223,9 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 
 **Não resolver custa:** ninguém sabe quem faz o quê; cada um pergunta, ou adivinha.
 
-**O que o harness faz.** Junta "arquivo" (só que fora do git) com "tickets entre máquinas", um para cada alcance. Custo: outra máquina não vê o quadro desta.
+**Solução proposta (estado de coordenação fora do versionamento).** O estado de agora fica fora do git, na máquina, com escrita atômica; o histórico vai para o git; entre máquinas, o canal é o rastreador de tickets; o agente recebe um resumo curto.
+
+**No exemplo (agent-harness).** Junta "arquivo" (só que fora do git) com "tickets entre máquinas", um para cada alcance. Custo: outra máquina não vê o quadro desta.
 
 - **Estado por máquina, fora do git** (no Linux, em `~/.local/state/agent-harness/<projeto>`; `AH_ESTADO` troca). Um arquivo JSON por sessão e por frente. Cada um é gravado primeiro num arquivo temporário e depois trocado de nome de uma vez, para nunca ficar pela metade; só uma sessão escreve por vez (exclusão mútua). Um `eventos.jsonl` guarda, numa linha por evento, o que aconteceu, e só cresce. **Pronto.**
 - **No git, só o histórico:** uma linha por frente fechada em `docs/agents/historico-das-frentes.md`, commitada pelo `close`. **Pronto.**
@@ -252,7 +260,9 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 
 **Não resolver custa:** duas metades de solução; a manhã de uma das duas jogada fora.
 
-**O que o harness faz.** Fica perto de "nome no ticket", feito pelo programa, com "quem chegar primeiro" decidido pelo relógio do servidor, não pelo de cada máquina. Custo: rede obrigatória, e o GitHub vira o banco de coordenação.
+**Solução proposta (reserva otimista com desempate por uma autoridade única).** Cada um registra a reserva sem trava prévia e relê depois de registrar; com duas reservas, vence a mais antiga na ordem do servidor, e a outra desiste e desfaz o que fez. Vale com rede e com um servidor que ordene os registros.
+
+**No exemplo (agent-harness).** Fica perto de "nome no ticket", feito pelo programa, com "quem chegar primeiro" decidido pelo relógio do servidor, não pelo de cada máquina. Custo: rede obrigatória, e o GitHub vira o banco de coordenação.
 
 - `tools/ah open frete --tickets 2` reserva **antes** de criar ramo ou pasta: põe a pessoa como responsável no ticket, o rótulo (etiqueta colorida do ticket) `em-andamento` e um comentário cuja última linha é um marcador que o programa lê:
   ```
@@ -292,7 +302,9 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 
 **Não resolver custa:** um envio para produção que ninguém revisou, descoberto depois.
 
-**O que o harness faz.** Junta "gancho que lê o comando" com "proteção de ramo no servidor": a trava local avisa antes e diz a saída; a barreira efetiva fica no servidor. Custo: a trava lê texto, e sempre há forma que escapa.
+**Solução proposta (gancho antes do comando, com falha fechada, e proteção de ramo no servidor).** Um gancho que o agente executa antes de cada ferramenta lê o comando e recusa o que estraga o trabalho dos outros, com motivo e saída; se não consegue avaliar, recusa. No servidor, a proteção de ramo recusa o envio direto, em qualquer forma de comando. Método fica como instrução.
+
+**No exemplo (agent-harness).** Junta "gancho que lê o comando" com "proteção de ramo no servidor": a trava local avisa antes e diz a saída; a barreira efetiva fica no servidor. Custo: a trava lê texto, e sempre há forma que escapa.
 
 - **Gancho** é um programa que o agente chama antes de executar uma ferramenta. O do harness lê o comando como o terminal leria (entende comandos encadeados com `&&` e `;`, comandos dentro de comandos, como `bash -c "…"`, e troca de pasta com `cd`) e devolve "permite" ou "recusa, com motivo e próximo passo". **Pronto.**
 - **Trava** é uma regra do gancho que recusa. As do harness:
@@ -387,7 +399,9 @@ Há também recusa demais: a T1 recusa `git switch main && git pull && git switc
 
 **Não resolver custa:** trabalho parado e sem dono; quem continua começa do zero.
 
-**O que o harness faz.** Junta três linhas: prazo (sinal de vida), passagem planejada (`handoff`) e tomada só com confirmação humana (`takeover`). Custo: uma sessão morta parece viva por até duas horas.
+**Solução proposta (sinal periódico com prazo e passagem explícita com nota).** A sessão renova um sinal periódico (heartbeat); sem sinal dentro do prazo, ou sem o processo, o trabalho aparece como órfão, como numa trava com prazo (lease). Quem para de forma planejada envia o ramo e deixa uma nota no ticket. Tomar o trabalho de uma sessão morta exige confirmação humana.
+
+**No exemplo (agent-harness).** Junta três linhas: prazo (sinal de vida), passagem planejada (`handoff`) e tomada só com confirmação humana (`takeover`). Custo: uma sessão morta parece viva por até duas horas.
 
 - **Sessão viva:** o processo registrado existe **e** o sinal de vida (um arquivo tocado pelos ganchos) tem menos de 120 min (configurável em `sessoes.prazoDoSinalMin`). Frente ativa com dona morta aparece como `órfã` no quadro. **Pronto.**
 - **Passagem de bastão:**
@@ -635,7 +649,7 @@ Falta: git push origin dev
 
 ---
 
-## 4. Visão geral do agent-harness e primeiro ciclo
+## 4. Visão geral do exemplo (agent-harness) e primeiro ciclo
 
 ### Visão geral
 
@@ -892,6 +906,7 @@ Os três primeiros são de nivelamento; façam antes da aula 2. O gabarito está
 | **frente** | Uma unidade de trabalho no harness: nome, ID curto (`as-1`), ramo `feat/<nome>`, worktree, dona e tickets. |
 | **gancho (hook)** | Programa que o agente chama em certos momentos (antes de rodar um comando, por exemplo); pode recusar a ação. |
 | **handoff (passagem de bastão)** | Parar uma frente no meio deixando tudo para outro continuar: ramo enviado, comentário no ticket, frente `passada`. |
+| **harness** | O programa e as regras em volta do modelo. *Harness do agente*: o programa que conduz o laço do agente (Claude Code, Codex, OpenCode). *Harness do projeto*: o que a equipe acrescenta (instruções, comandos, ganchos configurados, proteção de ramo). |
 | **instrução** | Regra escrita para o agente ler (`AGENTS.md`, skill); ele pode esquecer ou interpretar. |
 | **issue** | Ver *ticket*. |
 | **main** | Por convenção, o ramo principal; em muitos projetos, o que está publicado (produção). |
