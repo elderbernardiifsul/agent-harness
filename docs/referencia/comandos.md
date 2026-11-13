@@ -552,7 +552,7 @@ Uma sessão está **viva** quando não foi encerrada, o sinal não venceu e, se 
 
 ## Eventos
 
-O gancho e os comandos acrescentam uma linha JSON a `<estado>/eventos.jsonl` a cada fato. Todo evento tem `tipo` e `em` (instante em UTC). A frente aparece no campo `frente` (o nome), salvo nos eventos de fechamento, que usam `nome`.
+O gancho e os comandos acrescentam uma linha JSON a `<estado>/eventos.jsonl` a cada fato. Todo evento tem `tipo` e `em` (instante em UTC). A frente aparece no campo `frente` (o nome); os eventos de fechamento e o `abertura-desfeita` trazem também `nome`, com o mesmo valor (o campo que gravavam antes).
 
 | `tipo` | Campos | Quem grava |
 |---|---|---|
@@ -577,9 +577,9 @@ O gancho e os comandos acrescentam uma linha JSON a `<estado>/eventos.jsonl` a c
 | `retomada-desfeita` | `sessao`, `frente`, `id` | `open` cuja retomada perdeu ou falhou |
 | `passagem` | `sessao`, `frente`, `id`, `remoto` (ou `null`) | `handoff` |
 | `tomada` | `sessao`, `de`, `frente`, `id` | `takeover` |
-| `fechamento`, `fechamento-local` | `sessao`, `id`, `nome`, `aberta`, `fechada` | `close` (o local, quando a frente continua em outra máquina) |
-| `fechamento-sem-registro` | `sessao`, `nome` | `close` de foco sem registro |
-| `abertura-desfeita` | `sessao`, `id`, `nome`, `tickets` | `close` de abertura parada |
+| `fechamento`, `fechamento-local` | `sessao`, `id`, `frente`, `nome` (igual a `frente`), `aberta`, `fechada` | `close` (o local, quando a frente continua em outra máquina) |
+| `fechamento-sem-registro` | `sessao`, `frente`, `nome` (igual a `frente`) | `close` de foco sem registro |
+| `abertura-desfeita` | `sessao`, `id`, `frente`, `nome` (igual a `frente`), `tickets` | `close` de abertura parada |
 | `comentario-falhou`, `edicao-falhou` | `ticket`, `sessao` e `frente` (quando há); `guardada: false` e `motivo` quando nem a fila aceitou | operação de ticket que foi para a fila |
 | `pendente-descartado` | `ticket`, `operacao`, `erro` | reenvio da fila (erro permanente) |
 | `reparo` | `acao` (`apagar-sessao`, `limpar-foco`, `reconstruir-frente`, `reenviar-pendentes`) e os dados dela (`sessao`, `frente`, `id`, `enviados`, `restam`, `descartados`) | `sweep --reparar` |

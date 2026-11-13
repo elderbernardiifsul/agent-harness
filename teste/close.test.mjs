@@ -261,7 +261,7 @@ test('o ciclo registra abertura e fechamento nos eventos', () => {
   assert.equal(tipos[0], 'abertura');
   assert.equal(tipos.at(-1), 'fechamento');
   const f = ev.at(-1);
-  assert.deepEqual([f.id, f.nome], ['as-1', 'carrinho']);
+  assert.deepEqual([f.id, f.nome, f.frente], ['as-1', 'carrinho', 'carrinho']);
   assert.ok(f.aberta && f.fechada);
   p.limpar();
 });
@@ -275,6 +275,8 @@ test('sessão com frente sem registro: close solta a sessão, avisa e o open fun
   assert.match(r.erro, new RegExp(`git worktree remove ${wt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assert.match(r.erro, /git branch -D feat\/carrinho/);
   assert.equal(JSON.parse(p.ah(['whoami', '--json']).saida).frente, null);
+  const ev = eventos(p).at(-1);
+  assert.deepEqual([ev.tipo, ev.nome, ev.frente], ['fechamento-sem-registro', 'carrinho', 'carrinho']);
   const o = p.ah(['open', 'outro']);
   assert.equal(o.codigo, 0, o.erro);
   p.limpar();

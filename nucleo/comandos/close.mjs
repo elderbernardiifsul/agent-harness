@@ -89,7 +89,7 @@ export async function executar(args, amb) {
       if (nomeDaSessao !== nome) throw recusa(`Não achei a frente ${nome} no estado.`, 'rode ah board para ver as frentes abertas');
       sessao.frente = null;
       gravarSessao(dirEstado, sessao);
-      registrarEvento(dirEstado, { tipo: 'fechamento-sem-registro', sessao: amb.sessaoId, nome });
+      registrarEvento(dirEstado, { tipo: 'fechamento-sem-registro', sessao: amb.sessaoId, nome, frente: nome });
       amb.avisar(`Aviso: a frente ${nome} não tem registro no estado; soltei a frente da sessão.\n`);
       const ramo = cfg.git.prefixo + nome;
       const sobras = [];
@@ -124,7 +124,7 @@ export async function executar(args, amb) {
       for (const s of [sessao, frente.dona && frente.dona !== amb.sessaoId ? lerSessao(dirEstado, frente.dona) : null]) {
         if (s && (s.frente?.nome ?? s.frente) === frente.nome) gravarSessao(dirEstado, { ...s, frente: null });
       }
-      registrarEvento(dirEstado, { tipo: 'abertura-desfeita', sessao: amb.sessaoId, id: frente.id, nome: frente.nome, tickets: r.tickets });
+      registrarEvento(dirEstado, { tipo: 'abertura-desfeita', sessao: amb.sessaoId, id: frente.id, nome: frente.nome, frente: frente.nome, tickets: r.tickets });
       const sobras = [];
       if (existeRamo(raiz, frente.ramo, { env })) sobras.push(`git branch -D ${frente.ramo}`);
       if (typeof frente.worktree === 'string' && fs.existsSync(frente.worktree)) sobras.unshift(`git worktree remove ${frente.worktree}`);
@@ -337,7 +337,7 @@ export async function executar(args, amb) {
     };
     soltarFoco(sessao);
     soltarFoco(sessaoDona);
-    registrarEvento(dirEstado, { tipo: soLocal ? 'fechamento-local' : 'fechamento', sessao: amb.sessaoId, id: frente.id, nome: frente.nome, aberta: frente.abertaEm, fechada: new Date().toISOString() });
+    registrarEvento(dirEstado, { tipo: soLocal ? 'fechamento-local' : 'fechamento', sessao: amb.sessaoId, id: frente.id, nome: frente.nome, frente: frente.nome, aberta: frente.abertaEm, fechada: new Date().toISOString() });
 
     // 7. Saída.
     if (soLocal) {

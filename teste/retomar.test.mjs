@@ -291,6 +291,7 @@ test('item 2: close da frente passada que outra máquina retomou fecha só o reg
   const r = p.ah(['close', 'carrinho'], B);
   assert.equal(r.codigo, 0, r.erro);
   assert.match(r.saida, /Registro local da frente as-1 carrinho fechado: a frente as-1 está ativa com @carla-dias em outra máquina\. Não comentei nem mexi nos tickets/);
+  assert.ok(eventos(p).some(e => e.tipo === 'fechamento-local' && e.nome === 'carrinho' && e.frente === 'carrinho'));
   assert.deepEqual(p.ghTicket(1), antes);
   assert.equal(temFrente(p, 'carrinho'), false);
   assert.equal(fs.existsSync(wt), false);

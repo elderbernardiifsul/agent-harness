@@ -566,6 +566,8 @@ test('close de abertura parada: desfaz só onde o marcador ativo é dela, sem hi
   assert.equal(r.codigo, 0, r.erro);
   assert.match(r.saida, /Abertura de as-7 carrinho desfeita/);
   assert.doesNotMatch(r.saida, /fechada/);
+  const ev = eventos(p).at(-1);
+  assert.deepEqual([ev.tipo, ev.nome, ev.frente], ['abertura-desfeita', 'carrinho', 'carrinho']);
   const t1 = p.ghTicket(1);
   assert.match(t1.comments.at(-1).body, /ah:desistencia id=as-7 /);
   assert.deepEqual([t1.assignees, t1.labels], [[], []]);
