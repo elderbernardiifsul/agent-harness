@@ -81,13 +81,14 @@ test('board recusa opção desconhecida e argumento a mais', () => {
 // ---- revisão da tarefa 3: sessão ilegível não derruba o quadro
 const arquivoDaSessao = (p, id) => path.join(p.estado, 'loja', 'sessoes', `${id}.json`);
 
-test('board com a dona ilegível: (ilegível), órfã e a linha das sessões ilegíveis, em texto e em JSON', () => {
+test('board com a dona ilegível: (ilegível), ativa (não órfã, como no sweep) e a linha das sessões ilegíveis, em texto e em JSON', () => {
   const p = criarProjeto();
   p.ah(['open', 'carrinho']);
   fs.writeFileSync(arquivoDaSessao(p, 'sessao-teste-0001'), '{ quebrado');
   const r = p.ah(['board']);
   assert.equal(r.codigo, 0, r.erro);
-  assert.match(r.saida, /as-1\s+carrinho\s+sessao-t \(ilegível\)\s+órfã/);
+  assert.match(r.saida, /as-1\s+carrinho\s+sessao-t \(ilegível\)\s+ativa/);
+  assert.ok(!p.ah(['sweep']).saida.includes('frente-orfa'), 'o sweep também não a acusa órfã');
   assert.match(r.saida, /^Sessões ilegíveis: sessao-t \(rode ah doctor\)$/m);
   const j = p.ah(['board', '--json']);
   assert.equal(j.codigo, 0, j.erro);

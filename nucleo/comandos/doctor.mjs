@@ -8,8 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { arquivoDaMaquina, dirEstado as caminhoDoEstado } from '../lib/caminhos.mjs';
 import { ErroDeConfig, carregarConfig, configAusente } from '../lib/config.mjs';
 import { ErroDeEstado, lerJson } from '../lib/estado.mjs';
-import { idsNoHistorico, lerFrente, listarFrentes, listarFrentesTolerante, siglaValida } from '../lib/frente.mjs';
-import { contarPendentes, listarPendentes } from '../lib/pendentes.mjs';
+import { idsNoHistorico, lerFrente, listarFrentesTolerante, siglaValida } from '../lib/frente.mjs';
+import { lerFila } from '../lib/pendentes.mjs';
+import { consertoDaLinhaDePendentes, worktreeSumiu } from '../lib/varredura.mjs';
 import { idCurto, lerSessao } from '../lib/sessao.mjs';
 import { aberturaParada, frenteOrfa, inicioDoProcesso, vidaDaDona } from '../lib/vida.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
@@ -33,6 +34,19 @@ const comparar = (a, b) => { for (let i = 0; i < 3; i++) if (a[i] !== b[i]) retu
 const versao = t => String(t).split('.').map(Number);
 
 function verificacao(item, fn) { fn.item = item; return fn; }
+
+// O nome da frente no rótulo do item, entre crases: uma frente chamada `parada` não se confunde com o texto.
+const nomeNoItem = f => `\`${f.nome}\``;
+
+// As frentes legíveis ({frentes}), ou {falha} com o que fazer quando a pasta delas não se lê.
+function frentesOuFalha(amb, nome) {
+  try {
+    return { frentes: listarFrentesTolerante(amb.dirEstado).frentes };
+  } catch (e) {
+    if (!(e instanceof ErroDeEstado)) throw e;
+    return { falha: falha(nome, `${e.message}; ${e.proximo}`) };
+  }
+}
 
 // Lê o `.claude/settings.json` do projeto: {settings} ou {erro}.
 function lerSettings(raiz) {
@@ -290,32 +304,35 @@ export const VERIFICACOES = [
     return falha(nome, `o seletor do PreToolUse não pega ${lista}; sem ele a trava T4 não vê a edição de arquivo; rode ah init`);
   }),
 
-  // A mesma leitura do achado `pendentes` do sweep (contarPendentes e listarPendentes).
+  // A mesma leitura dos achados `pendentes` e `pendente-ilegivel` do sweep (lerFila, uma leitura só).
   verificacao('Comentários pendentes', amb => {
     const nome = 'Comentários pendentes';
     if (!amb.dirEstado) return null;
-    let n;
-    let tickets;
+    let fila;
     try {
-      n = contarPendentes(amb.dirEstado);
-      tickets = [...new Set(listarPendentes(amb.dirEstado).map(op => op.ticket))].map(t => `#${t}`).join(', ');
+      fila = lerFila(amb.dirEstado);
     } catch (e) {
       if (e instanceof ErroDeEstado) return aviso(nome, `não consegui ler a fila (${e.message.split('\n')[0]}); apague ou conserte o arquivo`);
       throw e;
     }
-    if (!n) return ok(nome);
-    return aviso(nome, `${n} ${n === 1 ? 'operação' : 'operações'} na fila${tickets ? ` (${tickets})` : ''}; rode ah sweep --reparar com rede; `
-      + 'enquanto um ticket tem operação na fila, o ah open não o reserva');
+    const n = fila.ops.length;
+    const itens = fila.ilegiveis.map(linha => aviso(nome, `linha ilegível em pendentes: linha ${linha} de ${fila.arquivo}; ${consertoDaLinhaDePendentes(linha, fila.arquivo)}`));
+    if (!n) return itens.length ? itens : ok(nome);
+    const tickets = [...new Set(fila.ops.map(op => op.ticket))].map(t => `#${t}`).join(', ');
+    return [aviso(nome, `${n} ${n === 1 ? 'operação' : 'operações'} na fila${tickets ? ` (${tickets})` : ''}; rode ah sweep --reparar com rede; `
+      + 'enquanto um ticket tem operação na fila, o ah open não o reserva'), ...itens];
   }),
 
   // As mesmas funções do achado `frente-orfa` do sweep (vidaDaDona e frenteOrfa).
   verificacao('Frentes órfãs', amb => {
     if (!amb.dirEstado) return null;
-    const { frentes } = listarFrentesTolerante(amb.dirEstado);
+    const lidas = frentesOuFalha(amb, 'Frentes órfãs');
+    if (lidas.falha) return lidas.falha;
+    const { frentes } = lidas;
     const agora = Date.now();
     const orfas = frentes.map(f => ({ f, v: vidaDaDona(amb.dirEstado, f.dona, { config: amb.config, agora }) })).filter(({ f, v }) => frenteOrfa(f, v));
     if (!orfas.length) return ok('Frentes órfãs');
-    return orfas.map(({ f, v }) => aviso(`Frente ${f.nome} órfã`,
+    return orfas.map(({ f, v }) => aviso(`Frente ${nomeNoItem(f)} órfã`,
       `${f.dona ? `dona ${idCurto(f.dona)} (${v.motivo})` : 'sem dona'}; ah takeover ${f.nome} com a ordem do executivo`));
   }),
 
@@ -343,21 +360,20 @@ export const VERIFICACOES = [
   }),
 
   verificacao('Frentes com worktree', amb => {
-    // Como o sweep: a vida da dona por vidaDaDona.
+    // Como o sweep: a vida da dona por vidaDaDona, o mesmo filtro do achado `worktree-sumiu` (worktreeSumiu) e o
+    // arquivo de frente ilegível de fora (o item dos arquivos de estado o acusa), sem esconder as outras.
     const sessaoViva = (a, id) => vidaDaDona(a.dirEstado, id, { config: a.config })?.estado === 'viva';
     if (!amb.dirEstado) return null;
-    let frentes;
-    try { frentes = listarFrentes(amb.dirEstado); } catch (e) {
-      if (e instanceof ErroDeEstado) return null; // o item dos arquivos de estado já acusou
-      throw e;
-    }
-    const sumidas = frentes.filter(f => f.estado === 'ativa' && typeof f.worktree === 'string' && !fs.existsSync(f.worktree));
+    const lidas = frentesOuFalha(amb, 'Frentes com worktree');
+    if (lidas.falha) return lidas.falha;
+    const { frentes } = lidas;
+    const sumidas = frentes.filter(worktreeSumiu);
     // Registro `abrindo` parado (processo do open morto): um open que parou entre a reserva e o worktree.
     const paradas = frentes.filter(f => f.estado === 'abrindo' && aberturaParada(f, sessaoViva(amb, f.dona)));
     if (!sumidas.length && !paradas.length) return ok('Frentes com worktree');
     return [
-      ...sumidas.map(f => aviso(`Frente ${f.nome}`, `o worktree ${f.worktree} não existe; recrie-o ou encerre a frente com ah close ${f.nome}`)),
-      ...paradas.map(f => aviso(`Frente ${f.nome} em abertura parada`, `um ah open parou no meio (sessão ${f.dona ?? 'sem dona'}${f.processo ? `, processo ${f.processo.pid} morto` : ''}); rode ah open ${f.nome} para terminar, ou ah close ${f.nome} para desistir`)),
+      ...sumidas.map(f => aviso(`Frente ${nomeNoItem(f)}`, `o worktree ${f.worktree} não existe; recrie-o ou encerre a frente com ah close ${f.nome}`)),
+      ...paradas.map(f => aviso(`Frente ${nomeNoItem(f)} em abertura parada`, `um ah open parou no meio (sessão ${f.dona ?? 'sem dona'}${f.processo ? `, processo ${f.processo.pid} morto` : ''}); rode ah open ${f.nome} para terminar, ou ah close ${f.nome} para desistir`)),
     ];
   }),
 ];

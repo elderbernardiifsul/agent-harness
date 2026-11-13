@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { lerJson, gravarJson, validarNomeSeguro } from './estado.mjs';
+import { ErroDeEstado, lerJson, gravarJson, validarNomeSeguro } from './estado.mjs';
 import { conferirEsquema, ESQUEMA_DO_ESTADO } from './sessao.mjs';
 
 export const siglaValida = s => typeof s === 'string' && /^[a-z]{2,4}$/.test(s);
@@ -96,7 +96,8 @@ function nomesDasFrentes(dirEstado) {
     return fs.readdirSync(path.join(dirEstado, 'frentes')).filter(n => n.endsWith('.json') && !n.startsWith('.')).map(n => n.slice(0, -5));
   } catch (e) {
     if (e.code === 'ENOENT') return [];
-    throw e;
+    const pasta = path.join(dirEstado, 'frentes');
+    throw new ErroDeEstado(`Não consegui ler a pasta ${pasta} (${e.code ?? e.message})`, pasta, `confira as permissões da pasta ${pasta}`);
   }
 }
 

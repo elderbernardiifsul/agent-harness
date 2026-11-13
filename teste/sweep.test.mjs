@@ -237,3 +237,16 @@ test('sweep recusa opção desconhecida', t => {
   assert.equal(r.codigo, 1);
   assert.match(r.erro, /^Recusado: Opção desconhecida: --tudo\nFaça: use ah sweep/);
 });
+
+// ---- Onda final
+test('sweep não regrava o índice do principal (git status com --no-optional-locks)', t => {
+  const p = projeto(t);
+  const rastreado = p.git(['ls-files']).saida.split('\n').find(Boolean);
+  const arq = path.join(p.raiz, rastreado);
+  const futuro = new Date(Date.now() + 60000);
+  fs.utimesSync(arq, futuro, futuro);
+  const indice = path.join(p.raiz, '.git', 'index');
+  const antes = fs.statSync(indice).mtimeMs;
+  assert.equal(p.ah(['sweep']).codigo, 0);
+  assert.equal(fs.statSync(indice).mtimeMs, antes);
+});

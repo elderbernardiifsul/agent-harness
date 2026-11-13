@@ -52,12 +52,33 @@ export function contarPendentes(dirEstado) {
   return lerLinhas(dirEstado).length;
 }
 
-// Operações da fila para o ticket, em ordem (linhas ilegíveis ficam de fora).
+// A fila numa leitura só: {ops (as operações legíveis, em ordem), ilegiveis (números das linhas, contando do 1,
+// que não são uma operação válida), arquivo}. Quem conta e quem lista usam a mesma leitura.
+export function lerFila(dirEstado) {
+  const arquivo = arquivoDe(dirEstado);
+  let texto;
+  try {
+    texto = fs.readFileSync(arquivo, 'utf8');
+  } catch (e) {
+    if (e.code === 'ENOENT') return { ops: [], ilegiveis: [], arquivo };
+    throw new ErroDeEstado(`Não consegui ler a fila de pendentes ${arquivo}: ${e.message}`, arquivo);
+  }
+  const ops = [];
+  const ilegiveis = [];
+  texto.split('\n').forEach((l, i) => {
+    if (!l.trim()) return;
+    try {
+      const op = JSON.parse(l);
+      conferirOp(op);
+      ops.push(op);
+    } catch { ilegiveis.push(i + 1); }
+  });
+  return { ops, ilegiveis, arquivo };
+}
+
 // Todas as operações da fila, em ordem (linha ilegível fica de fora; o reenvio a descarta).
 export function listarPendentes(dirEstado) {
-  return lerLinhas(dirEstado).flatMap(l => {
-    try { return [JSON.parse(l)]; } catch { return []; }
-  });
+  return lerFila(dirEstado).ops;
 }
 
 export function pendentesDoTicket(dirEstado, ticket) {

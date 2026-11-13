@@ -400,7 +400,7 @@ test('open parado no meio: quadro e doctor acusam, e outro open com o mesmo nome
   const f = JSON.parse(p.ah(['board', '--json']).saida).frentes[0];
   assert.deepEqual([f.estado, f.donaViva], ['abrindo', false]);
   const d = p.ah(['doctor']);
-  assert.match(d.saida + d.erro, /carrinho em abertura parada.*ah open carrinho/);
+  assert.match(d.saida + d.erro, /carrinho` em abertura parada.*ah open carrinho/);
   const r = p.ah(['open', 'carrinho', '--tickets', '1']);
   assert.equal(r.codigo, 0, r.erro);
   assert.match(r.saida, /Frente as-7 carrinho aberta/);
@@ -541,7 +541,7 @@ test('open morto na fase 2 com a sessão viva: quadro e doctor acusam pelo proce
   const f = JSON.parse(p.ah(['board', '--json']).saida).frentes[0];
   assert.deepEqual([f.estado, f.donaViva, f.aberturaParada], ['abrindo', true, true]);
   const d = p.ah(['doctor']);
-  assert.match(d.saida + d.erro, /carrinho em abertura parada.*processo \d+ morto.*ah open carrinho/);
+  assert.match(d.saida + d.erro, /carrinho` em abertura parada.*processo \d+ morto.*ah open carrinho/);
   const o = p.ah(['open', 'frete']);
   assert.equal(o.codigo, 1);
   assert.match(o.erro, /Faça: .*ah open carrinho para retomar a abertura parada, ou ah close carrinho para desistir/);

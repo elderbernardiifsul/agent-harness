@@ -283,7 +283,7 @@ test('comentário pendente e frente órfã viram aviso com o que fazer', t => {
   const r = p.ah(['doctor'], { env: { AH_SESSAO: '' } });
   assert.equal(r.codigo, 0, r.saida + r.erro);
   assert.match(r.saida, /^aviso\s+Comentários pendentes: 2 operações na fila \(#1, #2\); rode ah sweep --reparar com rede/m);
-  assert.match(r.saida, /^aviso\s+Frente carrinho órfã: dona sessao-t.* \(sinal vencido\); ah takeover carrinho com a ordem do executivo$/m);
+  assert.match(r.saida, /^aviso\s+Frente `carrinho` órfã: dona sessao-t.* \(sinal vencido\); ah takeover carrinho com a ordem do executivo$/m);
   assert.doesNotMatch(r.saida, /^ok\s+Frentes órfãs/m);
   // o mesmo que o sweep acha
   const s = JSON.parse(p.ah(['sweep', '--json'], { env: { AH_SESSAO: '' } }).saida);
@@ -348,4 +348,61 @@ test('o ensaio da troca de ramo não suja o estado nem troca o ramo do principal
   assert.match(p.ah(['doctor']).saida, /^ok\s+Gancho recusa troca de ramo/m);
   assert.equal(fs.existsSync(path.join(dirDoTeste(p), 'eventos.jsonl')), false);
   assert.equal(p.git(['branch', '--show-current']).saida.trim(), 'dev');
+});
+
+// ---------------------------------------------------------------- onda final
+const linhaDo = (saida, re) => saida.split('\n').find(l => re.test(l));
+
+test('linha quebrada em pendentes: doctor e sweep acusam com o número e o conserto; nada derruba', t => {
+  const p = projetoLimpo(t);
+  enfileirar(dirDoTeste(p), { tipo: 'comentario', ticket: 1, corpo: 'ok' });
+  const arq = path.join(dirDoTeste(p), 'pendentes.jsonl');
+  fs.appendFileSync(arq, '{ quebrada\n');
+  enfileirar(dirDoTeste(p), { tipo: 'comentario', ticket: 2, corpo: 'ok' });
+  const r = p.ah(['doctor']);
+  assert.match(r.saida, /^aviso\s+Comentários pendentes: 2 operações na fila \(#1, #2\)/m);
+  assert.ok(r.saida.includes(`linha ilegível em pendentes: linha 2 de ${arq}; apague a linha 2 de ${arq}`), r.saida);
+  const s = p.ah(['sweep']);
+  assert.equal(s.codigo, 0, s.erro);
+  assert.ok(s.saida.includes(`- pendente-ilegivel: linha ilegível em pendentes: linha 2 de ${arq}. Faça: apague a linha 2 de ${arq}`), s.saida);
+  assert.match(s.saida, /- pendentes: 2 operações \(#1, #2\)/);
+});
+
+test('Frentes com worktree: frente passada com o worktree apagado aparece como no sweep; arquivo ilegível não esconde as outras', t => {
+  const p = projetoLimpo(t);
+  assert.equal(p.ah(['open', 'carrinho']).codigo, 0);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const arqF = path.join(dirDoTeste(p), 'frentes', 'carrinho.json');
+  const f = JSON.parse(fs.readFileSync(arqF, 'utf8'));
+  fs.rmSync(f.worktree, { recursive: true, force: true });
+  fs.writeFileSync(path.join(dirDoTeste(p), 'frentes', 'quebrada.json'), '{ x');
+  const r = p.ah(['doctor']);
+  assert.ok(linhaDo(r.saida, /^aviso\s+Frente `carrinho`: o worktree .* não existe/), r.saida);
+  const s = JSON.parse(p.ah(['sweep', '--json']).saida);
+  assert.ok(s.achados.some(a => a.tipo === 'worktree-sumiu' && a.detalhe.includes('carrinho')));
+});
+
+test('pasta frentes sem leitura: os itens das frentes falham com o que fazer', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, t => {
+  const p = projetoLimpo(t);
+  const pasta = path.join(dirDoTeste(p), 'frentes');
+  fs.mkdirSync(pasta, { recursive: true });
+  fs.chmodSync(pasta, 0);
+  let r;
+  try { r = p.ah(['doctor']); } finally { fs.chmodSync(pasta, 0o755); }
+  for (const item of ['Frentes órfãs', 'Frentes com worktree']) {
+    const linha = linhaDo(r.saida, new RegExp(`^FALHOU\\s+${item}:`));
+    assert.ok(linha, `${item}\n${r.saida}`);
+    assert.doesNotMatch(linha, /erro interno/);
+    assert.ok(linha.includes(pasta), linha);
+    assert.match(linha, /confira as permissões da pasta/);
+  }
+});
+
+test('frente chamada parada: o nome sai entre crases nos itens do doctor', t => {
+  const p = projetoLimpo(t);
+  assert.equal(p.ah(['open', 'parada']).codigo, 0);
+  const arqF = path.join(dirDoTeste(p), 'frentes', 'parada.json');
+  const f = JSON.parse(fs.readFileSync(arqF, 'utf8'));
+  fs.writeFileSync(arqF, JSON.stringify({ ...f, estado: 'abrindo', processo: { pid: 999999, inicio: null } }));
+  assert.match(p.ah(['doctor']).saida, /^aviso\s+Frente `parada` em abertura parada: /m);
 });

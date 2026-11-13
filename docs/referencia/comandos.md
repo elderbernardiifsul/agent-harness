@@ -102,12 +102,12 @@ ok      Hora de início do processo
 ok      Gancho recusa troca de ramo
 ok      Ganchos vigiam a edição
 ok      Comentários pendentes
-aviso   Frente orfa órfã: dona sessao-m (processo não existe); ah takeover orfa com a ordem do executivo
+aviso   Frente `orfa` órfã: dona sessao-m (processo não existe); ah takeover orfa com a ordem do executivo
 ok      Proteção de stage no servidor
 ok      Proteção de main no servidor
 aviso   CI com comando de teste: defina ci.comandoDeTeste em .harness/config.json e rode ah init
-aviso   Frente sumida: o worktree <worktrees>/sumida não existe; recrie-o ou encerre a frente com ah close sumida
-aviso   Frente parada em abertura parada: um ah open parou no meio (sessão sessao-m-0006, processo 999999 morto); rode ah open parada para terminar, ou ah close parada para desistir
+aviso   Frente `sumida`: o worktree <worktrees>/sumida não existe; recrie-o ou encerre a frente com ah close sumida
+aviso   Frente `parada` em abertura parada: um ah open parou no meio (sessão sessao-m-0006, processo 999999 morto); rode ah open parada para terminar, ou ah close parada para desistir
 0 falha(s), 4 aviso(s).
 ```
 
@@ -118,9 +118,9 @@ Os itens novos da fatia 2:
 | Hora de início do processo | aviso no Windows (`no Windows a hora de início não é conferida; um pid reaproveitado conta como vivo até o sinal vencer`) ou quando `/proc` ou `ps -o lstart` não responde | nada a fazer; saiba que a herança da continuação não acontece sem ela (ver "Vida da sessão") |
 | Gancho recusa troca de ramo | falha se o ensaio de `git switch <primeiro protegido>` não sai com T1 | `rode ah init` |
 | Ganchos vigiam a edição | falha se o seletor do `PreToolUse` não pega `Edit`, `Write` ou `NotebookEdit` | `rode ah init` |
-| Comentários pendentes | aviso com `N operação(ões) na fila (#n, …)` | `rode ah sweep --reparar com rede`; enquanto um ticket tem operação na fila, o `ah open` não o reserva |
-| Frentes órfãs | um aviso por frente ativa sem dona viva | `ah takeover <nome> com a ordem do executivo` |
-| Frentes com worktree | um aviso por frente ativa cujo worktree sumiu e por registro em abertura parada | `ah close <nome>` (ou recrie o worktree); `ah open <nome>` para terminar a abertura, ou `ah close <nome>` para desistir |
+| Comentários pendentes | aviso com `N operação(ões) na fila (#n, …)`; e um aviso `linha ilegível em pendentes: linha N de <arquivo>` por linha quebrada, com o conserto | `rode ah sweep --reparar com rede`; enquanto um ticket tem operação na fila, o `ah open` não o reserva |
+| Frentes órfãs | um aviso por frente ativa sem dona viva (falha, com o que fazer, se a pasta `frentes/` não se lê) | `ah takeover <nome> com a ordem do executivo` |
+| Frentes com worktree | um aviso por frente (ativa ou passada, o mesmo filtro do `sweep`) cujo worktree sumiu e por registro em abertura parada; um arquivo de frente ilegível não esconde as outras; falha, com o que fazer, se a pasta `frentes/` não se lê | `ah close <nome>` (ou recrie o worktree); `ah open <nome>` para terminar a abertura, ou `ah close <nome>` para desistir |
 
 Exemplos de falha: `FALHOU  .harness/config.json válido: não há .harness/config.json; rode ah init`; `FALHOU  Arquivos de estado legíveis: <estado>/loja/sessoes/sessao-ruim-0009.json ilegível; apague ou conserte o arquivo`; `FALHOU  Harness no ramo base: tools/ah e .harness/config.json não estão no ramo dev, de onde as frentes partem; faça o commit do harness em dev: git switch dev e o git add/git commit que o ah init mostrou (se o commit já está em outro ramo: git switch dev && git merge <esse ramo>)`.
 
@@ -241,7 +241,7 @@ Mostra as frentes do estado em tabela e, embaixo, as sessões vivas. Sem frente:
 |---|---|
 | ID, NOME | o id (`as-1`) e o nome da frente |
 | DONA | id curto da sessão dona; `(morta)` se ela não está viva, `(ilegível)` se o registro dela não se lê; `—` sem dona |
-| ESTADO | `ativa`; `órfã` (ativa sem dona viva: `ah takeover`); `passada` (sem dona: `ah open`); `abrindo` (um `ah open` em curso); `abrindo (parada)` (o processo do `open` morreu) |
+| ESTADO | `ativa`; `órfã` (ativa sem dona viva: `ah takeover`; a mesma regra do `sweep`, e dona com registro ilegível não conta como órfã); `passada` (sem dona: `ah open`); `abrindo` (um `ah open` em curso); `abrindo (parada)` (o processo do `open` morreu) |
 | TICKETS | `#1,#2` ou `—` |
 | SOBREPÕE | IDs das outras frentes (ativas ou passadas) que mudaram algum arquivo em comum, pelo ramo desde a base e pelo worktree; `?` quando o git passou do prazo total (3 s) antes de conferir a frente |
 | PLANO, ÚLTIMA NOTA | o plano e a última nota, cortados |
@@ -388,13 +388,14 @@ Lista o que está fora do lugar no estado desta máquina, sem rede: uma linha po
 | `estado-ilegivel` | arquivo de sessão, de frente ou a fila de pendentes que não se lê | apague ou conserte o arquivo (rode `ah doctor`) |
 | `abertura-parada` | registro `abrindo` cujo processo do `open` morreu (ou, sem processo, sem dona viva) | `ah open <nome>` para terminar, ou `ah close <nome>` para desistir |
 | `frente-orfa` | frente ativa sem dona viva | `ah takeover <nome>` (com a ordem do executivo) |
-| `worktree-sumiu` | a pasta do worktree da frente não existe | `ah close <nome>` |
+| `worktree-sumiu` | a pasta do worktree da frente (ativa ou passada) não existe | `ah close <nome>` |
 | `ramo-sumiu` | o ramo da frente não existe nem local nem no remoto | confira com quem abriu; `ah close <nome>` |
 | `worktree-sem-frente` | worktree do git sem frente no estado, com o ramo, os commits fora da base e do remoto e os arquivos sujos | no padrão `<worktrees>/<nome>` com o ramo `feat/<nome>`: `ah sweep --reparar`; fora dele: confira e `git worktree remove` à mão |
 | `sessao-morta` | sessão que não está viva, sem frente, sem passagem feita há menos de 7 dias, parada há mais de 7 dias (não sai enquanto houver arquivo de frente ilegível) | `ah sweep --reparar` |
 | `principal-fora-da-base` | o checkout principal não está no ramo base | `git switch dev` no principal |
 | `principal-sujo` | o checkout principal tem arquivos alterados | commit por caminho ou combine com a dona |
 | `pendentes` | operações na fila de comentários e edições de ticket | `ah sweep --reparar` (com rede) |
+| `pendente-ilegivel` | `linha ilegível em pendentes: linha N de <estado>/pendentes.jsonl` (uma por linha quebrada; as outras seguem na fila) | apague a linha N (o próximo reenvio com rede, `ah sweep --reparar`, também a descarta) |
 
 ```
 $ tools/ah sweep

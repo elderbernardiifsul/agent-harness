@@ -7,7 +7,7 @@ import { arquivoDaMaquina, dirWorktrees as caminhoDosWorktrees, normalizarCaminh
 import { ErroDeEstado, comTrava, lerJson, registrarEvento } from './estado.mjs';
 import { gravarFrente, lerFrente, listarFrentesTolerante, nomeValido, novaFrente, proximoId, siglaValida } from './frente.mjs';
 import { existeRamo, git, ramoAtual } from './git.mjs';
-import { contarPendentes, listarPendentes, reenviarPendentes } from './pendentes.mjs';
+import { contarPendentes, lerFila, reenviarPendentes } from './pendentes.mjs';
 import { apagarSessao, gravarSessao, idadeDoSinalMs, idCurto, listarSessoes } from './sessao.mjs';
 import { aberturaParada, frenteOrfa, vidaDaDona } from './vida.mjs';
 
@@ -37,8 +37,9 @@ function listarWorktrees(raiz, env) {
   return lista;
 }
 
+// `--no-optional-locks`: o sweep só olha; o `git status` não regrava o índice (nem disputa a trava dele com quem trabalha).
 const linhasDoStatus = (cwd, env) => {
-  const r = git(['status', '--porcelain'], { cwd, env, timeoutMs: PRAZO_DO_GIT_MS });
+  const r = git(['--no-optional-locks', 'status', '--porcelain'], { cwd, env, timeoutMs: PRAZO_DO_GIT_MS });
   return r.codigo === 0 ? r.saida.split('\n').filter(l => l.trim()).length : null;
 };
 
@@ -56,6 +57,12 @@ const idadeDe = (dirEstado, s, agora) => {
   const em = Date.parse(s.fim ?? s.inicio);
   return Number.isFinite(em) ? Math.max(0, agora - em) : null;
 };
+
+// Frente (fora da abertura) cujo worktree não existe: o achado `worktree-sumiu` do sweep e o item do doctor.
+export const worktreeSumiu = f => f?.estado !== 'abrindo' && (typeof f?.worktree !== 'string' || !fs.existsSync(f.worktree));
+
+// O conserto de uma linha ilegível da fila de pendentes (o mesmo no sweep e no doctor).
+export const consertoDaLinhaDePendentes = (linha, arquivo) => `apague a linha ${linha} de ${arquivo} (o próximo reenvio com rede, ah sweep --reparar, também a descarta)`;
 
 // Tudo o que o sweep vê, com o que o reparo usa: {lista, sessoesMortas, reconstruiveis}.
 function levantar(amb) {
@@ -90,7 +97,7 @@ function levantar(amb) {
     if (frenteOrfa(f, v)) {
       lista.push(achado('frente-orfa', `${qual}, ${f.dona ? `dona ${idCurto(f.dona)} (${v.motivo})` : 'sem dona'}`, `ah takeover ${f.nome} (com a ordem do executivo)`));
     }
-    if (typeof f.worktree !== 'string' || !fs.existsSync(f.worktree)) {
+    if (worktreeSumiu(f)) {
       lista.push(achado('worktree-sumiu', `${qual}, worktree ${f.worktree}`, `ah close ${f.nome}`));
     }
     if (typeof f.ramo === 'string' && !existeRamo(raiz, f.ramo, { env }) && !existeRamo(raiz, f.ramo, { remoto: cfg.git.remoto, env })) {
@@ -146,10 +153,15 @@ function levantar(amb) {
   if (sujos) lista.push(achado('principal-sujo', `${raiz} com ${plural(sujos, 'arquivo alterado', 'arquivos alterados')}`, 'commit por caminho ou combine com a dona'));
 
   try {
-    const n = contarPendentes(dirEstado);
+    // Uma leitura só da fila: a contagem e os tickets vêm do mesmo retrato.
+    const fila = lerFila(dirEstado);
+    const n = fila.ops.length;
     if (n) {
-      const tickets = [...new Set(listarPendentes(dirEstado).map(op => op.ticket))].map(t => `#${t}`).join(', ');
+      const tickets = [...new Set(fila.ops.map(op => op.ticket))].map(t => `#${t}`).join(', ');
       lista.push(achado('pendentes', `${plural(n, 'operação', 'operações')}${tickets ? ` (${tickets})` : ''}`, 'ah sweep --reparar (com rede)'));
+    }
+    for (const linha of fila.ilegiveis) {
+      lista.push(achado('pendente-ilegivel', `linha ilegível em pendentes: linha ${linha} de ${fila.arquivo}`, consertoDaLinhaDePendentes(linha, fila.arquivo)));
     }
   } catch (e) {
     if (!(e instanceof ErroDeEstado)) throw e;

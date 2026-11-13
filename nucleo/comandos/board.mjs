@@ -3,7 +3,7 @@ import { ErroDeUso } from '../lib/caminhos.mjs';
 import { listarFrentesTolerante } from '../lib/frente.mjs';
 import { arquivosDaFrenteOuNulo, contaNaSobreposicao, sobreposicoes as calcularSobreposicoes } from '../lib/sobreposicao.mjs';
 import { idCurto, listarSessoes } from '../lib/sessao.mjs';
-import { aberturaParada, vidaDaDona } from '../lib/vida.mjs';
+import { aberturaParada, frenteOrfa, vidaDaDona } from '../lib/vida.mjs';
 
 export const descricao = 'mostra as frentes abertas e as sessões vivas';
 export const uso = 'ah board [--json]';
@@ -24,12 +24,12 @@ function linhaUnica(texto, limite) {
   return t.length > limite ? `${t.slice(0, limite - 1)}…` : t;
 }
 
-// Ativa sem dona viva (dona morta, ilegível ou nenhuma) é órfã: alguém pode tomá-la.
+// Órfã pela mesma regra do sweep e do takeover (frenteOrfa): ativa sem dona viva; dona ilegível não é órfã.
 // Em abertura com o processo do open morto (ou, sem processo no registro, sem dona viva) é um open que parou
 // no meio: outro `ah open <nome>` o toma.
-function estadoNoQuadro(f, donaViva) {
-  if (f.estado === 'ativa' && !donaViva) return 'órfã';
-  if (f.estado === 'abrindo') return aberturaParada(f, donaViva) ? 'abrindo (parada)' : 'abrindo';
+function estadoNoQuadro(f, vida) {
+  if (frenteOrfa(f, vida)) return 'órfã';
+  if (f.estado === 'abrindo') return aberturaParada(f, vida?.estado === 'viva') ? 'abrindo (parada)' : 'abrindo';
   return f.estado ?? '—';
 }
 
@@ -46,14 +46,16 @@ export async function executar(args, amb) {
   for (const nome of ilegiveis) {
     amb.avisar(`Aviso: arquivo de frente ilegível: ${path.join(dirEstado, 'frentes', `${nome}.json`)} (rode ah doctor)\n`);
   }
-  // Estado de vida por sessão: 'viva', 'morta' (qualquer outro estado) ou 'ilegivel' (arquivo que não se lê).
+  // Vida de cada sessão (vidaDaDona, a mesma do sweep); `vida(id)` resume em 'viva', 'morta' (qualquer outro
+  // estado) ou 'ilegivel' (arquivo que não se lê).
   const vidas = new Map();
-  const vida = id => {
-    if (!vidas.has(id)) {
-      const v = vidaDaDona(dirEstado, id, { config: amb.config }).estado;
-      vidas.set(id, v === 'viva' || v === 'ilegivel' ? v : 'morta');
-    }
+  const vidaCompleta = id => {
+    if (!vidas.has(id)) vidas.set(id, vidaDaDona(dirEstado, id, { config: amb.config }));
     return vidas.get(id);
+  };
+  const vida = id => {
+    const v = vidaCompleta(id)?.estado;
+    return v === 'viva' || v === 'ilegivel' ? v : 'morta';
   };
   const donaViva = f => Boolean(f.dona) && vida(f.dona) === 'viva';
   const donaIlegivel = f => Boolean(f.dona) && vida(f.dona) === 'ilegivel';
@@ -127,7 +129,7 @@ export async function executar(args, amb) {
       linhaUnica(f.id, 20),
       linhaUnica(f.nome, 49),
       rotuloDaDona(f),
-      linhaUnica(estadoNoQuadro(f, donaViva(f)), 20),
+      linhaUnica(estadoNoQuadro(f, vidaCompleta(f.dona)), 20),
       f.tickets?.length ? f.tickets.map(n => `#${n}`).join(',') : '—',
       !conferida(f) ? '?' : (ids => (ids.length ? linhaUnica(ids.join(','), 40) : '—'))(sobrepoe(f)),
       f.plano ? linhaUnica(f.plano, LIMITE_PLANO) : '—',
