@@ -5,7 +5,9 @@ import path from 'node:path';
 import { criarProjeto, dirDoTeste, outraMaquina } from './apoio/repo.mjs';
 import { acharPassagem, montarMarcador } from '../nucleo/lib/reserva.mjs';
 import { reenviarPendentes } from '../nucleo/lib/pendentes.mjs';
-import { encerrarSessao, registrarSessao } from '../nucleo/lib/sessao.mjs';
+import { encerrarSessao, lerSessao, registrarSessao } from '../nucleo/lib/sessao.mjs';
+import { continuarSessao } from '../nucleo/lib/heranca.mjs';
+import { processoVivo } from './apoio/processo.mjs';
 
 const lerFrenteDoTeste = (p, nome) => JSON.parse(fs.readFileSync(path.join(dirDoTeste(p), 'frentes', `${nome}.json`), 'utf8'));
 const temFrente = (p, nome) => fs.existsSync(path.join(dirDoTeste(p), 'frentes', `${nome}.json`));
@@ -654,4 +656,61 @@ test('rodada 4, item 3: o fechamento não tira o rótulo com outra frente ativa 
   assert.equal(r.codigo, 0, r.erro);
   assert.ok(p.ghTicket(1).labels.includes('em-andamento'), p.ghTicket(1).labels.join(','));
   assert.deepEqual(p.ghTicket(1).assignees, ['carla-dias']);
+});
+
+// ---- Consertos da revisão da tarefa 8, rodada 5 ----
+
+// A abre carrinho (#1) com o agente num processo vivo; um /clear (continuação com vínculo) passa a frente para Y.
+async function comClear(t) {
+  const p = criarProjeto();
+  t.after(() => p.limpar());
+  const proc = processoVivo();
+  t.after(() => proc.matar());
+  const X = 'sessao-x-0005';
+  const Y = 'sessao-y-0006';
+  assert.equal(p.ah(['open', 'carrinho', '--tickets', '1'], { env: { AH_SESSAO: X, AH_PID_AGENTE: String(proc.pid) } }).codigo, 0);
+  const dir = dirDoTeste(p);
+  const { pid, pidInicio } = lerSessao(dir, X);
+  registrarSessao(dir, { id: Y, agente: 'desconhecido', pid, pidInicio });
+  const r = await continuarSessao(dir, { sessao: Y, pid, pidInicio, origem: 'continuacao' });
+  assert.deepEqual(r.herdadas, ['carrinho']);
+  assert.deepEqual([lerSessao(dir, X).frente, lerSessao(dir, X).motivoFim, lerFrenteDoTeste(p, 'carrinho').dona], [null, 'substituida', Y]);
+  return { p, proc, dir, X, Y, pid, pidInicio };
+}
+
+test('rodada 5: a herança com vínculo deixa a sessão substituída em sessoesAnteriores', async t => {
+  const { p, X } = await comClear(t);
+  assert.deepEqual(lerFrenteDoTeste(p, 'carrinho').sessoesAnteriores, [X]);
+});
+
+test('rodada 5, reprodução A: takeover depois de um /clear reconhece o marcador da sessão substituída', async t => {
+  const { p, proc } = await comClear(t);
+  await proc.matar();
+  const r = p.ah(['takeover', 'carrinho', '--confirmado'], B);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').dona, 'sessao-b-0002');
+});
+
+test('rodada 5, reprodução B: /clear e depois começo sem vínculo: a frente passada se retoma aqui', async t => {
+  const { p, dir, X, Y, pid, pidInicio } = await comClear(t);
+  const Z = 'sessao-z-0007';
+  registrarSessao(dir, { id: Z, agente: 'desconhecido', pid, pidInicio });
+  const r1 = await continuarSessao(dir, { sessao: Z, pid, pidInicio, origem: 'novo' });
+  assert.deepEqual(r1.soltas, ['carrinho']);
+  const f = lerFrenteDoTeste(p, 'carrinho');
+  assert.deepEqual([f.estado, f.passadaDe, f.sessoesAnteriores, lerSessao(dir, Y).frente], ['passada', Y, [X, Y], null]);
+  const r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.equal(tiposNoTicket(p, 1).at(-1), 'tomada');
+});
+
+test('rodada 5: close de frente fechada durante a tomada não diz que não mexeu nos tickets', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const corrida = [{ ...marcadorDe('fechamento', 1, 'carla-dias', 'sessao-c'), depoisDe: 1 }];
+  const r = p.ah(['close', 'carrinho'], { env: { AH_SESSAO: 'sessao-b-0002', GH_FALSO_CORRIDA: JSON.stringify(corrida) } });
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Registro local da frente as-1 carrinho fechado: a frente as-1 foi fechada durante esta retomada/);
+  assert.doesNotMatch(r.saida, /Não comentei nem mexi nos tickets/);
+  assert.match(r.saida, /Nos tickets, desfiz a retomada deste close/);
 });

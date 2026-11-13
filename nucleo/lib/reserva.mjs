@@ -524,12 +524,14 @@ export function acharPassagem({ nome, tickets = [], rotulo }, o = {}) {
 }
 
 // Sessões desta máquina que podem ter deixado a frente ativa nos tickets sem passagem (para a situação 'daqui'):
-// `extras` (`passadaPor`/`passadaDe` da frente, ou a dona morta no takeover) e as registradas aqui cuja frente em
-// foco é esta (viva ou encerrada com esse foco). Sessão daqui de outra frente, viva ou encerrada, não conta.
+// `extras` (a dona morta no takeover), as que a frente guarda (`passadaPor`, `passadaDe` e `sessoesAnteriores`,
+// as substituídas por herança) e as registradas aqui cuja frente em foco é esta (viva ou encerrada com esse foco).
+// Sessão daqui de outra frente, viva ou encerrada, não conta.
 export function sessoesDaquiDaFrente(dirEstado, frente, extras = []) {
   const daqui = listarSessoes(dirEstado).sessoes
     .filter(s => (s.frente?.nome ?? s.frente) === frente.nome).map(s => s.id);
-  return [...new Set([...extras.filter(x => typeof x === 'string' && x), ...daqui])];
+  const daFrente = [frente.passadaPor, frente.passadaDe, ...(Array.isArray(frente.sessoesAnteriores) ? frente.sessoesAnteriores : [])];
+  return [...new Set([...extras, ...daFrente].filter(x => typeof x === 'string' && x).concat(daqui))];
 }
 
 // Quem segura a frente (o `ativa` de acharPassagem) é esta sessão? Pelo `sid`; sem ele, login e sessão curta.

@@ -229,6 +229,8 @@ export async function executar(args, amb) {
     // Então este close primeiro toma a frente pela mesma corrida da retomada (marcador `retomada` desta sessão) e
     // só então a fecha como própria; se outra a tem (ou ganha a corrida), tira só o registro e o worktree daqui.
     let soLocal = null;
+    // O que o close só local fez nos tickets: nada, ou desfez a retomada que comentou para tomar a frente.
+    let nosTickets = 'Não comentei nem mexi nos tickets';
     if (frente.estado === 'passada' && (frente.tickets ?? []).length && !frente.fechamentoComentado) {
       const oGh = { cwd: raiz, env, avisar: amb.avisar };
       const presos = frente.tickets.filter(n => temDoTicket(dirEstado, n));
@@ -248,8 +250,10 @@ export async function executar(args, amb) {
       if (['passada', 'propria', 'daqui'].includes(q.situacao)) {
         const tipo = q.situacao === 'daqui' ? 'tomada' : 'retomada';
         const r = confirmarRetomada({ frente, login, sessao: amb.sessaoId, rotulo, dirEstado, proprios: q.proprios ?? [], tipo }, oGh);
-        if (!r.ok && r.vencedor) soLocal = `a frente ${frente.id} foi retomada antes por @${r.vencedor.login} em outra máquina (${r.como})`;
-        else if (!r.ok && r.fechada) soLocal = `${r.motivo}, em outra máquina (${r.como})`;
+        if (!r.ok && (r.vencedor || r.fechada)) {
+          soLocal = r.vencedor ? `a frente ${frente.id} foi retomada antes por @${r.vencedor.login} em outra máquina` : `${r.motivo}, em outra máquina`;
+          nosTickets = `Nos tickets, desfiz a retomada deste close (${r.como})`;
+        }
         else if (!r.ok) throw semRede(`${r.motivo}; ${r.como}`);
         else frente.reserva = { ...(frente.reserva ?? { tickets: [...frente.tickets] }), logins: r.logins };
       }
@@ -337,7 +341,7 @@ export async function executar(args, amb) {
 
     // 7. Saída.
     if (soLocal) {
-      amb.escrever(`Registro local da frente ${frente.id} ${frente.nome} fechado: ${soLocal}. Não comentei nem mexi nos tickets, e o histórico não mudou.\n`);
+      amb.escrever(`Registro local da frente ${frente.id} ${frente.nome} fechado: ${soLocal}. ${nosTickets}, e o histórico não mudou.\n`);
       return 0;
     }
     amb.escrever(`Frente ${frente.id} ${frente.nome} fechada.\n`);

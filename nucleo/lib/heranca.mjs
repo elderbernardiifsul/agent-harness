@@ -7,6 +7,7 @@ import { listarFrentesTolerante, gravarFrente, frentesDa } from './frente.mjs';
 
 // Mesmo processo só com a hora de início conhecida e igual nos dois lados: sem ela, um pid
 // reaproveitado (Windows, ps que falhou) encerraria uma sessão viva. Na dúvida, não (seção 11).
+const comAnterior = (f, id) => [...new Set([...(Array.isArray(f.sessoesAnteriores) ? f.sessoesAnteriores : []), id])];
 const mesmoProcesso = (s, pid, pidInicio) => s.pid === pid && pidInicio != null && s.pidInicio === pidInicio;
 
 export function continuarSessao(dirEstado, { sessao, pid, pidInicio = null, origem }) {
@@ -27,7 +28,8 @@ export function continuarSessao(dirEstado, { sessao, pid, pidInicio = null, orig
       resultado.substituidas.push(velha.id);
       const vinculo = origem === 'continuacao';
       if (vinculo) {
-        for (const f of daVelha) gravarFrente(dirEstado, { ...f, dona: sessao });
+        // `sessoesAnteriores`: as sessões substituídas que foram donas (os marcadores nos tickets podem ser delas).
+        for (const f of daVelha) gravarFrente(dirEstado, { ...f, dona: sessao, sessoesAnteriores: comAnterior(f, velha.id) });
         if (nova) {
           nova.papel = velha.papel ?? nova.papel;
           nova.frente = velha.frente ?? nova.frente;
@@ -39,7 +41,7 @@ export function continuarSessao(dirEstado, { sessao, pid, pidInicio = null, orig
       } else {
         for (const f of daVelha) {
           // `passadaDe`: a sessão de quem a frente ficou solta (a retomada a reconhece como desta máquina).
-          gravarFrente(dirEstado, { ...f, estado: 'passada', dona: null, passadaEm: agora, passadaPor: 'continuacao-sem-vinculo', passadaDe: velha.id });
+          gravarFrente(dirEstado, { ...f, estado: 'passada', dona: null, passadaEm: agora, passadaPor: 'continuacao-sem-vinculo', passadaDe: velha.id, sessoesAnteriores: comAnterior(f, velha.id) });
           resultado.soltas.push(f.nome);
           registrarEvento(dirEstado, { tipo: 'frente-solta', sessao: velha.id, frente: f.nome, por: sessao, motivo: 'continuacao-sem-vinculo' });
         }
