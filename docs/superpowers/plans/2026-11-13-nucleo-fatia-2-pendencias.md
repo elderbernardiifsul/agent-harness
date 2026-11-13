@@ -1,6 +1,6 @@
 # Fatia 2 do núcleo: decisões da execução e pendências
 
-Plano: [2026-11-13-nucleo-fatia-2.md](2026-11-13-nucleo-fatia-2.md). Execução em 12 e 13/11/2026, por subagentes, com revisão por tarefa, revisão final do ramo e duas ondas de conserto. Estado no fim: 758 testes (757 passam, 1 pulado fora do Windows); a varredura de termos sai com código 0.
+Plano: [2026-11-13-nucleo-fatia-2.md](2026-11-13-nucleo-fatia-2.md). Execução em 12 e 13/11/2026, por subagentes, com revisão por tarefa, revisão final do ramo e duas ondas de conserto. Estado no fim: 762 testes (761 passam, 1 pulado fora do Windows); a varredura de termos sai com código 0.
 
 O que a fatia entregou: papel de orquestrador e `open --para`, `handoff`, retomada de frente passada, `takeover`, `sweep`, as travas T1, T3 e T4, herança da frente na continuação da sessão, os itens novos do `doctor` e o ciclo completo com duas sessões simuladas.
 
@@ -51,6 +51,7 @@ As travas pegam engano, não má-fé. Passam sem recusa:
 - **Rede dentro da trava no `close`:** a consulta ao servidor e o `push` que apaga o ramo remoto rodam com a trava de frentes presa (prazo de 20 s). Tirar exige o `close` em duas fases, como o `open`; pede tarefa própria.
 - **Curinga e pasta oculta:** na T4, `*` e `?` casam componente que começa com ponto, e o shell não expande assim. `rm -rf *` numa pasta acima de um diretório oculto que guarda worktree de outra sessão viva é recusado à toa.
 - **`close` recusado na remoção do worktree:** a essa altura o ticket já recebeu o comentário de fechamento e perdeu responsável e rótulo; a frente segue ativa até o segundo `close`.
+- **Frente que fica passada na continuação:** quando a sessão retomada já tem frente, a outra fica passada pelo gancho, sem rede: o ramo não é enviado ao remoto (retoma-se nesta máquina até alguém enviar) e o comentário de passagem sai com o login de quem abriu a frente.
 - **Retomadas cruzadas:** duas sessões que retomam frentes uma da outra ao mesmo tempo podem perder as duas e precisar tentar de novo.
 - **Frentes antigas:** as abertas antes desta fatia não têm a lista de sessões anteriores; a lista só cresce.
 - **Sessão sem processo:** `ah` rodado à mão, sem `AH_PID_AGENTE`, registra sessão sem processo; o quadro a marca como "sem processo" e ela vale até o sinal vencer.
