@@ -207,11 +207,12 @@ test('sem ramos protegidos a proteção no servidor é aviso', () => {
   assert.match(p.ah(['doctor']).saida, /^aviso\s+Proteção no servidor: .*protegido/m);
 });
 
-test('C1: o doctor tem 20 itens, com "Harness no ramo base" antes de "Gancho responde" e os da fatia 2 depois dele', async () => {
+test('C1: o doctor tem 21 itens, com "Harness no ramo base" antes de "Gancho responde" e os da fatia 2 depois dele', async () => {
   const { VERIFICACOES } = await import('../nucleo/comandos/doctor.mjs');
   const nomes = VERIFICACOES.map(v => v.item);
   // 16 da fatia 1 e da tarefa 5, menos "Fila de pendentes" (virou "Comentários pendentes"), mais 5 da tarefa 14.
-  assert.equal(nomes.length, 20);
+  assert.equal(nomes.length, 21);
+  assert.equal(nomes.at(-1), 'Adaptador do agente em uso');
   assert.equal(nomes.indexOf('Harness no ramo base'), nomes.indexOf('Ganchos do Claude Code instalados') + 1);
   assert.equal(nomes.indexOf('Gancho responde'), nomes.indexOf('Harness no ramo base') + 1);
   const g = nomes.indexOf('Gancho responde');
@@ -405,4 +406,45 @@ test('frente chamada parada: o nome sai entre crases nos itens do doctor', t => 
   const f = JSON.parse(fs.readFileSync(arqF, 'utf8'));
   fs.writeFileSync(arqF, JSON.stringify({ ...f, estado: 'abrindo', processo: { pid: 999999, inicio: null } }));
   assert.match(p.ah(['doctor']).saida, /^aviso\s+Frente `parada` em abertura parada: /m);
+});
+
+// ---- adaptador do agente em uso (fatia 4)
+
+const SEM_AGENTE = { AH_AGENTE: '', CLAUDECODE: '', CLAUDE_CODE_SESSION_ID: '', OPENCODE: '', OPENCODE_SESSION_ID: '', CODEX_THREAD_ID: '', CODEX_SESSION_ID: '', CODEX_CI: '' };
+
+test('agente sem adaptador: aviso de que as travas automáticas não valem, apontando o roteiro', t => {
+  const p = projetoLimpo(t);
+  const r = p.ah(['doctor'], { env: { ...SEM_AGENTE, CODEX_THREAD_ID: 'abc' } });
+  assert.equal(r.codigo, 0, r.saida + r.erro);
+  const linha = r.saida.split('\n').find(l => /Adaptador do agente em uso/.test(l));
+  assert.match(linha, /^aviso\s+Adaptador do agente em uso: o agente em uso \(codex\) não tem adaptador: as travas automáticas não valem/);
+  assert.match(linha, /docs\/agentes\/README\.md/);
+});
+
+test('AH_AGENTE declara o agente e vale antes dos indicadores; o Claude Code vem por último', t => {
+  const p = projetoLimpo(t);
+  const linha = env => p.ah(['doctor'], { env: { ...SEM_AGENTE, ...env } }).saida.split('\n').find(l => /Adaptador do agente em uso/.test(l));
+  assert.match(linha({ AH_AGENTE: 'outro-agente', CLAUDECODE: '1' }), /^aviso\s+.*\(outro-agente\) não tem adaptador/);
+  assert.match(linha({ OPENCODE: '1', CLAUDE_CODE_SESSION_ID: 'x' }), /^aviso\s+.*\(opencode\) não tem adaptador/);
+  assert.match(linha({ CLAUDECODE: '1' }), /^ok\s+Adaptador do agente em uso \(claude-code\)$/);
+  assert.equal(linha({}), undefined, 'sem agente reconhecido o item não aparece');
+});
+
+test('adaptador que existe mas não está ligado em agentes é aviso com o conserto', t => {
+  const p = projetoLimpo(t);
+  const f = path.join(p.raiz, '.harness', 'config.json');
+  fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), agentes: [] }));
+  const linha = p.ah(['doctor'], { env: { ...SEM_AGENTE, AH_AGENTE: 'claude-code' } }).saida.split('\n').find(l => /Adaptador do agente em uso/.test(l));
+  assert.match(linha, /^aviso\s+Adaptador do agente em uso: o adaptador claude-code existe mas não está ligado; acrescente "claude-code" em agentes no \.harness\/config\.json e rode ah init/);
+});
+
+test('adaptador que não entrega todos os eventos: aviso com o que deixa de valer', async () => {
+  const { situacaoDoAgente } = await import('../nucleo/comandos/doctor.mjs');
+  const adaptadores = { parcial: { EVENTOS_ENTREGUES: ['inicio', 'antes'] } };
+  const r = situacaoDoAgente({ agente: 'parcial', adaptadores, ligados: ['parcial'], roteiro: 'docs/agentes/README.md' });
+  assert.equal(r.estado, 'aviso');
+  assert.match(r.fazer, /o adaptador parcial não entrega sinal, fim/);
+  assert.match(r.fazer, /sinal de vida só se renova/);
+  assert.match(r.fazer, /docs\/agentes\/README\.md/);
+  assert.equal(situacaoDoAgente({ agente: null, adaptadores, ligados: [], roteiro: 'x' }), null);
 });

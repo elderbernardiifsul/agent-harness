@@ -16,6 +16,7 @@ import { aberturaParada, frenteOrfa, inicioDoProcesso, vidaDaDona } from '../lib
 import { existeRamo, git } from '../lib/git.mjs';
 import { gh, protecaoDoRamo, repoAtual } from '../lib/github.mjs';
 import { mesclarGanchos } from './init.mjs';
+import { ADAPTADORES, O_QUE_SE_PERDE, agenteEmUso } from '../adaptadores/registro.mjs';
 
 export const descricao = 'confere se o projeto está bem preparado';
 export const uso = 'ah doctor [--json]';
@@ -34,6 +35,34 @@ const comparar = (a, b) => { for (let i = 0; i < 3; i++) if (a[i] !== b[i]) retu
 const versao = t => String(t).split('.').map(Number);
 
 function verificacao(item, fn) { fn.item = item; return fn; }
+
+const ITEM_DO_AGENTE = 'Adaptador do agente em uso';
+
+// O roteiro de adaptação: em .harness/nucleo/docs/agentes/ na cópia instalada, em docs/agentes/ no clone.
+function caminhoDoRoteiro(raiz) {
+  for (const c of [path.join(NUCLEO, 'docs', 'agentes', 'README.md'), path.join(NUCLEO, '..', 'docs', 'agentes', 'README.md')]) {
+    if (!fs.existsSync(c)) continue;
+    const rel = raiz ? path.relative(raiz, c) : null;
+    return (rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : path.resolve(c)).replaceAll('\\', '/');
+  }
+  return 'docs/agentes/README.md, no clone do agent-harness';
+}
+
+// Item do doctor para o agente em uso; null quando nenhum agente se identifica (terminal comum).
+// `ligados`: a lista `agentes` da configuração (null sem configuração legível).
+export function situacaoDoAgente({ agente, adaptadores, ligados, roteiro }) {
+  if (!agente) return null;
+  const a = Object.hasOwn(adaptadores, agente) ? adaptadores[agente] : null;
+  if (!a) return aviso(ITEM_DO_AGENTE, `o agente em uso (${agente}) não tem adaptador: as travas automáticas não valem e não há resumo no começo da sessão; para escrever um, leia ${roteiro}`);
+  if (Array.isArray(ligados) && !ligados.includes(agente)) {
+    return aviso(ITEM_DO_AGENTE, `o adaptador ${agente} existe mas não está ligado; acrescente "${agente}" em agentes no .harness/config.json e rode ah init`);
+  }
+  const faltam = Object.keys(O_QUE_SE_PERDE).filter(ev => !(a.EVENTOS_ENTREGUES ?? []).includes(ev));
+  if (faltam.length) {
+    return aviso(ITEM_DO_AGENTE, `o adaptador ${agente} não entrega ${faltam.join(', ')}: ${faltam.map(ev => O_QUE_SE_PERDE[ev]).join('; ')}; o que fazer está em ${roteiro}`);
+  }
+  return ok(`${ITEM_DO_AGENTE} (${agente})`);
+}
 
 // O nome da frente no rótulo do item, entre crases: uma frente chamada `parada` não se confunde com o texto.
 const nomeNoItem = f => `\`${f.nome}\``;
@@ -376,6 +405,11 @@ export const VERIFICACOES = [
       ...paradas.map(f => aviso(`Frente ${nomeNoItem(f)} em abertura parada`, `um ah open parou no meio (sessão ${f.dona ?? 'sem dona'}${f.processo ? `, processo ${f.processo.pid} morto` : ''}); rode ah open ${f.nome} para terminar, ou ah close ${f.nome} para desistir`)),
     ];
   }),
+
+  // Fatia 4: o agente em uso (AH_AGENTE ou as variáveis que ele põe no ambiente) tem adaptador?
+  verificacao(ITEM_DO_AGENTE, amb => situacaoDoAgente({
+    agente: agenteEmUso(amb.env ?? {}), adaptadores: ADAPTADORES, ligados: amb.config?.agentes ?? null, roteiro: caminhoDoRoteiro(amb.raiz),
+  })),
 ];
 
 function rodar(amb) {
