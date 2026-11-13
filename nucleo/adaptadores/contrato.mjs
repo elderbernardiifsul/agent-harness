@@ -238,7 +238,7 @@ async function inicio(evento, amb) {
     avisos.push(`Sua frente ${foco.id} ${foco.nome} está com a sessão ${idCurto(foco.dona)}.`);
   }
   // Frente que outra sessão assumiu desta (ah takeover, que já tirou o foco daqui): o resumo diz quem a tem, uma
-  // vez só; o registro da sessão guarda as tomadas já avisadas (`<id da frente>@<tomadaEm>`).
+  // vez só; o registro da sessão guarda as tomadas já avisadas (`<id da frente>@<tomadaEm>`), só as 50 mais recentes.
   const marca = f => `${f.id}@${f.tomadaEm ?? ''}`;
   const tomadas = frentes.filter(f => f !== foco && f.estado === 'ativa' && f.tomadaDe === id && f.dona != null && f.dona !== id
     && !(Array.isArray(sessao.tomadasAvisadas) && sessao.tomadasAvisadas.includes(marca(f))));
@@ -247,7 +247,7 @@ async function inicio(evento, amb) {
     sessao = await comTrava(amb.dirEstado, 'frentes', async () => {
       const atual = lerSessao(amb.dirEstado, id);
       const ja = Array.isArray(atual.tomadasAvisadas) ? atual.tomadasAvisadas : [];
-      const nova = { ...atual, tomadasAvisadas: [...new Set([...ja, ...tomadas.map(marca)])] };
+      const nova = { ...atual, tomadasAvisadas: [...new Set([...ja, ...tomadas.map(marca)])].slice(-TOMADAS_AVISADAS_MAX) };
       gravarSessao(amb.dirEstado, nova);
       return nova;
     });
@@ -257,6 +257,8 @@ async function inicio(evento, amb) {
   const contexto = montarResumo({ sessao, frentes, config: amb.config, baseLimpa: baseLimpa(amb), situacao });
   return { contexto };
 }
+
+const TOMADAS_AVISADAS_MAX = 50;
 
 // Toca o sinal de vida e, se o pid gravado morreu enquanto os ganchos chegam, descarta-o.
 // Nunca derruba o evento: um arquivo de sessão ilegível não pode travar as ferramentas do agente.

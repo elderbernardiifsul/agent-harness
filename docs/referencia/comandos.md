@@ -31,7 +31,7 @@ Recusas que valem para vários comandos:
 | `comando desconhecido: <nome>` | qualquer nome fora da lista | rode `ah --help` |
 | `Opção desconhecida: …` / `Argumento a mais: …` | opção ou argumento que o comando não aceita | `use <uso do comando>` |
 
-Exigem sessão: `open`, `nota`, `whoami`, `papel`, `handoff`, `takeover` e `close`. Não exigem: `board`, `sweep`, `doctor`, `init` (e o `gancho`, que recebe a sessão no evento). Sessão ainda sem registro (rodada à mão, sem gancho) é registrada, com papel `executor`, pelo primeiro `open`, `papel`, `whoami` ou `takeover` dela.
+Exigem sessão: `open`, `nota`, `whoami`, `papel`, `handoff`, `takeover` e `close`. Não exigem: `board`, `sweep`, `doctor`, `init` (e o `gancho`, que recebe a sessão no evento). Sessão ainda sem registro (rodada à mão, sem gancho) é registrada, com papel `executor`, pelo primeiro `open`, `papel`, `whoami` ou `takeover --confirmado` dela.
 
 ## init
 
@@ -347,7 +347,7 @@ Para retomar: tools/ah open carrinho
 ah takeover <nome> [--confirmado]
 ```
 
-Assume a frente ativa de uma sessão que não está viva (morta, encerrada ou sem registro). É decisão humana: sem `--confirmado`, o comando mostra a dona, o motivo e a idade do sinal e recusa, pedindo a confirmação do executivo. Com `--confirmado`: reenvia a fila de pendentes, confere nos tickets que nenhuma outra máquina está com a frente (sem rede, avisa e assume pelo registro local), comenta `Frente as-1 (carrinho) assumida pela sessão … (a anterior, …, <motivo>).` com o marcador `tomada`, põe o seu login de responsável (com o rótulo) se ele ainda não estava na reserva, grava esta sessão como dona e lhe dá o foco. A sessão antiga, se voltar (uma conversa retomada com `--resume`), não recupera a frente: o resumo do começo dela diz quem a tem.
+Assume a frente ativa de uma sessão que não está viva (morta, encerrada ou sem registro). É decisão humana: sem `--confirmado`, o comando só lê: mostra a dona, o motivo e a idade do sinal e recusa, pedindo a confirmação do executivo, sem registrar a sessão nem tocar o sinal (grava só o evento `recusa-de-comando`). Com `--confirmado`: reenvia a fila de pendentes, confere nos tickets que nenhuma outra máquina está com a frente (sem rede, avisa e assume pelo registro local), comenta `Frente as-1 (carrinho) assumida pela sessão … (a anterior, …, <motivo>).` com o marcador `tomada`, põe o seu login de responsável (com o rótulo) se ele ainda não estava na reserva, grava esta sessão como dona e lhe dá o foco. A sessão antiga, se voltar (uma conversa retomada com `--resume`), não recupera a frente: o resumo do começo dela diz quem a tem.
 
 ```
 $ AH_SESSAO=sessao-d-0004 tools/ah takeover carrinho

@@ -86,8 +86,17 @@ export async function executar(args, amb) {
   const { dirEstado, env, config: cfg } = amb;
   const nome = o.nome;
 
+  // Sem --confirmado, só lê: descreve a dona e recusa, sem registrar a sessão nem tocar o sinal (o único
+  // registro é o evento da recusa, que o despachante grava).
+  if (!o.confirmado) {
+    const sessao = lerSessao(dirEstado, amb.sessaoId);
+    const f = lerFrente(dirEstado, nome);
+    const vida = conferir({ f, nome, amb, sessao });
+    throw recusa(descrever(f, vida), `peça ao executivo que confirme e rode ah takeover ${nome} --confirmado`);
+  }
+
   // Fase 1, sob a trava: registra a sessão (se for o primeiro comando dela) e as recusas locais.
-  const { frente, vida } = await comTrava(dirEstado, 'frentes', async () => {
+  const { frente } = await comTrava(dirEstado, 'frentes', async () => {
     let sessao = lerSessao(dirEstado, amb.sessaoId);
     if (!sessao) {
       const doAgente = !env.AH_SESSAO && env[VARIAVEL_SESSAO_CLAUDE];
@@ -97,9 +106,9 @@ export async function executar(args, amb) {
       tocarSinal(dirEstado, amb.sessaoId);
     }
     const f = lerFrente(dirEstado, nome);
-    return { frente: f, vida: conferir({ f, nome, amb, sessao }) };
+    conferir({ f, nome, amb, sessao });
+    return { frente: f };
   }, { venceMs: 120000 });
-  if (!o.confirmado) throw recusa(descrever(frente, vida), `peça ao executivo que confirme e rode ah takeover ${nome} --confirmado`);
 
   // Fora da trava (rede): a fila desta máquina sai antes; operação dela ainda presa num ticket da frente recusa
   // (o GitHub ainda não mostra o que esta máquina fez). Com rede, o GitHub diz se outra máquina está com a frente.

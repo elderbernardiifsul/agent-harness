@@ -265,3 +265,39 @@ test('retomada pelo open de frente passada com tomadaDe velho (registro antigo) 
   const f = lerFrenteDoTeste(p, 'carrinho');
   assert.deepEqual([f.tomadaDe, f.tomadaEm], [undefined, undefined]);
 });
+
+// ---- Onda final
+test('tomadasAvisadas guarda só as 50 mais recentes', async t => {
+  const { p, proc } = frenteDeOutra(t);
+  await proc.matar();
+  assert.equal(p.ah(['takeover', 'carrinho', '--confirmado']).codigo, 0);
+  const arq = path.join(dirDoTeste(p), 'sessoes', `${A}.json`);
+  const velhas = Array.from({ length: 60 }, (_, i) => `as-x${i}@2026-01-01T00:00:00Z`);
+  fs.writeFileSync(arq, JSON.stringify({ ...JSON.parse(fs.readFileSync(arq, 'utf8')), tomadasAvisadas: velhas }));
+  const novo = processoVivo();
+  t.after(() => novo.matar());
+  const r = await tratar({ tipo: 'inicio', sessao: A, agente: 'claude-code', cwd: p.raiz, origem: 'continuacao' }, { ...amb(p), pid: novo.pid });
+  assert.match(r.contexto, /está com a sessão sessao-t/);
+  const lista = lerSessao(dirDoTeste(p), A).tomadasAvisadas;
+  assert.equal(lista.length, 50);
+  assert.match(lista.at(-1), /^as-1@/);
+  assert.equal(lista[0], 'as-x11@2026-01-01T00:00:00Z');
+});
+
+test('takeover sem --confirmado só lê: não registra sessão nem toca sinal; grava só o evento de recusa', async t => {
+  const { p, proc } = frenteDeOutra(t);
+  await proc.matar();
+  const dir = dirDoTeste(p);
+  const listarTudo = () => fs.readdirSync(dir, { recursive: true }).filter(n => !String(n).startsWith('eventos')).sort();
+  const antes = listarTudo();
+  const mtimes = () => antes.map(n => { try { return fs.statSync(path.join(dir, n)).mtimeMs; } catch { return null; } });
+  const m0 = mtimes();
+  const n0 = eventos(p).length;
+  await new Promise(r => setTimeout(r, 20));
+  recusou(p.ah(['takeover', 'carrinho'], B), /--confirmado/);
+  assert.deepEqual(listarTudo(), antes, 'nenhum arquivo novo');
+  assert.deepEqual(mtimes(), m0, 'nada regravado');
+  assert.equal(fs.existsSync(path.join(dir, 'sessoes', 'sessao-b-0002.json')), false);
+  const novos = eventos(p).slice(n0);
+  assert.deepEqual(novos.map(e => e.tipo), ['recusa-de-comando']);
+});
