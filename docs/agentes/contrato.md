@@ -41,7 +41,7 @@ Recusado (T5): push para o ramo protegido main
 Faça: abra um PR para main e peça a ordem do executivo; para publicar o seu trabalho, empurre o ramo da frente (git push origin <ramo>)
 ```
 
-As travas que existem: T0 (texto que não dá para ler com segurança e que menciona `git` ou `gh`, ou o harness quebrado), T1 (trocar o ramo do checkout principal), T2 (`git add -A`, `git add .`, `commit -a` no checkout principal), T3 (descartar trabalho: `reset --hard`, `clean -f`, `checkout .`, `stash`, `rebase`), T4 (escrever no worktree de outra sessão viva), T5 (empurrar para ramo protegido, mesclar PR pela linha de comando). O prefixo `AH_GUARD=off` no próprio comando libera uma trava (menos a T0), só com ordem do executivo, e fica registrado.
+Exemplos de travas (a lista completa é a do cabeçalho de `nucleo/lib/travas.mjs` e da referência de comandos, e pode crescer): T0 (texto que não dá para ler com segurança e que menciona `git` ou `gh`, ou o harness quebrado), T1 (trocar o ramo do checkout principal), T2 (`git add -A`, `git add .`, `commit -a` no checkout principal), T3 (descartar trabalho: `reset --hard`, `clean -f`, `checkout .`, `stash`, `rebase`), T4 (escrever no worktree de outra sessão viva), T5 (empurrar para ramo protegido, mesclar PR pela linha de comando). O prefixo `AH_GUARD=off` no próprio comando libera uma trava (menos a T0), só com ordem do executivo, e fica registrado.
 
 O adaptador tem de fazer o agente **não executar** a ferramenta e **levar a mensagem ao modelo**, para ele saber o que fazer no lugar. Como, depende do agente: código de saída, JSON na saída padrão, exceção num plugin. Os testes de contrato conferem que a saída da recusa é diferente da saída da permissão e que a mensagem aparece nela.
 

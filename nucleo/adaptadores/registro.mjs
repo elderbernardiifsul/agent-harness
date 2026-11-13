@@ -11,7 +11,7 @@ export const EVENTOS_DO_CONTRATO = ['inicio', 'sinal', 'antes', 'fim'];
 export const O_QUE_SE_PERDE = {
   inicio: 'sem resumo no começo nem herança da frente na continuação; a sessão só se registra no primeiro sinal de vida ou no ah open (mande o agente rodar tools/ah whoami no começo)',
   sinal: 'o sinal de vida só se renova a cada ferramenta (antes); sessão parada mais que o prazo do sinal parece morta (frente órfã, worktree sem a T4)',
-  antes: 'sem travas automáticas (T0 a T5): nada é recusado antes de rodar',
+  antes: 'sem travas automáticas: nada é recusado antes de rodar',
   fim: 'a sessão não se encerra pelo agente; vale a vida do processo e do sinal',
 };
 

@@ -211,7 +211,7 @@ export function testarAdaptador(nome, a, exemplos) {
       const r = gancho(ex2.inicio.novo);
       assert.equal(r.codigo, 0, `ah gancho ${nome} saiu com ${r.codigo} no começo de sessão: ${r.erro}`);
       assert.doesNotMatch(r.erro, /Aviso: o harness/, `ah gancho ${nome} quebrou no começo de sessão: ${r.erro}`);
-      sessao = a.traduzirEntrada(ex2.inicio.novo).sessao;
+      sessao = traduzir(a, ex2.inicio.novo, 'começo de sessão (ponta a ponta)').sessao;
       const s = lerSessao(dirDoTeste(p), sessao);
       assert.ok(s, `ah gancho ${nome} não registrou a sessão no começo de sessão (ela está registrada em gancho.mjs pelo registro.mjs?)`);
       assert.equal(s.agente, nome, `ah gancho ${nome} registrou a sessão com outro agente: ${JSON.stringify(s.agente)}`);
@@ -236,7 +236,7 @@ export function testarAdaptador(nome, a, exemplos) {
     if (entrega('fim')) {
       const r = gancho(ex2.fim.encerra);
       assert.equal(r.codigo, 0, `ah gancho ${nome} saiu com ${r.codigo} no fim de sessão`);
-      const id = a.traduzirEntrada(ex2.fim.encerra).sessao;
+      const id = traduzir(a, ex2.fim.encerra, 'fim de sessão (ponta a ponta)').sessao;
       if (id === sessao) assert.ok(lerSessao(dirDoTeste(p), id)?.fim, `ah gancho ${nome} não encerrou a sessão no fim de sessão`);
     }
   });

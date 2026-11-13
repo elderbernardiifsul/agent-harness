@@ -448,3 +448,10 @@ test('adaptador que não entrega todos os eventos: aviso com o que deixa de vale
   assert.match(r.fazer, /docs\/agentes\/README\.md/);
   assert.equal(situacaoDoAgente({ agente: null, adaptadores, ligados: [], roteiro: 'x' }), null);
 });
+
+test('adaptador sem EVENTOS_ENTREGUES: aviso de que não declara', async () => {
+  const { situacaoDoAgente } = await import('../nucleo/comandos/doctor.mjs');
+  const r = situacaoDoAgente({ agente: 'mudo', adaptadores: { mudo: {} }, ligados: ['mudo'], roteiro: 'docs/agentes/README.md' });
+  assert.equal(r.estado, 'aviso');
+  assert.match(r.fazer, /o adaptador mudo não declara EVENTOS_ENTREGUES/);
+});

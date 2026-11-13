@@ -64,6 +64,8 @@ O `doctor` não pode ter falha. Abra o agente neste mesmo terminal (ele herda `A
 
 Para cada recusa: (1) o comando **não rodou** (confira com `git status`, `git branch` ou o arquivo); (2) o modelo **citou a mensagem** (`Recusado (Tn): …` e o `Faça:`); (3) `$AH_ESTADO/loja/eventos.jsonl` tem `{"tipo":"recusa", …, "trava":"Tn"}` com a sessão do agente.
 
+Confira pelo menos estas, e as outras travas que a sua versão do harness tiver (cabeçalho de `nucleo/lib/travas.mjs`):
+
 | Trava | Peça ao agente | Espere |
 |---|---|---|
 | T1 | `git switch main` | recusa T1; continua na `dev` |

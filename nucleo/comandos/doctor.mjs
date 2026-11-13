@@ -57,7 +57,10 @@ export function situacaoDoAgente({ agente, adaptadores, ligados, roteiro }) {
   if (Array.isArray(ligados) && !ligados.includes(agente)) {
     return aviso(ITEM_DO_AGENTE, `o adaptador ${agente} existe mas não está ligado; acrescente "${agente}" em agentes no .harness/config.json e rode ah init`);
   }
-  const faltam = Object.keys(O_QUE_SE_PERDE).filter(ev => !(a.EVENTOS_ENTREGUES ?? []).includes(ev));
+  if (!Array.isArray(a.EVENTOS_ENTREGUES)) {
+    return aviso(ITEM_DO_AGENTE, `o adaptador ${agente} não declara EVENTOS_ENTREGUES (os eventos do contrato que o agente entrega); declare-os como diz ${roteiro}`);
+  }
+  const faltam = Object.keys(O_QUE_SE_PERDE).filter(ev => !a.EVENTOS_ENTREGUES.includes(ev));
   if (faltam.length) {
     return aviso(ITEM_DO_AGENTE, `o adaptador ${agente} não entrega ${faltam.join(', ')}: ${faltam.map(ev => O_QUE_SE_PERDE[ev]).join('; ')}; o que fazer está em ${roteiro}`);
   }
