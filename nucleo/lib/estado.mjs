@@ -324,8 +324,37 @@ function soltar(pasta, marca) {
   }
 }
 
-// `venceMs` precisa ser maior que o pior caso de `fn`: passado esse prazo outra chamada pode tomar a trava
-// (a liberação só apaga a trava se ainda for desta chamada, mas a exclusão já terá sido perdida).
+// Renova o `em` do dono da trava, só se o dono no lugar for o desta chamada (`marca`): abre com 'r+' (não cria
+// arquivo), lê, confere a marca e regrava pelo mesmo descritor. Dono fora do lugar (outro o conferindo) ou de
+// outro (a trava venceu e foi tomada): não mexe e devolve false. Só o núcleo da trava grava em travas/.
+function renovarDono(pasta, marca) {
+  let fd;
+  try { fd = fs.openSync(path.join(pasta, 'dono.json'), 'r+'); } catch { return false; }
+  try {
+    const dono = JSON.parse(fs.readFileSync(fd, 'utf8'));
+    if (dono?.marca !== marca) return false;
+    const novo = Buffer.from(JSON.stringify({ ...dono, em: new Date().toISOString() }));
+    fs.writeSync(fd, novo, 0, novo.length, 0);
+    fs.ftruncateSync(fd, novo.length);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+export function renovarTrava(dir, nome, marca) {
+  validarNomeSeguro(nome, 'Nome da trava');
+  return renovarDono(path.join(dir, 'travas', nome), marca);
+}
+
+// O que `fn` recebe: a marca desta chamada e `renovar()`, para trechos longos que renovam o prazo aos poucos.
+const alca = t => Object.freeze({ marca: t.marca, renovar: () => renovarDono(t.pasta, t.marca) });
+
+// `venceMs` precisa ser maior que o pior caso de `fn` (ou que o intervalo entre duas renovações): passado esse
+// prazo outra chamada pode tomar a trava (a liberação só apaga a trava se ainda for desta chamada, mas a exclusão
+// já terá sido perdida).
 export async function comTrava(dir, nome, fn, { esperaMs = 5000, venceMs = 30000 } = {}) {
   const t = prepararTrava(dir, nome, venceMs);
   const limite = Date.now() + esperaMs;
@@ -334,7 +363,7 @@ export async function comTrava(dir, nome, fn, { esperaMs = 5000, venceMs = 30000
     await dormir(20);
   }
   try {
-    return await fn();
+    return await fn(alca(t));
   } finally {
     soltar(t.pasta, t.marca);
   }
@@ -350,7 +379,7 @@ export function comTravaSinc(dir, nome, fn, { esperaMs = 5000, venceMs = 30000 }
     dormirSinc(20);
   }
   try {
-    return fn();
+    return fn(alca(t));
   } finally {
     soltar(t.pasta, t.marca);
   }

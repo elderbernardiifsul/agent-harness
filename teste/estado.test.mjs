@@ -458,3 +458,32 @@ test('revisão 2, achado 3: a devolução espera o ocupante ilegítimo se recolh
   ganchosDeTeste.devolvendo = null;
   assert.equal(fs.readFileSync(path.join(pasta, 'dono.json'), 'utf8'), deX);
 });
+
+test('revisão 2, achado 4: renovar a trava só regrava o dono desta chamada, nunca o de outro nem um fantasma', async t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  const arquivo = path.join(pasta, 'dono.json');
+  const ler = () => fs.readFileSync(arquivo, 'utf8');
+  await comTrava(d, 'x', trava => {
+    assert.equal(typeof trava?.renovar, 'function');
+    const meu = JSON.parse(ler());
+    assert.equal(trava.marca, meu.marca);
+    fs.writeFileSync(arquivo, JSON.stringify({ ...meu, em: new Date(Date.now() - 50000).toISOString() }));
+    assert.equal(trava.renovar(), true);
+    const renovado = JSON.parse(ler());
+    assert.ok(Date.now() - Date.parse(renovado.em) < 5000);
+    assert.deepEqual({ ...renovado, em: null }, { ...meu, em: null });
+    assert.equal(estado.renovarTrava(d, 'x', meu.marca), true);
+    // o de outro (tomou a trava vencida): fica como está
+    const deOutro = donoDe('outro', { em: new Date(Date.now() - 50000).toISOString() });
+    trocarPelaDeOutro(pasta, deOutro);
+    assert.equal(trava.renovar(), false);
+    assert.equal(ler(), deOutro);
+    // sem dono no lugar (outro o tirou para conferir): não cria um
+    fs.renameSync(arquivo, path.join(d, 'fora'));
+    assert.equal(trava.renovar(), false);
+    assert.equal(fs.existsSync(arquivo), false);
+    fs.renameSync(path.join(d, 'fora'), arquivo);
+  }, { venceMs: 60000 });
+  assert.equal(ler(), donoDe('outro', { em: JSON.parse(ler()).em }));
+});

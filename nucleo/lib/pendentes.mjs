@@ -172,15 +172,6 @@ function descartar(dirEstado, linha, op, erro) {
   tirarDaFila(dirEstado, linha);
 }
 
-// Renova o `em` do dono da trava do reenvio (a trava vence em VENCE_REENVIO_MS sem renovação).
-function renovarTravaDoReenvio(dirEstado) {
-  const arquivo = path.join(dirEstado, 'travas', TRAVA_DO_REENVIO, 'dono.json');
-  try {
-    const dono = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
-    fs.writeFileSync(arquivo, JSON.stringify({ ...dono, em: new Date().toISOString() }));
-  } catch { /* sem dono legível: segue */ }
-}
-
 const primeiraLinha = r => `${r.erro}\n${r.saida}`.trim().split('\n')[0].slice(0, 300) || `o gh saiu com código ${r.codigo}`;
 
 // Reenvia em ordem. Falta de rede para tudo. Erro permanente (ticket que não existe mais) vai para os
@@ -195,10 +186,10 @@ export async function reenviarPendentes(dirEstado, o = {}) {
   const estacionadas = [];
   if (contarPendentes(dirEstado) > 0) {
     try {
-      await comTrava(dirEstado, TRAVA_DO_REENVIO, async () => {
+      await comTrava(dirEstado, TRAVA_DO_REENVIO, async trava => {
         const seguros = new Set();
         for (const linha of lerLinhas(dirEstado)) {
-          renovarTravaDoReenvio(dirEstado);
+          trava.renovar(); // a trava vence em VENCE_REENVIO_MS sem renovação; só renova se ainda for desta chamada
           let op;
           try {
             op = JSON.parse(linha);
