@@ -1,6 +1,7 @@
 // gh de mentira para os testes: grava cada chamada e responde conforme um arquivo JSON.
 // Com GH_FALSO_TICKETS, guarda os tickets nesse arquivo ({"<n>": {state, assignees, labels, comments, apagado?}})
-// e responde a issue view/comment/edit/list e label create como o gh faria.
+// e responde a issue view/comment/edit/list e label create como o gh faria. Responde também à API REST de issues
+// e de dependências (`gh api repos/<dono>/<repo>/issues[/<n>[/dependencies/blocked_by|blocking]]`).
 import { appendFileSync, existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 
 const argv = process.argv.slice(2);
@@ -60,7 +61,7 @@ function gravarTickets(t) {
 const CHAVE_ROTULOS = '_rotulos';
 const numeros = t => Object.keys(t).filter(k => /^\d+$/.test(k));
 const rotuloExiste = (t, l) => (t[CHAVE_ROTULOS] ?? []).includes(l) || numeros(t).some(n => (t[n].labels ?? []).includes(l));
-const CAMPOS = ['number', 'state', 'assignees', 'labels', 'comments'];
+const CAMPOS = ['number', 'state', 'title', 'body', 'assignees', 'labels', 'comments'];
 function camposPedidos(padrao) {
   const campos = (opcao('--json') ?? padrao).split(',');
   const errado = campos.find(c => !CAMPOS.includes(c));
@@ -91,6 +92,8 @@ function noFormatoDoGh(n, tk, campos) {
   const tudo = {
     number: Number(n),
     state: tk.state,
+    title: tk.title ?? '',
+    body: tk.body ?? '',
     assignees: tk.assignees.map(l => ({ login: l })),
     labels: tk.labels.map(l => ({ name: l })),
     // url com issuecomment-<n>: n cresce no repositório inteiro (os semeados sem número ficam antes, pela posição).
@@ -107,6 +110,51 @@ if (argv[0] === 'label' && argv[1] === 'create') {
     gravarTickets(t);
   }
   responder(0, '');
+}
+
+// --- API REST de issues e de dependências ---
+// Contrato: docs.github.com/en/rest/issues/issue-dependencies e .../issues/issues (conferido em 13/11/2026).
+// Cada ticket pode ter `title`, `body`, `pullRequest: true` e `blockedBy`: lista de números deste repositório ou de
+// {number, repo, state, title} de outro. `blocking` é o inverso, entre os tickets deste repositório.
+// GH_FALSO_SEM_DEPENDENCIAS=1: os endpoints de dependência respondem 404, como numa instância sem o recurso.
+if (argv[0] === 'api' && argv[1] && !argv[1].startsWith('-')) {
+  const url = new URL(argv[1].replace(/^\//, ''), 'https://api.falso/');
+  const m = url.pathname.match(/^\/repos\/([^/]+\/[^/]+)\/issues(?:\/(\d+)(?:\/dependencies\/(blocked_by|blocking))?)?$/);
+  if (m) {
+    const [, repo, numero, relacao] = m;
+    const naoAchado = () => responder(1, `${JSON.stringify({ message: 'Not Found', status: '404' })}\n`, 'gh: Not Found (HTTP 404)\n');
+    const t = lerTickets();
+    const existe = n => t[n] && !t[n].apagado;
+    const refsDe = n => (ticketDe(t, n).blockedBy ?? []);
+    const bloqueia = n => numeros(t).filter(k => existe(k) && refsDe(k).some(r => typeof r === 'number' && String(r) === String(n)));
+    const doRepo = r => `https://api.github.com/repos/${r}`;
+    const issue = n => {
+      const tk = ticketDe(t, n);
+      const abertos = refsDe(n).filter(r => (typeof r === 'number' ? ticketDe(t, String(r)).state === 'OPEN' : r.state !== 'closed'));
+      return {
+        number: Number(n), title: tk.title ?? '', state: tk.state.toLowerCase(), body: tk.body ?? null,
+        repository_url: doRepo(repo), html_url: `https://github.com/${repo}/issues/${n}`,
+        ...(tk.pullRequest ? { pull_request: { url: `${doRepo(repo)}/pulls/${n}` } } : {}),
+        issue_dependencies_summary: { blocked_by: abertos.length, total_blocked_by: refsDe(n).length, blocking: bloqueia(n).filter(k => ticketDe(t, k).state === 'OPEN').length, total_blocking: bloqueia(n).length },
+      };
+    };
+    const pagina = lista => {
+      const por = Math.min(100, Number(url.searchParams.get('per_page') ?? 30));
+      const pg = Number(url.searchParams.get('page') ?? 1);
+      responder(0, `${JSON.stringify(lista.slice((pg - 1) * por, pg * por))}\n`);
+    };
+    if (!numero) {
+      const estado = (url.searchParams.get('state') ?? 'open').toUpperCase();
+      pagina(numeros(t).filter(n => existe(n) && (estado === 'ALL' || ticketDe(t, n).state === estado)).sort((a, b) => Number(b) - Number(a)).map(issue));
+    }
+    if (!existe(numero)) naoAchado();
+    if (!relacao) responder(0, `${JSON.stringify(issue(numero))}\n`);
+    if (process.env.GH_FALSO_SEM_DEPENDENCIAS === '1') naoAchado();
+    if (relacao === 'blocking') pagina(bloqueia(numero).map(issue));
+    pagina(refsDe(numero).map(r => (typeof r === 'number'
+      ? (existe(String(r)) ? issue(String(r)) : { number: r, title: '', state: 'open', repository_url: doRepo(repo), html_url: `https://github.com/${repo}/issues/${r}` })
+      : { number: r.number, title: r.title ?? '', state: r.state ?? 'open', repository_url: doRepo(r.repo), html_url: `https://github.com/${r.repo}/issues/${r.number}` })));
+  }
 }
 
 if (argv[0] === 'issue' && argv[1] === 'list') {

@@ -1,6 +1,6 @@
 # Comandos do harness
 
-Referência dos comandos das fatias 1 a 5 (da fatia 5, por enquanto, apenas o `atualizar`). Os comandos são executados como `tools/ah <comando>` dentro do projeto, com exceção do `init`, executado a partir do clone do agent-harness. Os exemplos usam o projeto fictício `loja`, as pessoas `ana-souza` (sigla `as`) e `carla-dias` (sigla `cd`), os tickets `#1` a `#9` e as sessões `sessao-teste-0001`, `sessao-b-0002` e `sessao-c-0003`. As saídas foram copiadas de um projeto descartável, e `<worktrees>` designa a pasta dos worktrees das frentes.
+Referência dos comandos das fatias 1 a 5 (da fatia 5, por enquanto, o `atualizar`, o `deps` e o `board --numeros`). Os comandos são executados como `tools/ah <comando>` dentro do projeto, com exceção do `init`, executado a partir do clone do agent-harness. Os exemplos usam o projeto fictício `loja`, as pessoas `ana-souza` (sigla `as`) e `carla-dias` (sigla `cd`), os tickets `#1` a `#9` e as sessões `sessao-teste-0001`, `sessao-b-0002` e `sessao-c-0003`. As saídas foram copiadas de um projeto descartável, e `<worktrees>` designa a pasta dos worktrees das frentes.
 
 Toda recusa segue o mesmo formato: o motivo em uma linha e, na linha seguinte, o próximo passo. A recusa de um comando `ah` sai com código 1 (`Recusado: motivo` / `Faça: …`) e também é registrada nos eventos (`recusa-de-comando`); a recusa de uma trava, emitida pelo gancho do agente, sai com código 2 (`Recusado (Tn): motivo` / `Faça: …`).
 
@@ -34,7 +34,7 @@ Recusas comuns a vários comandos:
 | `comando desconhecido: <nome>` | qualquer nome fora da lista | rode `ah --help` |
 | `Opção desconhecida: …` / `Argumento a mais: …` | opção ou argumento que o comando não aceita | `use <uso do comando>` |
 
-Exigem sessão: `open`, `nota`, `whoami`, `papel`, `handoff`, `takeover` e `close`. Não exigem: `board`, `sweep`, `doctor`, `init`, `pesado` e o `gancho`, que recebe a sessão no evento. Uma sessão ainda sem registro (comandos executados à mão, sem gancho) é registrada com papel `executor` pelo primeiro `open`, `papel`, `whoami` ou `takeover --confirmado` que executar.
+Exigem sessão: `open`, `nota`, `whoami`, `papel`, `handoff`, `takeover` e `close`. Não exigem: `board`, `deps`, `sweep`, `doctor`, `init`, `pesado` e o `gancho`, que recebe a sessão no evento. Uma sessão ainda sem registro (comandos executados à mão, sem gancho) é registrada com papel `executor` pelo primeiro `open`, `papel`, `whoami` ou `takeover --confirmado` que executar.
 
 ## init
 
@@ -212,6 +212,8 @@ Abre uma frente de trabalho ou retoma uma frente passada com o mesmo nome. O nom
 
 **Reserva dos tickets** (`--tickets`). Para cada ticket, o comando lê o ticket e recusa se ele já está com outra frente (marcador do harness ativo ou passado), se tem responsável diferente do usuário autenticado no `gh` ou se tem o rótulo de reserva sem frente nem responsável. Ticket fechado não é reservado (aviso), mas permanece na lista da frente. Em seguida, o comando cria o rótulo (`gh label create em-andamento --force`, o de `github.rotuloDeReserva`), comenta `Frente as-1 (carrinho) aberta por @ana-souza.` com o marcador na última linha, atribui o ticket ao usuário autenticado, aplica o rótulo e relê o ticket. Se duas aberturas reservam o mesmo ticket quase ao mesmo tempo, prevalece, em todos os tickets dela, a que comentou primeiro segundo a ordem do servidor; a outra comenta a desistência, remove-se como responsável e recusa sem criar worktree. Sem rede, o comando recusa, porque a reserva não é adiada. Ticket com operação desta máquina ainda na fila de pendentes também provoca recusa.
 
+**Bloqueios.** Depois de abrir ou retomar, o comando consulta a última leitura guardada pelo `ah deps` (`deps.json`, sem nova chamada de rede) e, para cada ticket da frente bloqueado por outro aberto, emite na saída de erro `Aviso: o ticket #14 está bloqueado por #13 (aberta); a frente abre assim mesmo (leitura de ah deps de 2026-11-13 10:00).`. O bloqueio não provoca recusa (desenho, seção 11, "Regra geral de comportamento"). Sem leitura guardada, ou com o arquivo ilegível, não há aviso.
+
 ```
 $ tools/ah open carrinho --tickets 1
 Frente as-1 carrinho aberta.
@@ -384,6 +386,69 @@ Linhas ilegíveis em eventos.jsonl: 1 (fora da conta)
 ```
 
 O exemplo corresponde ao registro de teste `teste/eventos-de-exemplo/eventos.jsonl`.
+
+## deps
+
+```
+ah deps [ticket] [--json]
+```
+
+Mostra a relação de bloqueio entre as issues do repositório. O harness apenas lê essa relação, que pertence ao GitHub (desenho, seção 11, "Ordem e dependências").
+
+**Fonte.** A fonte principal é a API REST de dependências de issues, chamada pelo `gh api`. Contrato conferido em 13/11/2026 na documentação oficial (https://docs.github.com/en/rest/issues/issue-dependencies):
+
+| Endpoint | Resposta |
+|---|---|
+| `GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by` | 200 com lista de issues (`number`, `title`, `state`, `repository_url`, `html_url`, `issue_dependencies_summary`, entre outros); 301, 404 e 410 nos demais casos |
+| `GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocking` | idem, com as issues que ela bloqueia |
+
+Os dois endpoints paginam com `per_page` (padrão 30, máximo 100) e `page`; o comando pede páginas de 100. A lista das issues abertas vem de `GET /repos/{owner}/{repo}/issues?state=open` (https://docs.github.com/en/rest/issues/issues#list-repository-issues, conferido na mesma data), até 200 issues; os pull requests, que essa lista também devolve (chave `pull_request`), são descartados. Cada issue da lista traz `issue_dependencies_summary` (`blocked_by`, `blocking`, `total_blocked_by`, `total_blocking`), e o comando só consulta `blocked_by` das issues com `total_blocked_by` maior que zero (ou sem o resumo). Um bloqueio por issue de outro repositório aparece como `dono/repo#n`, identificado pelo `repository_url`.
+
+A linha `Bloqueado por: #N[, #M]` no corpo da issue (sem diferenciar maiúsculas) é sempre aceita e se soma à API. Quando a API de dependências responde 404 ou 410 (instância sem o recurso), ela é a única fonte, e a saída informa: `Fonte: a linha "Bloqueado por:" do corpo das issues (a API de dependências do GitHub não respondeu)`.
+
+**Sem argumento.** Lê as issues abertas e mostra, da mais nova para a mais antiga, cada uma com bloqueio pendente (aberto ou de estado desconhecido) e a árvore do que a bloqueia, em cascata (até 10 níveis, com ciclos marcados). Em seguida, `Livres para começar:` lista as issues abertas sem bloqueio pendente e sem frente no estado (ativa, passada ou abrindo), e `Sem bloqueio, já com frente:` lista as que estão livres mas já têm frente.
+
+**Com ticket.** `ah deps <n>` mostra a issue, o que a bloqueia em cascata e o que ela bloqueia (pelo endpoint `blocking`, somado às issues da leitura guardada que a citam no corpo).
+
+**Leitura guardada.** Toda leitura bem-sucedida grava `<estado>/deps.json` com a data (`lidoEm`). A leitura sem argumento substitui o retrato; a leitura de uma issue soma ao que estava guardado. Sem acesso ao GitHub, o comando usa o arquivo e informa a data no cabeçalho (`leitura guardada de AAAA-MM-DD HH:MM`, no fuso da configuração). O `open` usa o mesmo arquivo para avisar de tickets bloqueados.
+
+`--json` imprime, sem argumento, `{"repo","lidoEm","deCache","fonte","completa","issues","livres","avisos"}` (cada issue com `numero`, `titulo`, `estado`, `frente`, `pendente` e a árvore `bloqueadaPor`) e, com ticket, `{"repo","lidoEm","deCache","fonte","ticket","bloqueadaPor","bloqueia","avisos"}`. O estado vem como `aberta`, `fechada` ou `null` (desconhecido).
+
+| Recusa | Próximo passo |
+|---|---|
+| `ticket inválido: …` | usar o número da issue, como `ah deps 12` |
+| `não achei a issue #99 em exemplo/loja` | conferir o número (`gh issue view 99`) |
+| `sem acesso ao GitHub e sem leitura guardada (…)` | repetir com acesso ao GitHub (`gh auth status`) |
+| `sem acesso ao GitHub, e a leitura guardada não tem a issue #99` | idem |
+| `sem acesso ao GitHub (…) e a leitura guardada (…) está ilegível: …` | apagar o arquivo e repetir com acesso ao GitHub |
+
+```
+$ tools/ah deps
+Bloqueios de exemplo/loja (lidos agora)
+#14 Frete por região
+  bloqueada por #13 Cupom no checkout (aberta)
+    bloqueada por #12 Carrinho persistente (aberta)
+      bloqueada por #11 Base do catálogo (fechada)
+    bloqueada por exemplo/pagamentos#5 API de pagamento (aberta)
+#13 Cupom no checkout
+  bloqueada por #12 Carrinho persistente (aberta)
+    bloqueada por #11 Base do catálogo (fechada)
+  bloqueada por exemplo/pagamentos#5 API de pagamento (aberta)
+Livres para começar: #15 Página de ajuda; #12 Carrinho persistente
+Sem bloqueio, já com frente: #16 Revisão do layout (as-1)
+
+$ tools/ah deps 14
+Bloqueios de exemplo/loja (lidos agora)
+#14 Frete por região (aberta)
+Bloqueada por:
+  #13 Cupom no checkout (aberta)
+    #12 Carrinho persistente (aberta)
+      #11 Base do catálogo (fechada)
+    exemplo/pagamentos#5 API de pagamento (aberta)
+Bloqueia: nada
+```
+
+**Limites.** Sem argumento, o comando faz uma chamada por página da lista e uma por issue com bloqueio; com ticket, uma por issue visitada na cascata. O quadro (`board`) não mostra bloqueios, porque isso exigiria rede ou cache a cada execução (pendência registrada no plano da fatia 5b).
 
 ## whoami
 
