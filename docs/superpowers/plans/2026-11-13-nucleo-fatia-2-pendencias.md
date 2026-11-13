@@ -12,6 +12,7 @@ Sessão e continuação:
 1. `/clear` e `--resume` no mesmo processo são continuação: a sessão nova herda a frente da antiga. O fim de sessão com esses motivos não encerra a sessão; o começo seguinte, com o mesmo processo, herda.
 2. Herança por processo só quando a hora de início do processo é conhecida e igual nos dois lados. Onde ela não se lê (Windows; macOS se o `ps` falhar), não há herança por processo: a frente fica com a sessão antiga até o sinal vencer, e a T4 deixa passar a sessão do mesmo processo.
 3. Na continuação, a frente muda de dona antes de a sessão antiga ser encerrada, para não haver instante sem proteção.
+3a. Na continuação para uma sessão executora que já tem frente ativa (o `/resume` de uma conversa com frente), as frentes da sessão anterior não são herdadas: ficam passadas, como no `handoff` (passagem pela fila de pendentes), o foco do destino não muda, e sai `frente-solta` com `motivo: "destino-ja-tem-frente"`; o resumo manda `tools/ah open <nome>`. O orquestrador herda tudo.
 
 Reserva e corrida:
 4. A reserva no `open` é em duas fases: nome e ID guardados sob a trava, o comentário no ticket fora dela, o worktree sob a trava de novo. O registro intermediário (`abrindo`) guarda o processo do `open` e só é tomado com esse processo morto.

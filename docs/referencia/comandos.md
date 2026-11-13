@@ -549,6 +549,7 @@ Uma sessão está **viva** quando não foi encerrada, o sinal não venceu e, se 
 
 **Continuação.** O agente pode trocar de sessão sem trocar de processo: no Claude Code, o `SessionStart` com `source` `clear`, `resume`, `compact` ou `fork` é continuação; `startup` é começo novo. No começo de uma sessão, as sessões anteriores do **mesmo processo** (mesmo pid e mesma hora de início, conhecida nos dois lados) são substituídas (encerradas com `substituida`). Na continuação, a sessão nova herda as frentes delas (fica dona), o papel e o foco (eventos `substituida` e `heranca`). No começo novo, as frentes delas ficam passadas, sem dona (evento `frente-solta`), e o resumo manda `ah open <nome>`.
 
+- Destino executor que já tem frente ativa (por exemplo, `/resume` de uma conversa que tem frente, a partir de uma sessão que tem outra): as frentes da sessão anterior não são herdadas. Ficam passadas, como no `handoff` (com tickets, o comentário de passagem vai pela fila de pendentes), o papel e o foco do destino não mudam, sai o evento `frente-solta` com `motivo: "destino-ja-tem-frente"`, e o resumo avisa `A frente as-2 frete ficou passada; para retomar, tools/ah open frete.`. O orquestrador herda tudo, como antes. Se o destino já é a dona da frente em foco da anterior, nada muda.
 - O `/clear` e o `resume` no mesmo processo herdam a frente: o `SessionEnd` com esses motivos chega antes do `SessionStart` da sessão nova e não encerra a sessão velha (fica `aguardandoContinuacao`), e o começo seguinte a substitui. Se o começo não vier, a sessão velha segue sem fim, e a vida dela é a do pid e do sinal.
 - Onde a hora de início não se lê (Windows, ou `ps` que falhou), não há substituição nem herança: na dúvida, o harness não encerra uma sessão que pode estar viva. A frente fica com a sessão velha até o sinal dela vencer (ninguém mais o toca); nesse meio-tempo a T4 não barra a sessão nova no worktree dela (dona no mesmo pid do agente e sem hora de início não conta como outra sessão viva), mas `handoff` e `close` recusam, porque a frente não é da sessão nova. Vencido o sinal, a frente aparece órfã, e `ah takeover <nome> --confirmado` a passa para a sessão nova.
 - Uma conversa antiga retomada (`claude --resume`) depois de um `takeover` não recupera a frente: o resumo do começo diz quem está com ela, e a T4 protege a nova dona.
@@ -564,7 +565,7 @@ O gancho e os comandos acrescentam uma linha JSON a `<estado>/eventos.jsonl` a c
 | `sessao-fim` | `sessao`, `motivo` (o `reason` do agente, quando vem), `aguardandoContinuacao: true` (no `clear` e no `resume`) | gancho, fim |
 | `substituida` | `de` (sessão velha), `por` | gancho, continuação |
 | `heranca` | `de`, `sessao`, `frentes` (nomes) | gancho, continuação |
-| `frente-solta` | `sessao` (a velha), `frente`, `por`, `motivo: "continuacao-sem-vinculo"` | gancho, começo novo |
+| `frente-solta` | `sessao` (a velha), `frente`, `por`, `motivo` (`continuacao-sem-vinculo` no começo novo; `destino-ja-tem-frente` na continuação para executora que já tem frente) | gancho, começo |
 | `pid-instavel` | `sessao`, `pid` | gancho |
 | `estado-ilegivel` | `sessao`, `caminhos` | gancho (T4) |
 | `recusa` | `sessao`, `trava`, `comando` (até 500 caracteres) ou `ferramenta` e `caminho` (edição) | gancho |

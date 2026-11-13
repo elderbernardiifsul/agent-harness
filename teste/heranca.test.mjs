@@ -10,6 +10,7 @@ import { continuarSessao } from '../nucleo/lib/heranca.mjs';
 import { lerSessao, gravarSessao, registrarSessao, idadeDoSinalMs } from '../nucleo/lib/sessao.mjs';
 import { lerFrente, gravarFrente } from '../nucleo/lib/frente.mjs';
 import { lerEventos } from '../nucleo/lib/estado.mjs';
+import { listarPendentes } from '../nucleo/lib/pendentes.mjs';
 import { vidaDaSessao, descartarPidMorto } from '../nucleo/lib/vida.mjs';
 
 const proc = processoVivo();
@@ -158,7 +159,7 @@ test('continuarSessao sem pid não substitui ninguém', async () => {
   registrarSessao(dir, { id: 's-a', agente: 'claude-code' });
   registrarSessao(dir, { id: 's-b', agente: 'claude-code' });
   assert.deepEqual(await continuarSessao(dir, { sessao: 's-b', pid: null, pidInicio: null, origem: 'continuacao' }),
-    { substituidas: [], herdadas: [], soltas: [] });
+    { substituidas: [], herdadas: [], soltas: [], passadas: [] });
   assert.equal(lerSessao(dir, 's-a').fim, null);
 });
 
@@ -286,4 +287,81 @@ test('frente ativa com o registro da dona ilegível não é "sem dona": o resumo
   assert.doesNotMatch(r.contexto, /Sem dona/);
   assert.doesNotMatch(r.contexto, /ah takeover carrinho/);
   assert.match(r.contexto, /Avisos: .*A frente as-1 carrinho: registro da dona ilegível \(ah doctor\)\./);
+});
+
+// ---- Reensaio: /resume de uma conversa que já tem frente (sessão executora não fica com duas)
+
+async function resumeDeConversaComFrente({ papelDeX = 'executor' } = {}) {
+  const a = { ...amb(p), pid: proc.pid, ...comHora };
+  // A conversa X abre cupom (ticket #1) e termina.
+  await tratar(inicio('s-x', 'novo'), a);
+  gravarFrente(dir, { ...frenteDe('s-x', 'cupom', 'as-1'), tickets: [1] });
+  gravarSessao(dir, { ...lerSessao(dir, 's-x'), frente: 'cupom', papel: papelDeX });
+  await tratar(fimDe('s-x', 'other', false), a);
+  // Sessão nova Y no mesmo processo abre frete; /clear (Y -> Z).
+  await tratar(inicio('s-y', 'novo'), a);
+  gravarFrente(dir, frenteDe('s-y', 'frete', 'as-2'));
+  gravarSessao(dir, { ...lerSessao(dir, 's-y'), frente: 'frete' });
+  await tratar(fimDe('s-y', 'clear', true), a);
+  await tratar(inicio('s-z', 'continuacao'), a);
+  assert.equal(lerFrente(dir, 'frete').dona, 's-z');
+  // /resume X: fim de Z com resume, início com o id de X, que já existe.
+  await tratar(fimDe('s-z', 'resume', true), a);
+  return tratar(inicio('s-x', 'continuacao'), a);
+}
+
+test('/resume de conversa executora que já tem frente: a frente da sessão corrente fica passada, sem herança', async () => {
+  const r = await resumeDeConversaComFrente();
+  const cupom = lerFrente(dir, 'cupom');
+  const frete = lerFrente(dir, 'frete');
+  assert.deepEqual([cupom.estado, cupom.dona], ['ativa', 's-x']);
+  assert.deepEqual([frete.estado, frete.dona, frete.passadaPor, frete.passadaDe], ['passada', null, 's-z', 's-z']);
+  assert.ok(frete.passadaEm);
+  const x = lerSessao(dir, 's-x');
+  assert.deepEqual([x.frente, x.papel], ['cupom', 'executor']);
+  assert.equal(lerSessao(dir, 's-z').motivoFim, 'substituida');
+  const ev = lerEventos(dir).filter(e => e.tipo === 'frente-solta').at(-1);
+  assert.deepEqual([ev.sessao, ev.frente, ev.por, ev.motivo], ['s-z', 'frete', 's-x', 'destino-ja-tem-frente']);
+  assert.ok(!lerEventos(dir).some(e => e.tipo === 'heranca' && e.sessao === 's-x' && e.frentes.includes('frete')));
+  assert.match(r.contexto, /A frente as-2 frete ficou passada; para retomar, tools\/ah open frete\./);
+});
+
+test('/resume: frente com tickets fica passada com o comentário de passagem na fila', async () => {
+  const a = { ...amb(p), pid: proc.pid, ...comHora };
+  await tratar(inicio('s-x', 'novo'), a);
+  gravarFrente(dir, frenteDe('s-x', 'cupom', 'as-1'));
+  gravarSessao(dir, { ...lerSessao(dir, 's-x'), frente: 'cupom' });
+  await tratar(fimDe('s-x', 'other', false), a);
+  await tratar(inicio('s-y', 'novo'), a);
+  gravarFrente(dir, { ...frenteDe('s-y', 'frete', 'as-2'), tickets: [3] });
+  gravarSessao(dir, { ...lerSessao(dir, 's-y'), frente: 'frete' });
+  await tratar(fimDe('s-y', 'resume', true), a);
+  await tratar(inicio('s-x', 'continuacao'), a);
+  assert.equal(lerFrente(dir, 'frete').estado, 'passada');
+  const ops = listarPendentes(dir).filter(op => op.ticket === 3);
+  assert.equal(ops.length, 1);
+  assert.match(ops[0].corpo, /ah:passagem id=as-2 .*estado=passada/);
+});
+
+test('/resume de conversa orquestradora com frente herda tudo, como antes', async () => {
+  await resumeDeConversaComFrente({ papelDeX: 'orquestrador' });
+  assert.deepEqual([lerFrente(dir, 'cupom').dona, lerFrente(dir, 'frete').dona], ['s-x', 's-x']);
+  assert.equal(lerFrente(dir, 'frete').estado, 'ativa');
+});
+
+test('continuação em que o destino já é dona da frente em foco da velha: não duplica nem solta', async () => {
+  const a = { ...amb(p), pid: proc.pid, ...comHora };
+  await tratar(inicio('s-x', 'novo'), a);
+  gravarFrente(dir, frenteDe('s-x', 'cupom', 'as-1'));
+  gravarSessao(dir, { ...lerSessao(dir, 's-x'), frente: 'cupom' });
+  await tratar(fimDe('s-x', 'other', false), a);
+  await tratar(inicio('s-y', 'novo'), a);
+  gravarSessao(dir, { ...lerSessao(dir, 's-y'), frente: 'cupom' }); // foco na mesma frente, sem ser dona
+  await tratar(fimDe('s-y', 'resume', true), a);
+  const r = await tratar(inicio('s-x', 'continuacao'), a);
+  const cupom = lerFrente(dir, 'cupom');
+  assert.deepEqual([cupom.estado, cupom.dona], ['ativa', 's-x']);
+  assert.equal(lerSessao(dir, 's-x').frente, 'cupom');
+  assert.ok(!lerEventos(dir).some(e => e.tipo === 'frente-solta' && e.motivo === 'destino-ja-tem-frente'));
+  assert.doesNotMatch(r.contexto, /ficou passada/);
 });

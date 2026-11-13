@@ -225,10 +225,10 @@ async function inicio(evento, amb) {
   registrarEvento(amb.dirEstado, {
     tipo: 'sessao-inicio', sessao: id, agente: evento.agente, origem: evento.origem, modelo: evento.modelo ?? null,
   });
-  await continuarSessao(amb.dirEstado, { sessao: id, pid, pidInicio, origem: evento.origem });
+  const continuacao = await continuarSessao(amb.dirEstado, { sessao: id, pid, pidInicio, origem: evento.origem });
 
   const { frentes } = listarFrentesTolerante(amb.dirEstado);
-  const avisos = [];
+  const avisos = (continuacao.passadas ?? []).map(f => `A frente ${f.id} ${f.nome} ficou passada; para retomar, tools/ah open ${f.nome}.`);
   let sessao = lerSessao(amb.dirEstado, id);
   const foco = typeof sessao.frente === 'string' ? frentes.find(f => f.nome === sessao.frente) : null;
   if (foco && foco.dona != null && foco.dona !== id) {
