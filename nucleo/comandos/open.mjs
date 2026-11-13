@@ -12,7 +12,7 @@ import { acharPassagem, ativaDaSessao, avisarDaMarcacao, confirmarRetomada, desf
 import { avisosDeBloqueio } from '../lib/deps.mjs';
 import { arquivosDaFrente, caminhosEmComum, tocaOsCaminhos } from '../lib/sobreposicao.mjs';
 import { ESQUEMA_DO_ESTADO, gravarSessao, idCurto, lerSessao, listarSessoes, registrarSessao, resolverSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
-import { aberturaEmCurso, inicioDoProcesso, pidDeComando, vidaDaSessao } from '../lib/vida.mjs';
+import { aberturaEmCurso, fechamentoEmCurso, inicioDoProcesso, pidDeComando, vidaDaSessao } from '../lib/vida.mjs';
 
 export const descricao = 'abre uma frente de trabalho: ramo, worktree, registro e reserva dos tickets';
 export const uso = 'ah open <nome> [--tickets 1,2] [--plano <arquivo>] [--caminhos <globs>] [--para <id curto>]';
@@ -182,6 +182,11 @@ export async function executar(args, amb) {
     // for a sessão); este open o toma com o mesmo id (os marcadores nos tickets são desse id). Com o processo vivo
     // há uma abertura em curso. Registro sem processo (anterior a este campo): vale a vida da sessão dona.
     const existente = lerFrente(dirEstado, o.nome);
+    // Um `ah close` dela entre as fases (rede): retomar agora brigaria com ele.
+    if (existente && fechamentoEmCurso(existente)) {
+      throw recusa(`A frente ${existente.id} ${o.nome} está sendo fechada agora (processo ${existente.fechando.pid}).`,
+        `espere esse ah close terminar (ah board mostra fechando enquanto ele roda); se a frente continuar no quadro, rode ah open ${o.nome} de novo`);
+    }
     // Frente ativa com o mesmo nome: não se abre nem se retoma; a saída depende da dona.
     if (existente?.estado === 'ativa') {
       const qual = `${existente.id} ${existente.nome}`;

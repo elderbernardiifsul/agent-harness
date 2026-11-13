@@ -106,6 +106,12 @@ export function aberturaEmCurso(processo, { existe = processoExiste, inicio = in
   return atual == null || atual === processo.inicio;
 }
 
+// Um `ah close` está entre as fases desta frente (marca `fechando` com o processo dele, ainda de pé)? A marca de um
+// processo morto não vale: o close seguinte termina o serviço.
+export function fechamentoEmCurso(frente, opcoes) {
+  return aberturaEmCurso(frente?.fechando, opcoes) === true;
+}
+
 // Registro `abrindo` parado: o processo do open morreu; registro sem processo: a dona não está viva.
 export function aberturaParada(frente, donaViva, opcoes) {
   const emCurso = aberturaEmCurso(frente?.processo, opcoes);

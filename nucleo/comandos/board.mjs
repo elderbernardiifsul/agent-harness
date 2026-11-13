@@ -3,7 +3,7 @@ import { ErroDeUso } from '../lib/caminhos.mjs';
 import { listarFrentesTolerante } from '../lib/frente.mjs';
 import { arquivosDaFrenteOuNulo, contaNaSobreposicao, sobreposicoes as calcularSobreposicoes } from '../lib/sobreposicao.mjs';
 import { idCurto, listarSessoes } from '../lib/sessao.mjs';
-import { aberturaParada, frenteOrfa, vidaDaDona } from '../lib/vida.mjs';
+import { aberturaParada, fechamentoEmCurso, frenteOrfa, vidaDaDona } from '../lib/vida.mjs';
 import { dirDaFila, duracaoCurta, retratoDaFila } from '../lib/fila.mjs';
 import { ativasOuNada, colunasDasExtensoes } from '../lib/extensoes.mjs';
 import { executarNumeros, USO_NUMEROS } from '../lib/numeros.mjs';
@@ -29,8 +29,9 @@ function linhaUnica(texto, limite) {
 
 // Órfã pela mesma regra do sweep e do takeover (frenteOrfa): ativa sem dona viva; dona ilegível não é órfã.
 // Em abertura com o processo do open morto (ou, sem processo no registro, sem dona viva) é um open que parou
-// no meio: outro `ah open <nome>` o toma.
+// no meio: outro `ah open <nome>` o toma. Um `ah close` entre as fases (rede) aparece como `fechando`.
 function estadoNoQuadro(f, vida) {
+  if (fechamentoEmCurso(f)) return 'fechando';
   if (frenteOrfa(f, vida)) return 'órfã';
   if (f.estado === 'abrindo') return aberturaParada(f, vida?.estado === 'viva') ? 'abrindo (parada)' : 'abrindo';
   return f.estado ?? '—';
@@ -132,6 +133,7 @@ export async function executar(args, amb) {
     const lista = frentes.map(f => ({
       ...f, donaViva: donaViva(f), donaIlegivel: donaIlegivel(f), sobrepoe: sobrepoe(f), sobreposicaoConferida: conferida(f),
       ...(f.estado === 'abrindo' ? { aberturaParada: aberturaParada(f, donaViva(f)) } : {}),
+      ...(f.fechando ? { fechamentoEmCurso: fechamentoEmCurso(f) } : {}),
       ...(colunas.length ? { colunas: porExtensao(f) } : {}),
     }));
     amb.escrever(`${JSON.stringify({ frentes: lista, sessoes, sessoesIlegiveis, sobreposicoes, sobreposicaoIncompleta, fila })}\n`);

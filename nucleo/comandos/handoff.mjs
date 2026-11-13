@@ -8,6 +8,7 @@ import { loginDeQuemAge } from '../lib/github.mjs';
 import { enfileirar, pendentesDoTicket, reenviarComAviso } from '../lib/pendentes.mjs';
 import { avisarDaMarcacao, corpoDaMarcacao } from '../lib/reserva.mjs';
 import { gravarSessao, idCurto, lerSessao, tocarSinal } from '../lib/sessao.mjs';
+import { fechamentoEmCurso } from '../lib/vida.mjs';
 
 export const descricao = 'passa a frente adiante sem fechá-la: empurra o ramo, comenta a passagem e solta a frente';
 export const uso = 'ah handoff [<nome>] [--nota "<texto>"]';
@@ -16,6 +17,9 @@ export const requisitos = { config: true, sessao: true };
 const recusa = (motivo, saida) => new ErroDeUso(`${motivo}\nPróximo passo: ${saida}`);
 const primeiraLinha = r => (r.erro || r.saida || `código ${r.codigo}`).trim().split('\n')[0].slice(0, 300);
 const COMMITS_NO_COMENTARIO = 3;
+// Um `ah close` entre as fases (marca `fechando` de processo vivo): passar a frente agora brigaria com ele.
+const recusaDoFechamento = f => recusa(`A frente ${f.id} ${f.nome} está sendo fechada agora (processo ${f.fechando.pid}).`,
+  `espere esse ah close terminar (ah board mostra fechando enquanto ele roda); se a frente continuar no quadro, rode ah handoff ${f.nome} de novo`);
 
 function lerOpcoes(args) {
   const o = { nome: null, nota: undefined };
@@ -107,6 +111,7 @@ export async function executar(args, amb) {
       throw recusa(`A frente ${f.id} ${f.nome} não está ativa (estado ${f.estado}).`,
         `se o ah open dela parou no meio, rode ah open ${f.nome} para terminar ou ah close ${f.nome} para desistir`);
     }
+    if (fechamentoEmCurso(f)) throw recusaDoFechamento(f);
     return { frente: f, topo: conferirWorktree(f, env) };
   }, { venceMs: 120000 });
 
@@ -142,6 +147,7 @@ export async function executar(args, amb) {
       throw recusa(`A frente ${frente.nome} mudou durante o handoff (agora: ${f ? `${f.estado}, dona ${f.dona ?? '—'}` : 'sem registro'}).`,
         'rode ah board para ver quem está com ela; o estado local não mudou');
     }
+    if (fechamentoEmCurso(f)) throw recusaDoFechamento(f);
     if (conferirWorktree(f, env) !== topo) {
       throw recusa(`O ramo ${f.ramo} ganhou commits durante o handoff.`, 'rode ah handoff de novo para empurrá-los; o estado local não mudou');
     }

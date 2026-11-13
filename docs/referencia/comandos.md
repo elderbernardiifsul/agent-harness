@@ -293,6 +293,7 @@ Trabalhe em: <worktrees>/cupom
 | `A frente as-1 carrinho está ativa, mas a dona (sessão sessao-b) não está viva.` | para assumi-la, rode `ah takeover carrinho` |
 | `A frente as-1 carrinho está passada: os tickets vêm da frente passada; rode ah open carrinho sem --tickets.` | rode `ah open carrinho` sem `--tickets` |
 | `Há uma abertura da frente carrinho em curso (…)` | espere esse `ah open` terminar ou escolha outro nome; se ele parou, rode `ah open carrinho` de novo |
+| `A frente as-1 carrinho está sendo fechada agora (processo <pid>).` | espere esse `ah close` terminar (o quadro mostra `fechando` enquanto ele roda); se a frente continuar no quadro, repita |
 | `Já existe frente com o nome carrinho.` (ou `ramo remoto`, sem passagem achada) | escolha outro nome (com ramo remoto: se é uma frente passada, `ah open carrinho --tickets <n>` com o ticket dela; se é o ramo de uma frente já fechada, confira que `git log dev..origin/feat/carrinho` vem vazio e apague-o com `git push origin --delete feat/carrinho`) |
 | `Já existe ramo local com o nome carrinho.` | escolha outro nome; se é resíduo de um `ah open` interrompido, `git worktree remove <worktrees>/carrinho` (se a pasta existir) e `git branch -d feat/carrinho`, e rode `ah open` de novo |
 | `O harness ainda não está no ramo dev (… não tem tools/ah); a frente nasceria sem ele.` | faça o commit do harness na `dev`: `git switch dev` e o `git add`/`git commit` que o `ah init` mostrou |
@@ -342,7 +343,7 @@ Mostra as frentes do estado em tabela e, abaixo dela, as sessões vivas. Sem fre
 |---|---|
 | ID, NOME | o id (`as-1`) e o nome da frente |
 | DONA | id curto da sessão dona; `(morta)` se ela não está viva, `(ilegível)` se o registro dela não se lê; `—` sem dona |
-| ESTADO | `ativa`; `órfã` (ativa sem dona viva: `ah takeover`; a mesma regra do `sweep`, e dona com registro ilegível não conta como órfã); `passada` (sem dona: `ah open`); `abrindo` (um `ah open` em curso); `abrindo (parada)` (o processo do `open` morreu) |
+| ESTADO | `ativa`; `órfã` (ativa sem dona viva: `ah takeover`; a mesma regra do `sweep`, e dona com registro ilegível não conta como órfã); `passada` (sem dona: `ah open`); `abrindo` (um `ah open` em curso); `abrindo (parada)` (o processo do `open` morreu); `fechando` (um `ah close` em curso, na fase de rede) |
 | TICKETS | `#1,#2` ou `—` |
 | SOBREPÕE | IDs das outras frentes (ativas ou passadas) que mudaram algum arquivo em comum, pelo ramo desde a base e pelo worktree; `?` quando o git excedeu o prazo total (3 s) antes de conferir a frente |
 | PLANO, ÚLTIMA NOTA | o plano e a última nota, cortados |
@@ -633,6 +634,7 @@ Para retomar: tools/ah open carrinho
 | `Esta sessão tem mais de uma frente (carrinho, frete).` | diga qual: `ah handoff <nome>` |
 | `A frente carrinho não é desta sessão: é da sessão sessao-b.` (ou `já está passada, sem dona`) | rode `ah board` (passada: `ah open carrinho` para retomá-la) |
 | `A frente as-1 carrinho não está ativa (estado abrindo).` | se o `ah open` dela parou no meio, `ah open carrinho` para terminar ou `ah close carrinho` para desistir |
+| `A frente as-1 carrinho está sendo fechada agora (processo <pid>).` | espere esse `ah close` terminar (o quadro mostra `fechando` enquanto ele roda); se a frente continuar no quadro, repita |
 | `O worktree da frente as-1 carrinho não existe (…).` | se o trabalho já está no ramo ou na base, `ah close carrinho`; senão `git worktree add <worktree> feat/carrinho` e repita |
 | `O worktree <worktrees>/carrinho tem alterações não commitadas (1): ?? x.txt.` | faça o commit no worktree (um commit `wip:` serve) e rode `ah handoff` de novo |
 | o worktree fora do ramo da frente ou com operação em andamento | corrija o que a recusa descreve e repita |
@@ -663,6 +665,7 @@ Trabalhe em: <worktrees>/carrinho
 | `A frente as-1 carrinho está passada, sem dona: retome-a em vez de assumir.` | `ah open carrinho` |
 | `A frente as-1 carrinho parou no meio da abertura; não há frente ativa para assumir.` (ou `Há uma abertura … em curso`) | `ah open carrinho` para retomar a abertura parada, ou `ah close carrinho` para desistir |
 | `A frente as-1 carrinho é desta sessão.` | trabalhe no worktree dela |
+| `A frente as-1 carrinho está sendo fechada agora (processo <pid>).` | espere esse `ah close` terminar (o quadro mostra `fechando` enquanto ele roda); se a frente continuar no quadro, repita |
 | `A frente as-1 carrinho é da sessão sessao-c, que está viva.` | peça à sessão sessao-c que rode `ah handoff`; ou espere o sinal dela vencer (120 min) |
 | `Esta sessão já tem a frente frete.` | antes, `ah handoff frete` ou `ah close frete` (o orquestrador assume várias: `ah papel orquestrador`) |
 | `O worktree da frente as-1 carrinho não existe (…).` | `ah close carrinho` e abra de novo com `ah open carrinho` |
@@ -735,6 +738,7 @@ Fecha a frente em foco da sessão sem perda de trabalho. O comando confere que o
 - `--descartar-ignorados`: aceita a perda dos arquivos ignorados pelo git presentes no worktree (`node_modules/`, caches…); sem a opção, o `close` recusa e lista esses itens. O worktree é sempre removido com `git worktree remove` sem `--force` (comando que já apaga os ignorados): se surgir alteração ou arquivo novo entre a conferência e a remoção, o `close` recusa e não apaga nada.
 - `<nome>` fecha uma frente pelo nome. Se a dona não está viva (encerrada, morta ou sem registro) ou a frente está passada, esta sessão a fecha com as mesmas conferências, e a saída informa `A frente era da sessão <id>, já encerrada; esta sessão a fechou.` (ou `que não está viva (<motivo>)`, ou `A frente estava passada pela sessão sessao-t, sem dona; esta sessão a fechou.`).
 - **Frente passada com tickets:** outra máquina pode tê-la retomado. O `close` primeiro assume a frente nos tickets, pelo mesmo procedimento de disputa da retomada, e só então a fecha. Se ela está ativa em outra máquina (ou já foi fechada lá), o comando fecha apenas o registro e o worktree locais, sem comentar nem alterar os tickets e sem alterar o histórico. Sem rede, recusa.
+- **Fases:** a rede fica fora da trava do estado. Na primeira fase, sob a trava, ocorrem as recusas, as conferências de perda de trabalho e o `antesDeFechar`, e o registro da frente recebe a marca `fechando` com o processo do `close`. Na segunda, fora da trava, ocorrem a consulta ao GitHub (frente passada com tickets) e o comentário de fechamento. Na terceira, de novo sob a trava, o `close` reconfere, remove worktree e ramo, grava o histórico e retira o registro; o `push` que apaga o ramo remoto roda depois, fora da trava. Enquanto o processo do `close` vive, outro `close`, o `handoff`, o `takeover` e a retomada pelo `open` recusam a frente, e o quadro a mostra como `fechando`; com o processo morto, a marca deixa de valer e o `close` seguinte termina o fechamento.
 - **Abertura parada:** com o registro `abrindo` e o processo do `open` morto, o `close` apenas desfaz a abertura: retira a reserva dos tickets em que ela pertence a esta frente (comentário `desistencia`), apaga o registro e lista o que restou para limpeza manual. Não grava linha no histórico nem faz commit. As reações das extensões também rodam nesse caminho: `antesDeFechar` antes de mexer nos tickets (pode recusar) e `depoisDeFechar` no fim, ambas com `ctx.aberturaDesfeita`.
 
 ```
@@ -756,6 +760,8 @@ A linha `Falta: git push …` aparece apenas quando o projeto tem remoto. O `clo
 | `Esta sessão não tem frente.` | rode `ah board` para ver as frentes |
 | `A frente as-1 carrinho é da sessão <id inteiro>, que ainda está aberta, não desta.` | peça à sessão dona que rode `ah close`; se ela parou, espere o sinal de vida dela vencer (`sessoes.prazoDoSinalMin`, hoje 120 min), confira em `ah board` que a frente aparece órfã e repita `ah close carrinho` |
 | `A frente as-1 carrinho está sendo aberta agora (…).` | espere esse `ah open` terminar e, se ainda quiser, repita |
+| `A frente as-1 carrinho está sendo fechada agora (processo <pid>).` | espere esse `ah close` terminar (o quadro mostra `fechando` enquanto ele roda); se a frente continuar no quadro, rode `ah close carrinho` |
+| `A frente carrinho mudou durante o fechamento (…).` | rode `ah board` para ver como ela está; a saída diz se os tickets já receberam o comentário de fechamento |
 | `O checkout principal não está no ramo base dev.` | rode `git switch dev` no checkout principal |
 | `O checkout principal tem alterações em docs/agents/historico-das-frentes.md.` | faça commit ou descarte essas alterações |
 | `Fechar a frente … perderia trabalho.` | lista o que se perderia (commits fora do ramo base e do remoto, arquivos soltos, itens ignorados) e o que fazer com cada um |
