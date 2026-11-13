@@ -62,4 +62,6 @@ docs/referencia/comandos.md, README.md, docs/referencia/capacidades-por-agente.m
 - O resumo do começo de sessão ainda não mostra quem está no pesado (seção 8).
 - `ah board --numeros` (12.5) não existe; o evento `pesado` já grava espera e duração.
 - Uma pasta de trava da fila com dono vivo mas preso (processo parado) ainda segura todo mundo até vencer (30 s); quem espera não cai, só espera.
-
+- Contêineres com o mesmo hostname e a mesma pasta de estado ou de fila compartilhada: no Linux o boot e o namespace de pid gravados no `dono.json` separam os casos comuns; fora do Linux só o hostname, e um pid "morto" de outro contêiner com o mesmo nome faria a trava vencer na hora.
+- A janela entre iniciar o comando e gravar o grupo (e a hora do líder) na entrada: um `kill -9` no `ah` nesses milissegundos deixa o comando sem dono, rodando fora da fila.
+- A trava devolvida no rename de volta (`.vencida.*`) não é apagada quando o lugar já tem outra trava; fica como lixo inofensivo na pasta `travas/`.
