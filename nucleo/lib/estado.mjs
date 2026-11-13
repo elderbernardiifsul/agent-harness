@@ -129,6 +129,11 @@ export const ganchosDeTeste = { antesDeTomar: null, depoisDoMkdir: null, devolve
 const ESPERA_DA_DEVOLUCAO_MS = 100;
 const ESPERA_DO_RECOLHER_MS = 1000;
 
+// Erros que passam (no Windows, antivírus e indexador seguram o arquivo por instantes): a tomada tenta de novo
+// dentro do esperaMs, em vez de lançar erro cru.
+const PASSAGEIROS = new Set(['EPERM', 'EACCES', 'EBUSY']);
+const passageiro = e => PASSAGEIROS.has(e?.code);
+
 // Tira o dono.json da trava para um nome único ao lado dela (rename: só um consegue). Devolve o caminho do
 // arquivo tirado, ou null se não havia dono.json.
 function tirarDono(pasta, marca) {
@@ -160,7 +165,8 @@ function devolverDono(fora, pasta) {
       fs.writeFileSync(path.join(pasta, 'dono.json'), texto, { flag: 'wx' });
       break;
     } catch (e) {
-      if (e.code !== 'EEXIST' || Date.now() >= limite) break; // pasta sumiu, erro, ou o ocupante não saiu
+      // pasta sumiu, erro que não passa, ou o ocupante não saiu a tempo: descarta
+      if (!(e.code === 'EEXIST' || passageiro(e)) || Date.now() >= limite) break;
       dormirSinc(pausa);
     }
   }
@@ -173,7 +179,8 @@ function devolverDono(fora, pasta) {
 function recolherDono(t, ehMeu, { tirarPasta, esperaMs }) {
   const limite = Date.now() + esperaMs;
   for (let pausa = 1; ; pausa = Math.min(pausa * 2, 50)) {
-    const fora = tirarDono(t.pasta, t.marca);
+    let fora = null;
+    try { fora = tirarDono(t.pasta, t.marca); } catch (e) { if (!passageiro(e)) throw e; }
     if (fora) {
       let texto = null;
       try { texto = fs.readFileSync(fora, 'utf8'); } catch { /* ilegível: não se sabe de quem é */ }
@@ -186,7 +193,7 @@ function recolherDono(t, ehMeu, { tirarPasta, esperaMs }) {
       return true;
     }
     if (!fs.existsSync(t.pasta) || Date.now() >= limite) return false;
-    dormirSinc(pausa);
+    dormirSinc(pausa); // sem dono no lugar (outro o confere) ou erro passageiro
   }
 }
 
@@ -230,6 +237,7 @@ function tentarPegar(t) {
       ganchosDeTeste.depoisDoMkdir?.(pasta);
       return true;
     } catch (e) {
+      if (passageiro(e)) return passou(t, e);
       if (e.code !== 'EEXIST') throw e;
     }
     const vista = lerDono(pasta);
@@ -242,12 +250,13 @@ function tentarPegar(t) {
       if (!tirarPastaVazia(pasta)) return false;
       continue;
     }
-    const fora = tirarDono(pasta, marca);
+    let fora;
+    try { fora = tirarDono(pasta, marca); } catch (e) { if (passageiro(e)) return passou(t, e); throw e; }
     if (!fora) continue; // outro tirou antes: julga de novo
     const tirado = lerArquivoDono(fora)?.dono ?? null;
     // O tirado é o visto (mesma marca; ausente nos dois conta como a mesma) e continua vencido pela data dele?
     if ((tirado?.marca ?? null) === (vista.dono?.marca ?? null) && vencida(tirado, mtime(fora), venceMs)) {
-      fs.rmSync(fora, { force: true });
+      try { fs.rmSync(fora, { force: true }); } catch { /* resto sem dono, limpo depois */ }
       if (!tirarPastaVazia(pasta)) return false;
     } else {
       devolverDono(fora, pasta);
@@ -256,16 +265,28 @@ function tentarPegar(t) {
   return false;
 }
 
+// Erro passageiro na tomada: guarda o código (a recusa por espera o mostra) e devolve false (tenta de novo).
+function passou(t, e) {
+  t.ultimoErro = e.code;
+  return false;
+}
+
 // rmdir da pasta da trava: true se saiu (ou já não existia); false se não está vazia (outro gravou dono, ou há
-// lixo): a trava fica, e quem chama volta a esperar.
+// lixo): a trava fica, e quem chama volta a esperar. Erro passageiro: tenta de novo por pouco tempo, porque a
+// pasta vazia que ficasse só venceria pelo teto; persistindo, false.
 function tirarPastaVazia(pasta) {
-  try {
-    fs.rmdirSync(pasta);
-    return true;
-  } catch (e) {
-    if (e.code === 'ENOENT') return true;
-    if (e.code === 'ENOTEMPTY' || e.code === 'EEXIST') return false;
-    throw e;
+  const limite = Date.now() + 50;
+  for (let pausa = 1; ; pausa = Math.min(pausa * 2, 16)) {
+    try {
+      fs.rmdirSync(pasta);
+      return true;
+    } catch (e) {
+      if (e.code === 'ENOENT') return true;
+      if (e.code === 'ENOTEMPTY' || e.code === 'EEXIST') return false;
+      if (!passageiro(e)) throw e;
+      if (Date.now() >= limite) return false;
+      dormirSinc(pausa);
+    }
   }
 }
 
@@ -279,12 +300,14 @@ function prepararTrava(dir, nome, venceMs) {
   return { nome, pasta, marca: randomUUID(), venceMs, ino: 0n, dev: 0n };
 }
 
-function travaPresa(nome, pasta, esperaMs, venceMs) {
+function travaPresa(t, esperaMs) {
+  const { nome, pasta, venceMs } = t;
   const lixo = lixoNaPasta(pasta);
   const proximo = lixo.length
     ? `a pasta da trava tem o que não é dela (${lixo.slice(0, 5).join(', ')}${lixo.length > 5 ? ', …' : ''}) e não vence sozinha; se nenhum ah está rodando, apague a pasta ${pasta} (rm -r) e repita`
     : `se outro ah está rodando, espere ele terminar e repita; uma trava esquecida vence sozinha em até ${Math.ceil(venceMs / 1000)} s (a trava é a pasta ${pasta})`;
-  return Object.assign(new ErroDeEstado(`Esperei ${esperaMs} ms pela trava "${nome}" e ela não foi solta`, pasta, proximo), { travaPresa: true });
+  const erro = t.ultimoErro ? ` (o último erro do sistema de arquivos foi ${t.ultimoErro})` : '';
+  return Object.assign(new ErroDeEstado(`Esperei ${esperaMs} ms pela trava "${nome}" e ela não foi solta${erro}`, pasta, proximo), { travaPresa: true });
 }
 
 // Depois do mkdir, grava o dono com 'wx' (falha se já existe): uma pasta tem um dono só. Falha também se a pasta
@@ -295,12 +318,23 @@ function travaPresa(nome, pasta, esperaMs, venceMs) {
 // chamada venceu e saiu, outro criou a dele, e o dono dele está fora (conferido) bem na hora. Por isso, depois
 // do wx confere-se a identidade da pasta; se mudou, o dono desta chamada é recolhido sem tirar a pasta (é do
 // outro, que recebe o dono de volta de quem o conferia).
+//
+// Outro erro no wx (ENOSPC, EMFILE, ou passageiro) pode deixar um dono.json vazio ou pela metade, que fecharia a
+// trava para todos até o teto: recolhe-se o que o wx deixou (o texto lido é começo do desta chamada) e a pasta,
+// se é a desta chamada. Erro passageiro devolve false (tenta de novo); os outros são relançados.
 function confirmarDono(t) {
   const texto = JSON.stringify({ pid: process.pid, em: new Date().toISOString(), marca: t.marca, venceMs: t.venceMs, ...identidadeDaMaquina() });
   try {
     fs.writeFileSync(path.join(t.pasta, 'dono.json'), texto, { flag: 'wx' });
-  } catch {
-    return false;
+  } catch (e) {
+    if (e.code === 'EEXIST' || e.code === 'ENOENT') return false;
+    const mesma = mesmaPasta(t);
+    try {
+      recolherDono(t, lido => texto.startsWith(lido), { tirarPasta: false, esperaMs: 0 });
+      if (mesma) tirarPastaVazia(t.pasta);
+    } catch { /* o que ficou vence pelo teto */ }
+    if (passageiro(e)) return passou(t, e);
+    throw e;
   }
   if (mesmaPasta(t)) return true;
   recolherDono(t, lido => lido === texto, { tirarPasta: false, esperaMs: ESPERA_DO_RECOLHER_MS });
@@ -308,20 +342,13 @@ function confirmarDono(t) {
 }
 
 // Solta pelo mesmo caminho da tomada: tira o dono.json e só tira a pasta se o tirado for desta chamada. Sem
-// dono.json, outro o tirou para conferir e vai devolvê-lo: tenta de novo por pouco tempo.
-function soltar(pasta, marca) {
-  for (let i = 0; i < 5; i++) {
-    const fora = tirarDono(pasta, marca);
-    if (!fora) {
-      if (!fs.existsSync(pasta)) return;
-      dormirSinc(2);
-      continue;
-    }
-    if (lerArquivoDono(fora)?.dono?.marca !== marca) return devolverDono(fora, pasta);
-    fs.rmSync(fora, { force: true });
-    try { fs.rmdirSync(pasta); } catch { /* outro gravou dono na pasta vazia: a trava é dele */ }
-    return;
-  }
+// dono.json, outro o tirou para conferir e vai devolvê-lo: tenta de novo por pouco tempo. Nunca lança (roda no
+// finally e trocaria o resultado de fn): o que não sair vence sozinho.
+function soltar(t) {
+  const marcaDe = texto => { try { return JSON.parse(texto)?.marca; } catch { return undefined; } };
+  try {
+    recolherDono(t, texto => marcaDe(texto) === t.marca, { tirarPasta: true, esperaMs: 10 });
+  } catch { /* vence sozinha */ }
 }
 
 // Renova o `em` do dono da trava, só se o dono no lugar for o desta chamada (`marca`): abre com 'r+' (não cria
@@ -359,13 +386,13 @@ export async function comTrava(dir, nome, fn, { esperaMs = 5000, venceMs = 30000
   const t = prepararTrava(dir, nome, venceMs);
   const limite = Date.now() + esperaMs;
   while (!(tentarPegar(t) && confirmarDono(t))) {
-    if (Date.now() >= limite) throw travaPresa(nome, t.pasta, esperaMs, venceMs);
+    if (Date.now() >= limite) throw travaPresa(t, esperaMs);
     await dormir(20);
   }
   try {
     return await fn(alca(t));
   } finally {
-    soltar(t.pasta, t.marca);
+    soltar(t);
   }
 }
 
@@ -375,13 +402,13 @@ export function comTravaSinc(dir, nome, fn, { esperaMs = 5000, venceMs = 30000 }
   const t = prepararTrava(dir, nome, venceMs);
   const limite = Date.now() + esperaMs;
   while (!(tentarPegar(t) && confirmarDono(t))) {
-    if (Date.now() >= limite) throw travaPresa(nome, t.pasta, esperaMs, venceMs);
+    if (Date.now() >= limite) throw travaPresa(t, esperaMs);
     dormirSinc(20);
   }
   try {
     return fn(alca(t));
   } finally {
-    soltar(t.pasta, t.marca);
+    soltar(t);
   }
 }
 

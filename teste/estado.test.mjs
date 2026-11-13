@@ -487,3 +487,68 @@ test('revisão 2, achado 4: renovar a trava só regrava o dono desta chamada, nu
   }, { venceMs: 60000 });
   assert.equal(ler(), donoDe('outro', { em: JSON.parse(ler()).em }));
 });
+
+// Troca fs[nome] por uma versão que falha com `code` nas chamadas em que `quando(args, n)` é verdadeiro.
+function falhar(t, nome, code, quando) {
+  const original = fs[nome];
+  let n = 0;
+  fs[nome] = (...args) => {
+    if (quando(args, n++)) throw Object.assign(new Error(`${code}: falha simulada, ${nome}`), { code });
+    return original(...args);
+  };
+  const desfazer = () => { fs[nome] = original; };
+  t.after(desfazer);
+  return desfazer;
+}
+const trava = d => path.join(d, 'travas', 'x');
+const vencidaDeMorto = d => {
+  fs.mkdirSync(trava(d), { recursive: true });
+  fs.writeFileSync(path.join(trava(d), 'dono.json'), donoDe('morta', { pid: 999999 }));
+};
+
+test('revisão 2, achado 5: erro passageiro (EPERM, EBUSY, EACCES) na tomada vira nova tentativa, não erro cru', async t => {
+  const d = temp(t);
+  vencidaDeMorto(d);
+  let desfazer = falhar(t, 'renameSync', 'EPERM', ([de], n) => n === 0 && de.endsWith('dono.json'));
+  assert.equal(await comTrava(d, 'x', () => 'entrou', { esperaMs: 500 }), 'entrou');
+  desfazer();
+  vencidaDeMorto(d);
+  desfazer = falhar(t, 'rmdirSync', 'EBUSY', ([alvo], n) => n === 0 && alvo === trava(d));
+  assert.equal(await comTrava(d, 'x', () => 'entrou', { esperaMs: 500 }), 'entrou');
+  desfazer();
+  desfazer = falhar(t, 'mkdirSync', 'EACCES', ([alvo], n) => n === 0 && alvo === trava(d));
+  assert.equal(await comTrava(d, 'x', () => 'entrou', { esperaMs: 500 }), 'entrou');
+  desfazer();
+  // persistente: espera o esperaMs e a recusa diz o erro
+  desfazer = falhar(t, 'mkdirSync', 'EACCES', ([alvo]) => alvo === trava(d));
+  await assert.rejects(comTrava(d, 'x', () => 1, { esperaMs: 60 }), e => e.travaPresa === true && /EACCES/.test(e.saida));
+  desfazer();
+});
+
+test('revisão 2, achado 5: erro na liberação não troca o resultado de fn; passageiro, tenta de novo', async t => {
+  const d = temp(t);
+  let desfazer = falhar(t, 'renameSync', 'EPERM', ([de], n) => n === 0 && de.endsWith('dono.json'));
+  assert.equal(await comTrava(d, 'x', () => 'resultado de fn'), 'resultado de fn');
+  desfazer();
+  assert.equal(fs.existsSync(trava(d)), false);
+  // erro que não passa: fn conta, e a trava fica para vencer sozinha
+  desfazer = falhar(t, 'renameSync', 'EIO', ([de]) => de.endsWith('dono.json'));
+  assert.equal(await comTrava(d, 'x', () => 'resultado de fn'), 'resultado de fn');
+  await assert.rejects(Promise.resolve().then(() => estado.comTravaSinc(d, 'y', () => { throw new Error('de fn'); })), /de fn/);
+  desfazer();
+});
+
+test('revisão 2, achado 5: falha ao gravar o dono (ENOSPC) recolhe o dono pela metade e a pasta, e relança', async t => {
+  const d = temp(t);
+  const original = fs.writeFileSync;
+  fs.writeFileSync = (f, dados, o) => {
+    if (o?.flag === 'wx' && f === path.join(trava(d), 'dono.json')) { original(f, '', o); throw Object.assign(new Error('ENOSPC: falha simulada'), { code: 'ENOSPC' }); }
+    return original(f, dados, o);
+  };
+  t.after(() => { fs.writeFileSync = original; });
+  await assert.rejects(comTrava(d, 'x', () => 1, { esperaMs: 2000 }), e => e.code === 'ENOSPC');
+  fs.writeFileSync = original;
+  assert.equal(fs.existsSync(trava(d)), false);
+  assert.deepEqual(fs.readdirSync(path.join(d, 'travas')), []);
+  assert.equal(await comTrava(d, 'x', () => 'entrou', { esperaMs: 100 }), 'entrou');
+});
