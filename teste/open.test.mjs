@@ -213,3 +213,25 @@ test('M2: ramo local repetido aponta também a limpeza da sobra de um open inter
   assert.match(r.erro, /Faça: escolha outro nome.*git worktree remove .*xx.*git branch -d feat\/xx/);
   p.limpar();
 });
+
+test('arquivo de frente ilegível: open e close de outras frentes seguem com aviso; a ilegível fica intocada', t => {
+  const p = criarProjeto();
+  t.after(() => p.limpar());
+  assert.equal(p.ah(['open', 'carrinho']).codigo, 0);
+  const arq = path.join(p.estado, 'loja', 'frentes', 'quebrada.json');
+  fs.writeFileSync(arq, '{ isso não é json');
+  const aviso = /^Aviso: arquivo de frente ilegível: .*quebrada\.json \(rode ah doctor\)$/m;
+  const o = p.ah(['open', 'frete'], { env: { AH_SESSAO: 'sessao-teste-0002' } });
+  assert.equal(o.codigo, 0, o.erro);
+  assert.match(o.saida, /Frente as-2 frete aberta\./);
+  assert.match(o.erro, aviso);
+  const c = p.ah(['close']);
+  assert.equal(c.codigo, 0, c.erro);
+  assert.match(c.erro, aviso);
+  for (const args of [['open', 'quebrada'], ['close', 'quebrada']]) {
+    const r = p.ah(args);
+    assert.equal(r.codigo, 1, args.join(' '));
+    assert.match(r.erro, /Recusado: O arquivo de estado não é JSON válido: .*quebrada\.json\nFaça: rode ah doctor/);
+  }
+  assert.equal(fs.readFileSync(arq, 'utf8'), '{ isso não é json');
+});

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { ErroDeUso, arquivoDaMaquina, dirWorktrees } from '../lib/caminhos.mjs';
 import { comTrava, lerJson, registrarEvento } from '../lib/estado.mjs';
 import { reagir } from '../lib/extensoes.mjs';
-import { frentesDa, gravarFrente, lerFrente, listarFrentes, listarFrentesTolerante, nomeValido, novaFrente, proximoId, removerFrente, siglaValida } from '../lib/frente.mjs';
+import { frentesDa, gravarFrente, lerFrente, listarFrentesTolerante, nomeValido, novaFrente, proximoId, removerFrente, siglaValida } from '../lib/frente.mjs';
 import { existeRamo, git, recusaDoWorktree } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
 import { reenviarComAviso, reenviarPendentes, temDoTicket } from '../lib/pendentes.mjs';
@@ -12,7 +12,7 @@ import { acharPassagem, ativaDaSessao, avisarDaMarcacao, confirmarRetomada, desf
 import { avisosDeBloqueio } from '../lib/deps.mjs';
 import { arquivosDaFrente, caminhosEmComum, tocaOsCaminhos } from '../lib/sobreposicao.mjs';
 import { ESQUEMA_DO_ESTADO, gravarSessao, idCurto, lerSessao, listarSessoes, registrarSessao, resolverSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
-import { aberturaEmCurso, inicioDoProcesso, pidDeComando, vidaDaSessao } from '../lib/vida.mjs';
+import { aberturaEmCurso, fechamentoEmCurso, inicioDoProcesso, pidDeComando, vidaDaSessao } from '../lib/vida.mjs';
 
 export const descricao = 'abre uma frente de trabalho: ramo, worktree, registro e reserva dos tickets';
 export const uso = 'ah open <nome> [--tickets 1,2] [--plano <arquivo>] [--caminhos <globs>] [--para <id curto>]';
@@ -103,6 +103,15 @@ function lerHistorico(amb, refs) {
 
 const recusa = (motivo, saida) => new ErroDeUso(`${motivo}\nPróximo passo: ${saida}`);
 
+// As frentes que se leem: um arquivo de frente ilegível não para o open de outra frente (o doctor aponta qual) e
+// fica como está. Ele não entra na regra do executor nem na conta do próximo id.
+const legiveis = dirEstado => listarFrentesTolerante(dirEstado).frentes;
+function avisarIlegiveis(dirEstado, avisar) {
+  for (const nome of listarFrentesTolerante(dirEstado).ilegiveis) {
+    avisar(`Aviso: arquivo de frente ilegível: ${path.join(dirEstado, 'frentes', `${nome}.json`)} (rode ah doctor)\n`);
+  }
+}
+
 export async function executar(args, amb) {
   await reenviarComAviso(amb.dirEstado, { cwd: amb.raiz, env: amb.env }, amb.avisar);
   const o = lerOpcoes(args);
@@ -178,10 +187,16 @@ export async function executar(args, amb) {
     } else {
       tocarSinal(dirEstado, amb.sessaoId);
     }
+    avisarIlegiveis(dirEstado, amb.avisar);
     // Registro `abrindo` de um open que parou no meio: só se toma quando o processo daquele open morreu (seja qual
     // for a sessão); este open o toma com o mesmo id (os marcadores nos tickets são desse id). Com o processo vivo
     // há uma abertura em curso. Registro sem processo (anterior a este campo): vale a vida da sessão dona.
     const existente = lerFrente(dirEstado, o.nome);
+    // Um `ah close` dela entre as fases (rede): retomar agora brigaria com ele.
+    if (existente && fechamentoEmCurso(existente)) {
+      throw recusa(`A frente ${existente.id} ${o.nome} está sendo fechada agora (processo ${existente.fechando.pid}).`,
+        `espere esse ah close terminar (ah board mostra fechando enquanto ele roda); se a frente continuar no quadro, rode ah open ${o.nome} de novo`);
+    }
     // Frente ativa com o mesmo nome: não se abre nem se retoma; a saída depende da dona.
     if (existente?.estado === 'ativa') {
       const qual = `${existente.id} ${existente.nome}`;
@@ -216,7 +231,7 @@ export async function executar(args, amb) {
     if (destino) {
       conferirPara({ dirEstado, sessao, destino, cfg, nome: tomado?.nome ?? null });
     } else if (sessao.papel !== 'orquestrador') {
-      const minhas = frentesDa(listarFrentes(dirEstado), amb.sessaoId, { comAbrindo: true }).filter(f => f.nome !== tomado?.nome);
+      const minhas = frentesDa(legiveis(dirEstado), amb.sessaoId, { comAbrindo: true }).filter(f => f.nome !== tomado?.nome);
       if (minhas.length) {
         const nomes = minhas.map(f => f.nome);
         const saidas = minhas.map(f => (f.estado === 'abrindo'
@@ -262,7 +277,7 @@ export async function executar(args, amb) {
         `faça o commit do harness lá: git switch ${cfg.git.base} e o git add/git commit que o ah init mostrou (rode tools/ah doctor para conferir)`);
     }
 
-    const id = tomado?.id ?? proximoId({ sigla: maquina.sigla, historico: lerHistorico(amb, partida.refs), frentes: listarFrentes(dirEstado) });
+    const id = tomado?.id ?? proximoId({ sigla: maquina.sigla, historico: lerHistorico(amb, partida.refs), frentes: legiveis(dirEstado) });
     const dirWt = dirWorktrees(cfg, amb.env, process.platform, os.homedir());
     const nova = novaFrente({ id, nome: o.nome, config: cfg, dirWorktrees: dirWt, tickets, plano, caminhos, dona, login, agora: new Date() });
     if (destino) nova.atribuidaPor = amb.sessaoId;
@@ -557,7 +572,7 @@ function procurarPassagem({ amb, nome, ramo, remoto, tickets, rotulo, oGh, login
 // Sob a trava: a frente passada reconstruída do marcador da passagem (mesmo id), pronta para retomarSobTrava.
 function frenteDaPassagem(passagem, { amb, cfg, ramo }) {
   const { dirEstado, env } = amb;
-  const igual = listarFrentes(dirEstado).find(f => f.id === passagem.id && f.nome !== passagem.nome);
+  const igual = legiveis(dirEstado).find(f => f.id === passagem.id && f.nome !== passagem.nome);
   if (igual) {
     throw recusa(`A passagem de ${passagem.nome} é da frente ${passagem.id}, mas já existe aqui a frente ${igual.id} ${igual.nome} (máquinas com a mesma sigla).`,
       `retome ${passagem.nome} numa máquina sem a frente ${igual.id}, ou encerre ${igual.nome} aqui (ah close ${igual.nome}) e rode ah open ${passagem.nome}; para não repetir, dê siglas diferentes às máquinas (ah init --sigla)`);
@@ -670,7 +685,7 @@ function conferirPara({ dirEstado, sessao, destino, cfg, nome = null }) {
       'confira as sessões vivas em tools/ah board');
   }
   if (alvo.papel !== 'orquestrador') {
-    const delas = frentesDa(listarFrentes(dirEstado), destino, { comAbrindo: true }).filter(f => f.nome !== nome);
+    const delas = frentesDa(legiveis(dirEstado), destino, { comAbrindo: true }).filter(f => f.nome !== nome);
     if (delas.length) {
       throw recusa(`A sessão ${idCurto(destino)} é executora e já tem a frente ${delas.map(f => f.nome).join(', ').slice(0, 60)}.`,
         'escolha outra sessão ou peça a ela ah handoff');

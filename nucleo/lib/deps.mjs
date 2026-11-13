@@ -309,9 +309,16 @@ export function avisosDeBloqueio(dirEstado, tickets, fuso) {
   if (!cache) return [];
   const linhas = [];
   for (const t of tickets ?? []) {
-    const abertos = (cache.issues[t]?.bloqueadoPor ?? []).filter(b => b.estado === 'aberta' || (b.repo === null && cache.issues[b.numero]?.estado === 'aberta'));
+    const abertos = bloqueiosAbertos(cache, t);
     if (!abertos.length) continue;
-    linhas.push(`Aviso: o ticket #${t} está bloqueado por ${abertos.map(b => `${b.repo ? `${b.repo}#` : '#'}${b.numero} (aberta)`).join(', ')}; a frente abre assim mesmo (leitura de ah deps de ${quando(cache.lidoEm, fuso)}).`);
+    linhas.push(`Aviso: o ticket #${t} está bloqueado por ${abertos.map(b => `${refDoBloqueio(b)} (aberta)`).join(', ')}; a frente abre assim mesmo (leitura de ah deps de ${quando(cache.lidoEm, fuso)}).`);
   }
   return linhas;
 }
+
+// O que bloqueia o ticket e está aberto, pela leitura guardada (sem rede).
+export function bloqueiosAbertos(cache, ticket) {
+  const lista = cache?.issues?.[ticket]?.bloqueadoPor;
+  return (Array.isArray(lista) ? lista : []).filter(b => b?.estado === 'aberta' || (b?.repo === null && cache.issues[b.numero]?.estado === 'aberta'));
+}
+export const refDoBloqueio = b => `${b.repo ? `${b.repo}#` : '#'}${b.numero}`;

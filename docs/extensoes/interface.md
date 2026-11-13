@@ -176,7 +176,7 @@ Cada reação é `async (ctx)`. Em todas, `ctx.frente` é a frente do comando.
 |---|---|---|
 | `depoisDeAbrir` | Fim do `ah open` (frente nova ou retomada) | `ctx.retomada` diz se foi retomada |
 | `antesDeFechar` | No `ah close`, depois das conferências de perda de trabalho e antes de qualquer mudança (tickets, worktree, ramo, histórico, estado) | Única que recusa: devolve `{recusa: motivo, saida}`. Erro lançado também recusa (`a extensão <nome> falhou em antesDeFechar: …`) |
-| `depoisDeFechar` | Fim do `ah close`, com a frente já fora do estado | `ctx.soLocal` diz se foi fechamento só local; `gravarCampos` não se aplica |
+| `depoisDeFechar` | Fim do `ah close`, com a frente já fora do estado | `ctx.soLocal` diz se foi fechamento só local; `ctx.aberturaDesfeita`, se o close desfez uma abertura parada (registro `abrindo`), caminho em que `antesDeFechar` também roda e pode recusar; `gravarCampos` não se aplica |
 | `aoPassar` | Fim do `ah handoff`, com a frente já passada | |
 | `noSweep` | `ah sweep` | Devolve as linhas a mostrar (texto ou lista); `ctx.reparar` diz se o comando roda com `--reparar` e só então a extensão conserta |
 
