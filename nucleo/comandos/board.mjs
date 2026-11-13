@@ -61,7 +61,8 @@ export async function executar(args, amb) {
   const donaIlegivel = f => Boolean(f.dona) && vida(f.dona) === 'ilegivel';
   const lidas = listarSessoes(dirEstado);
   const sessoes = lidas.sessoes.filter(s => vida(s.id) === 'viva')
-    .map(s => ({ id: s.id, curto: idCurto(s.id), papel: s.papel, frente: s.frente ? (s.frente.nome ?? s.frente) : null }));
+    // Sem pid gravado (um `ah` rodado à mão, sem AH_PID_AGENTE): vive só pelo sinal; o quadro avisa.
+    .map(s => ({ id: s.id, curto: idCurto(s.id), papel: s.papel, frente: s.frente ? (s.frente.nome ?? s.frente) : null, semProcesso: s.pid == null }));
   const sessoesIlegiveis = lidas.ilegiveis;
   // Arquivos de cada frente (ramo desde a base e worktree); falha numa frente conta como lista vazia.
   // Passado o prazo total, as frentes que faltam ficam sem conferir (`?`).
@@ -106,7 +107,7 @@ export async function executar(args, amb) {
     return 0;
   }
   const linhaDasSessoes = () => {
-    const lista = sessoes.map(s => `${s.curto} (${linhaUnica(s.papel, 20)}, ${s.frente ? linhaUnica(s.frente, 49) : '—'})`);
+    const lista = sessoes.map(s => `${s.curto} (${linhaUnica(s.papel, 20)}, ${s.frente ? linhaUnica(s.frente, 49) : '—'}${s.semProcesso ? ', sem processo' : ''})`);
     amb.escrever(`Sessões vivas: ${lista.length ? lista.join('; ') : 'nenhuma'}\n`);
     if (sessoesIlegiveis.length) {
       amb.escrever(`Sessões ilegíveis: ${sessoesIlegiveis.map(id => linhaUnica(idCurto(id), 8)).join('; ')} (rode ah doctor)\n`);

@@ -106,7 +106,7 @@ test('board com sessão ilegível que não é dona: o quadro segue e acusa a ses
   const r = p.ah(['board']);
   assert.equal(r.codigo, 0, r.erro);
   assert.match(r.saida, /as-1\s+carrinho\s+sessao-t\s+ativa/);
-  assert.match(r.saida, /Sessões vivas: sessao-t \(executor, carrinho\)/);
+  assert.match(r.saida, /Sessões vivas: sessao-t \(executor, carrinho, sem processo\)/);
   assert.match(r.saida, /^Sessões ilegíveis: sessao-c \(rode ah doctor\)$/m);
   const d = JSON.parse(p.ah(['board', '--json']).saida);
   assert.equal(d.frentes[0].donaViva, true);
@@ -114,4 +114,17 @@ test('board com sessão ilegível que não é dona: o quadro segue e acusa a ses
   assert.deepEqual(d.sessoesIlegiveis, ['sessao-c-0003']);
   assert.deepEqual(d.sessoes.map(s => s.id), ['sessao-teste-0001']);
   p.limpar();
+});
+
+// ---- Onda final
+test('sessão sem pid (ah rodado à mão) aparece viva marcada "sem processo"; com AH_PID_AGENTE, sem a marca', t => {
+  const p = criarProjeto();
+  t.after(() => p.limpar());
+  assert.equal(p.ah(['open', 'carrinho']).codigo, 0);
+  assert.equal(p.ah(['whoami'], { env: { AH_SESSAO: 'sessao-b-0002', AH_PID_AGENTE: String(process.pid) } }).codigo, 0);
+  const r = p.ah(['board']);
+  assert.match(r.saida, /Sessões vivas: .*sessao-t \(executor, carrinho, sem processo\)/);
+  assert.match(r.saida, /sessao-b \(executor, —\)(;|$)/m);
+  const d = JSON.parse(p.ah(['board', '--json']).saida);
+  assert.deepEqual(d.sessoes.map(s => [s.curto, s.semProcesso]).sort(), [['sessao-b', false], ['sessao-t', true]]);
 });

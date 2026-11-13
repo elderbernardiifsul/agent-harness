@@ -281,3 +281,12 @@ test('erro nos avisos do open, inclusive ErroDeUso, vira aviso e não lança', (
   assert.doesNotThrow(() => avisarDasOutrasSemFalhar({ nome: 'cupom' }, ['src/**'], ambQuebrado));
   assert.match(avisos.join(''), /^Aviso: não consegui conferir as outras frentes \(estado sumiu\)\.\n$/);
 });
+
+// ---- Onda final: `**` no meio do glob
+test('a/**/b casa a/b e a/x/y/b e não casa a/xb', () => {
+  assert.equal(casaGlob('a/b', 'a/**/b'), true);
+  assert.equal(casaGlob('a/x/y/b', 'a/**/b'), true);
+  assert.equal(casaGlob('a/xb', 'a/**/b'), false);
+  assert.deepEqual(tocaOsCaminhos(['a/b', 'a/x/y/b', 'a/xb'], ['a/**/b']), ['a/b', 'a/x/y/b']);
+  assert.deepEqual(caminhosEmComum(['a/b', 'a/x/y/b'], ['a/**/b']), ['a/b', 'a/x/y/b']);
+});

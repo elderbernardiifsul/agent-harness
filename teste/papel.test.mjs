@@ -63,10 +63,10 @@ test('board mostra a dona morta, a frente órfã e as sessões vivas', () => {
   envelhecerSinal(p, 'sessao-teste-0001', 500);
   const s = p.ah(['board']).saida;
   assert.match(s, /as-1\s+carrinho\s+sessao-t \(morta\)\s+órfã/);
-  assert.match(s, /Sessões vivas: sessao-b \(executor, —\)/);
+  assert.match(s, /Sessões vivas: sessao-b \(executor, —, sem processo\)/);
   const j = JSON.parse(p.ah(['board', '--json']).saida);
   assert.equal(j.frentes[0].donaViva, false);
-  assert.deepEqual(j.sessoes, [{ id: 'sessao-b-0002', curto: 'sessao-b', papel: 'executor', frente: null }]);
+  assert.deepEqual(j.sessoes, [{ id: 'sessao-b-0002', curto: 'sessao-b', papel: 'executor', frente: null, semProcesso: true }]);
   p.limpar();
 });
 
@@ -83,7 +83,7 @@ test('board com a dona viva: ativa, sessão com a frente em foco e passada sem d
   const s = p.ah(['board']).saida;
   assert.match(s, /carrinho\s+—\s+passada/);
   assert.match(s, /frete\s+sessao-t\s+ativa/);
-  assert.match(s, /Sessões vivas: sessao-t \(orquestrador, frete\)/);
+  assert.match(s, /Sessões vivas: sessao-t \(orquestrador, frete, sem processo\)/);
   const j = JSON.parse(p.ah(['board', '--json']).saida);
   assert.deepEqual(j.frentes.map(x => x.donaViva), [false, true]);
   assert.equal(j.sessoes[0].frente, 'frete');

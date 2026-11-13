@@ -246,7 +246,7 @@ Mostra as frentes do estado em tabela e, embaixo, as sessões vivas. Sem frente:
 | SOBREPÕE | IDs das outras frentes (ativas ou passadas) que mudaram algum arquivo em comum, pelo ramo desde a base e pelo worktree; `?` quando o git passou do prazo total (3 s) antes de conferir a frente |
 | PLANO, ÚLTIMA NOTA | o plano e a última nota, cortados |
 
-Depois da tabela: `Sobreposições:` com cada arquivo e as frentes que o mudaram (até 20); `Sessões vivas: <id curto> (<papel>, <frente em foco>); …`; e `Sessões ilegíveis: …` quando há registro de sessão que não se lê. Arquivo de frente ilegível não derruba o quadro: vira aviso na saída de erro. `--json` imprime `{"frentes","sessoes","sessoesIlegiveis","sobreposicoes","sobreposicaoIncompleta"}`, cada frente com o registro inteiro mais `donaViva`, `donaIlegivel`, `sobrepoe`, `sobreposicaoConferida` e, em abertura, `aberturaParada`.
+Depois da tabela: `Sobreposições:` com cada arquivo e as frentes que o mudaram (até 20); `Sessões vivas: <id curto> (<papel>, <frente em foco>); …`, com `, sem processo` no fim do parêntese da sessão sem pid gravado (um `ah` rodado à mão, sem `AH_PID_AGENTE`: vive só pelo sinal; a regra de vida não muda); e `Sessões ilegíveis: …` quando há registro de sessão que não se lê. Arquivo de frente ilegível não derruba o quadro: vira aviso na saída de erro. `--json` imprime `{"frentes","sessoes","sessoesIlegiveis","sobreposicoes","sobreposicaoIncompleta"}`, cada sessão com `semProcesso`, cada frente com o registro inteiro mais `donaViva`, `donaIlegivel`, `sobrepoe`, `sobreposicaoConferida` e, em abertura, `aberturaParada`.
 
 ```
 $ tools/ah board
