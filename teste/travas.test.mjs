@@ -416,6 +416,19 @@ test('T4: curinga que não casa nenhum worktree alheio vivo passa', () => {
     assert.ok(av4(c).permite, c);
   assert.ok(avaliar({ tipo: 'comando', comando: 'rm -rf /wt/*', cwd: '/r' }, { ...ctx4, viva: () => false }).permite, 'dona morta');
 });
+test('T4: *, ? e [!…] não casam o ponto do começo de um nome (pendência 9)', () => {
+  const oculto = { ...ctx4, frentes: [{ ...ctx4.frentes[0], worktree: '/loja/.wt/frete' }] };
+  const av = (c, cwd = '/loja') => avaliar({ tipo: 'comando', comando: c, cwd }, oculto);
+  for (const c of ['rm -rf *', 'rm -rf ./*', 'rm -rf /loja/*', 'rm -rf /loja/?wt', 'rm -rf /loja/[!x]wt', 'rm -rf /loja/*/frete', 'chmod -R 700 *'])
+    assert.ok(av(c).permite, c);
+  // O ponto escrito, a lista entre colchetes (o POSIX deixa em aberto), o dotglob e a pasta comum acima recusam.
+  for (const c of ['rm -rf .*', 'rm -rf .w*', 'rm -rf /loja/.wt/*', 'rm -rf /loja/.??', 'rm -rf /loja/[.]wt', 'rm -rf /loja/.wt/fre*',
+    'shopt -s dotglob; rm -rf *', 'setopt globdots; rm -rf *', 'GLOBIGNORE=x; rm -rf *', 'rm -rf /*'])
+    assert.equal(av(c).trava, 'T4', c);
+  const funda = { ...ctx4, frentes: [{ ...ctx4.frentes[0], worktree: '/loja/a/.wt/frete' }] };
+  assert.equal(avaliar({ tipo: 'comando', comando: 'rm -rf /loja/*', cwd: '/r' }, funda).trava, 'T4', 'rm -r de uma pasta comum leva o oculto junto');
+  assert.ok(avaliar({ tipo: 'comando', comando: 'rm -rf /loja/*/*', cwd: '/r' }, funda).permite);
+});
 
 test('T4: recusa própria para git branch sobre o ramo de frente alheia', () => {
   assert.equal(textoDaRecusa(av4('git branch -D feat/frete')),

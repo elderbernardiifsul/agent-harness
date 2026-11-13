@@ -484,6 +484,10 @@ function regexDoComponente(c) {
   return new RegExp(`^${r}$`, process.platform === 'win32' ? 'i' : '');
 }
 
+// Sem dotglob, o shell não casa o ponto do começo de um nome com `*`, `?` nem `[!…]`. A lista entre
+// colchetes (`[.]x`) fica casando: o POSIX deixa em aberto, e na dúvida a trava enxerga a mais.
+const pontoEscondido = (padrao, nome) => nome.startsWith('.') && (padrao[0] === '*' || padrao[0] === '?' || /^\[[!^]/.test(padrao));
+
 // A frente viva alheia cujo worktree o caminho com curinga pode atingir: compara pelo prefixo até o
 // primeiro componente com curinga e casa o resto componente a componente contra o worktree. Recusa
 // quando o que casa é o worktree ou algo dentro dele, e, com `arvore`, também uma pasta acima dele.
@@ -500,6 +504,7 @@ function frenteDoCuringa(bruto, normalizar, ctx, arvore) {
     for (let i = 0; i < padrao.length; i++) {
       if (padrao[i] === '**') return true;
       if (i >= wt.length) return true; // casa algo dentro do worktree
+      if (!ctx.dotglob && pontoEscondido(padrao[i], wt[i])) return false;
       if (!regexDoComponente(padrao[i]).test(wt[i])) return false;
     }
     return padrao.length === wt.length || arvore;
@@ -823,6 +828,8 @@ function travasDeExtensao(acao, comandos, ctx, liberadaAntes) {
 export function avaliar(acao, ctx) {
   if (acao?.tipo === 'edicao') return travaT4Edicao(acao, ctx) ?? travasDeExtensao(acao, null, ctx);
   if (acao?.tipo !== 'comando') throw new TypeError(`avaliar: tipo de ação desconhecido: ${acao?.tipo}`);
+  // Com dotglob (bash, ou GLOBIGNORE) ou globdots (zsh) ligado na própria linha, o curinga casa o ponto.
+  if (/(?<![A-Za-z0-9_])(dotglob|globdots|GLOBIGNORE)(?![A-Za-z0-9_])/.test(acao.comando)) ctx = { ...ctx, dotglob: true };
   let comandos;
   try {
     comandos = comandosSimples(acao.comando, acao.cwd ?? null);
