@@ -477,7 +477,7 @@ ah gancho claude-code
 
 Não é para uso manual: é o comando que o `.claude/settings.json` chama em cada evento do agente (`SessionStart`, `UserPromptSubmit`, `PreToolUse` de `Bash|PowerShell|Edit|Write|NotebookEdit`, `Stop`, `SessionEnd`). Lê o JSON do evento na entrada padrão, registra no `eventos.jsonl` do estado, toca o sinal de vida da sessão e, antes de uma ferramenta, aplica as travas. Código 0 deixa a ferramenta passar; código 2 a recusa, e o agente recebe o texto da recusa.
 
-**Começo de sessão.** Registra a sessão (com o pid do agente: `AH_PID_AGENTE` ou o processo pai do gancho, e a hora de início dele), faz a continuação (ver "Vida da sessão") e devolve ao agente um resumo curto: a sessão e o papel, a frente em foco e o worktree, avisos (`Sua frente as-1 carrinho está com a sessão sessao-d.`), frentes sem dona com a saída de cada uma (`Sem dona: as-2 carrinho (ah open carrinho)`), sobreposição de arquivos com outras frentes, as outras frentes, o estado do checkout principal e as regras.
+**Começo de sessão.** Registra a sessão (com o pid do agente: `AH_PID_AGENTE` ou o processo pai do gancho, e a hora de início dele), faz a continuação (ver "Vida da sessão") e devolve ao agente um resumo curto: a sessão e o papel, a frente em foco e o worktree, avisos (`Sua frente as-1 carrinho está com a sessão sessao-d.`), frentes sem dona com a saída de cada uma (`Sem dona: as-2 carrinho (ah open carrinho)`; a mesma regra do `sweep`: frente cuja dona tem o registro ilegível não entra, e vira o aviso `A frente as-2 carrinho: registro da dona ilegível (ah doctor).`), sobreposição de arquivos com outras frentes, as outras frentes, o estado do checkout principal e as regras.
 
 ```
 Sessão sessao-c (executor) no harness.

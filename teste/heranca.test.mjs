@@ -277,3 +277,13 @@ for (const origem of ['continuacao', 'novo']) {
     assert.ok(iFrente < iVelha, ordem.join(', '));
   });
 }
+
+test('frente ativa com o registro da dona ilegível não é "sem dona": o resumo avisa o registro ilegível', async () => {
+  gravarFrente(dir, frenteDe('s-x'));
+  fs.mkdirSync(path.join(dir, 'sessoes'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'sessoes', 's-x.json'), '{ quebrado');
+  const r = await tratar(inicio('s-b', 'novo'), { ...amb(p), pid: proc.pid });
+  assert.doesNotMatch(r.contexto, /Sem dona/);
+  assert.doesNotMatch(r.contexto, /ah takeover carrinho/);
+  assert.match(r.contexto, /Avisos: .*A frente as-1 carrinho: registro da dona ilegível \(ah doctor\)\./);
+});

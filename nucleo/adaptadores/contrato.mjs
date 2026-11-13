@@ -29,7 +29,7 @@ import { registrarSessao, tocarSinal, encerrarSessao, lerSessao, gravarSessao, i
 import { listarFrentesTolerante } from '../lib/frente.mjs';
 import { continuarSessao } from '../lib/heranca.mjs';
 import {
-  aberturaParada, pidDoAgente, processoExiste, inicioDoProcesso as inicioPadrao, descartarPidMorto, vidaDaSessao, vidaDaDona,
+  aberturaParada, frenteOrfa, pidDoAgente, processoExiste, inicioDoProcesso as inicioPadrao, descartarPidMorto, vidaDaDona,
 } from '../lib/vida.mjs';
 import { normalizarCaminho } from '../lib/caminhos.mjs';
 import { montarResumo } from '../lib/resumo.mjs';
@@ -153,25 +153,28 @@ const pidDe = amb => (amb.pid !== undefined ? amb.pid : pidDoAgente(amb.env, pro
 // Saída de cada frente sem dona viva: passada -> `ah open`; ativa de dona que não está viva -> `ah takeover`;
 // em abertura parada (processo do open morto) -> `ah open`, que toma o registro.
 function frentesSemDona(frentes, minha, amb) {
+  // A vida da dona é a do sweep e do takeover (vidaDaDona): registro ilegível não é "sem dona" (o takeover o
+  // recusa), e vira aviso à parte em `ilegiveis`.
   const vidas = new Map();
-  const viva = dona => {
+  const vida = dona => {
     if (!vidas.has(dona)) {
       const opcoes = { config: amb.config, existe: existeDe(amb), inicio: inicioDe(amb) };
       if (amb.agora !== undefined) opcoes.agora = amb.agora;
-      let estado = 'desconhecida';
-      try { estado = vidaDaSessao(amb.dirEstado, dona, opcoes).estado; } catch { /* sessão ilegível: não está viva */ }
-      vidas.set(dona, estado === 'viva');
+      vidas.set(dona, vidaDaDona(amb.dirEstado, dona, opcoes));
     }
     return vidas.get(dona);
   };
   const lista = [];
+  const ilegiveis = [];
   for (const f of frentes) {
     if (f.nome === minha) continue;
+    const v = f.dona != null ? vida(f.dona) : null;
     if (f.estado === 'passada') lista.push({ id: f.id, nome: f.nome, saida: `ah open ${f.nome}` });
-    else if (f.estado === 'abrindo' && aberturaParada(f, f.dona != null && viva(f.dona), { existe: existeDe(amb), inicio: inicioDe(amb) })) lista.push({ id: f.id, nome: f.nome, saida: `ah open ${f.nome}` });
-    else if (f.estado === 'ativa' && (f.dona == null || !viva(f.dona))) lista.push({ id: f.id, nome: f.nome, saida: `ah takeover ${f.nome}` });
+    else if (f.estado === 'abrindo' && aberturaParada(f, v?.estado === 'viva', { existe: existeDe(amb), inicio: inicioDe(amb) })) lista.push({ id: f.id, nome: f.nome, saida: `ah open ${f.nome}` });
+    else if (f.estado === 'ativa' && v?.estado === 'ilegivel') ilegiveis.push(`A frente ${f.id} ${f.nome}: registro da dona ilegível (ah doctor).`);
+    else if (frenteOrfa(f, v)) lista.push({ id: f.id, nome: f.nome, saida: `ah takeover ${f.nome}` });
   }
-  return lista;
+  return { lista, ilegiveis };
 }
 
 // Sobreposições da frente da sessão com as outras: [{arquivo, frentes: [ids das outras]}].
@@ -253,7 +256,8 @@ async function inicio(evento, amb) {
     });
   }
   const minha = typeof sessao.frente === 'string' ? frentes.find(f => f.nome === sessao.frente && f.dona === id) : null;
-  const situacao = { semDona: frentesSemDona(frentes, sessao.frente, amb), sobreposicoes: sobreposicoesDaSessao(minha, frentes, amb), avisos };
+  const semDona = frentesSemDona(frentes, sessao.frente, amb);
+  const situacao = { semDona: semDona.lista, sobreposicoes: sobreposicoesDaSessao(minha, frentes, amb), avisos: [...avisos, ...semDona.ilegiveis] };
   const contexto = montarResumo({ sessao, frentes, config: amb.config, baseLimpa: baseLimpa(amb), situacao });
   return { contexto };
 }
