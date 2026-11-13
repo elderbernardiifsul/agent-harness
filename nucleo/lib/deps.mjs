@@ -147,6 +147,9 @@ export function lerCache(dirEstado) {
   }
 }
 
+// Cache gravado antes do campo `parcial`: o de `ah deps <n>` sem lista guardada ficava com `completa: null`.
+const cacheParcial = c => c.parcial ?? c.completa == null;
+
 // Data e hora (AAAA-MM-DD HH:MM) no fuso da configuração.
 export function quando(iso, fuso) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
@@ -160,21 +163,28 @@ export function quando(iso, fuso) {
 const pendente = b => b.estado !== 'fechada'; // aberta ou não se sabe
 const rotulo = b => `${b.repo ? `${b.repo}#` : '#'}${b.numero}${b.titulo ? ` ${b.titulo}` : ''}`;
 
-// Árvore do que bloqueia `numero`, pelo mapa `issues`; corta ciclo e profundidade.
-function arvore(issues, numero, frentes, caminho = new Set()) {
+// Árvore do que bloqueia `numero`, pelo mapa `issues`; corta ciclo e profundidade. `vistas` guarda as issues cuja
+// subárvore já foi montada (na mesma árvore ou nas de antes, com o mesmo `vistas`): a repetição sai com
+// `verAcima` e sem filhos, para um grafo denso não multiplicar os caminhos.
+function arvore(issues, numero, frentes, caminho = new Set(), vistas = new Set()) {
   const i = issues[numero];
   if (!i || caminho.has(numero) || caminho.size >= PROFUNDIDADE) return [];
   const dentro = new Set([...caminho, numero]);
   return i.bloqueadoPor.map(b => {
     const daqui = b.repo === null ? issues[b.numero] : null;
     const no = { ...b, titulo: b.titulo ?? daqui?.titulo ?? null, estado: daqui?.estado ?? b.estado, frente: b.repo === null ? frentes.get(b.numero) ?? null : null };
-    return { ...no, ciclo: dentro.has(b.numero) && b.repo === null, bloqueadaPor: b.repo === null && pendente(no) ? arvore(issues, b.numero, frentes, dentro) : [] };
+    const ciclo = dentro.has(b.numero) && b.repo === null;
+    if (b.repo !== null || !pendente(no) || ciclo) return { ...no, ciclo, bloqueadaPor: [] };
+    if (vistas.has(b.numero)) return { ...no, ciclo, verAcima: true, bloqueadaPor: [] };
+    // Só conta como vista a que vai ser montada aqui (a cortada pela profundidade pode aparecer inteira depois).
+    if (dentro.size < PROFUNDIDADE) vistas.add(b.numero);
+    return { ...no, ciclo, bloqueadaPor: arvore(issues, b.numero, frentes, dentro, vistas) };
   });
 }
 
 function textoDaArvore(nos, recuo, prefixo = '') {
   return nos.flatMap(n => [
-    `${' '.repeat(recuo)}${prefixo}${rotulo(n)} (${n.estado ?? 'estado desconhecido'}${n.frente ? `, frente ${n.frente}` : ''}${n.ciclo ? ', ciclo' : ''})`,
+    `${' '.repeat(recuo)}${prefixo}${rotulo(n)} (${n.estado ?? 'estado desconhecido'}${n.frente ? `, frente ${n.frente}` : ''}${n.ciclo ? ', ciclo' : ''}${n.verAcima ? ', ver acima' : ''})`,
     ...textoDaArvore(n.bloqueadaPor, recuo + 2, prefixo),
   ]);
 }
@@ -198,14 +208,15 @@ const FONTE_CORPO = 'Fonte: a linha "Bloqueado por:" do corpo das issues (a API 
 function mostrarTudo(dados, frentes, amb) {
   const issues = dados.issues;
   const abertas = Object.values(issues).filter(i => i.estado === 'aberta').map(i => i.numero).sort(ordem);
+  const vistas = new Set(); // uma subárvore por issue na saída inteira
   const lista = abertas.map(n => {
-    const bloqueadaPor = arvore(issues, n, frentes);
+    const bloqueadaPor = arvore(issues, n, frentes, new Set(), vistas);
     return { numero: n, titulo: issues[n].titulo, estado: issues[n].estado, frente: frentes.get(n) ?? null, pendente: bloqueadaPor.some(pendente), bloqueadaPor };
   });
   const livres = lista.filter(i => !i.pendente && !i.frente);
   const comFrente = lista.filter(i => !i.pendente && i.frente);
   if (dados.json) {
-    amb.escrever(`${JSON.stringify({ repo: dados.repo, lidoEm: dados.lidoEm, deCache: dados.deCache, fonte: dados.fonte, completa: dados.completa, issues: lista, livres: livres.map(i => i.numero), avisos: dados.avisos })}\n`);
+    amb.escrever(`${JSON.stringify({ repo: dados.repo, lidoEm: dados.lidoEm, deCache: dados.deCache, fonte: dados.fonte, completa: dados.completa, parcial: dados.parcial, issues: lista, livres: livres.map(i => i.numero), avisos: dados.avisos })}\n`);
     return 0;
   }
   const linhas = [cabecalho(dados, amb.config.fuso)];
@@ -216,6 +227,7 @@ function mostrarTudo(dados, frentes, amb) {
   linhas.push(`Livres para começar: ${livres.length ? livres.map(i => `#${i.numero} ${i.titulo}`).join('; ') : 'nenhuma'}`);
   if (comFrente.length) linhas.push(`Sem bloqueio, já com frente: ${comFrente.map(i => `#${i.numero} ${i.titulo} (${i.frente})`).join('; ')}`);
   if (dados.completa === false) linhas.push(`Aviso: li só as ${LIMITE_LISTA} issues abertas mais novas.`);
+  if (dados.parcial) linhas.push(`Aviso: a leitura guardada veio só de ah deps <ticket> (${Object.keys(issues).length} issues), não da lista das abertas: as livres para começar podem ser outras. Com acesso ao GitHub, rode ah deps.`);
   for (const a of dados.avisos ?? []) linhas.push(`Aviso: ${a}`);
   amb.escrever(`${linhas.join('\n')}\n`);
   return 0;
@@ -271,8 +283,10 @@ export function executarDeps(args, amb) {
   if (leitura.ok) {
     const agora = new Date().toISOString();
     // A lista inteira troca o retrato; a leitura de uma issue soma ao que estava guardado.
-    const base = ticket === null || !lido.cache || lido.cache.repo !== repo ? {} : lido.cache.issues;
-    const cache = { esquema: ESQUEMA, repo, lidoEm: agora, fonte: leitura.fonte, completa: leitura.completa ?? lido.cache?.completa ?? null, issues: { ...base, ...leitura.issues } };
+    const anterior = ticket === null || !lido.cache || lido.cache.repo !== repo ? null : lido.cache;
+    // Parcial: o retrato não veio da lista das abertas (só de `ah deps <n>`, sem lista guardada antes).
+    const parcial = ticket === null ? false : !anterior || cacheParcial(anterior);
+    const cache = { esquema: ESQUEMA, repo, lidoEm: agora, fonte: leitura.fonte, completa: leitura.completa ?? anterior?.completa ?? null, parcial, issues: { ...(anterior?.issues ?? {}), ...leitura.issues } };
     gravarJson(arquivoDoCache(dirEstado), cache);
     dados = { ...cache, deCache: false, avisos: leitura.avisos };
   } else {
@@ -280,7 +294,7 @@ export function executarDeps(args, amb) {
     if (lido.erro) throw new ErroDeUso(`sem acesso ao GitHub (${leitura.motivo}) e a leitura guardada (${arquivoDoCache(dirEstado)}) está ilegível: ${lido.erro}\nPróximo passo: apague o arquivo e ${proximo}`);
     if (!lido.cache) throw new ErroDeUso(`sem acesso ao GitHub e sem leitura guardada (${leitura.motivo})\nPróximo passo: ${proximo}`);
     if (ticket !== null && !lido.cache.issues[ticket]) throw new ErroDeUso(`sem acesso ao GitHub, e a leitura guardada não tem a issue #${ticket}\nPróximo passo: ${proximo}`);
-    dados = { ...lido.cache, deCache: true, avisos: [] };
+    dados = { ...lido.cache, parcial: cacheParcial(lido.cache), deCache: true, avisos: [] };
   }
   dados.json = json;
   const frentes = frentesPorTicket(dirEstado);

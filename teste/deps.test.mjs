@@ -46,8 +46,9 @@ test('ah deps mostra a árvore de bloqueios e as livres para começar; grava o c
   assert.equal(r.codigo, 0, r.erro);
   const s = r.saida;
   assert.match(s, /^Bloqueios de exemplo\/loja \(lidos agora\)$/m);
-  assert.match(s, /^#13 Cupom no checkout\n {2}bloqueada por #12 Carrinho persistente \(aberta\)\n {4}bloqueada por #11 Base do catálogo \(fechada\)\n {2}bloqueada por exemplo\/pagamentos#5 API de pagamento \(aberta\)$/m);
-  assert.match(s, /^#14 Frete por região\n {2}bloqueada por #13 Cupom no checkout \(aberta\)$/m);
+  // A subárvore de #12 sai uma vez (sob #14 > #13); sob a raiz #13 ela vira "ver acima".
+  assert.match(s, /^#14 Frete por região\n {2}bloqueada por #13 Cupom no checkout \(aberta\)\n {4}bloqueada por #12 Carrinho persistente \(aberta\)\n {6}bloqueada por #11 Base do catálogo \(fechada\)\n {4}bloqueada por exemplo\/pagamentos#5 API de pagamento \(aberta\)$/m);
+  assert.match(s, /^#13 Cupom no checkout\n {2}bloqueada por #12 Carrinho persistente \(aberta, ver acima\)\n {2}bloqueada por exemplo\/pagamentos#5 API de pagamento \(aberta\)$/m);
   assert.doesNotMatch(s, /^#12 /m); // bloqueada só pela fechada
   assert.match(s, /^Livres para começar: #15 Página de ajuda; #12 Carrinho persistente$/m);
   assert.match(s, /^Sem bloqueio, já com frente: #16 Revisão do layout \(as-1\)$/m);
@@ -149,4 +150,60 @@ test('cache ilegível: o open segue sem aviso e o deps sem rede recusa', t => {
   const r = p.ah(['open', 'cupom', '--tickets', '13']);
   assert.equal(r.codigo, 0, r.erro);
   recusou(p.ah(['deps'], FORA), /leitura guardada .*ilegível/);
+});
+
+// Achado 5 da revisão: o cache feito só por `ah deps <n>` não é a lista das abertas; sem rede, `ah deps` avisa
+// que a lista de livres sai dele e o marca como parcial no JSON.
+test('cache feito só por ah deps <n> é parcial: sem rede, ah deps avisa; depois da lista inteira, não', t => {
+  const p = projeto(t);
+  assert.equal(p.ah(['deps', '13']).codigo, 0);
+  const r = p.ah(['deps'], FORA);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /^Aviso: a leitura guardada veio só de ah deps <ticket> \(\d+ issues\), não da lista das abertas: as livres para começar podem ser outras\. Com acesso ao GitHub, rode ah deps\.$/m);
+  assert.equal(JSON.parse(p.ah(['deps', '--json'], FORA).saida).parcial, true);
+  assert.equal(p.ah(['deps']).codigo, 0);
+  assert.equal(p.ah(['deps', '13']).codigo, 0); // soma à lista inteira: continua completa
+  const s = p.ah(['deps'], FORA);
+  assert.doesNotMatch(s.saida, /veio só de ah deps <ticket>/);
+  assert.equal(JSON.parse(p.ah(['deps', '--json'], FORA).saida).parcial, false);
+});
+
+// Achado 6 da revisão: grafo denso (cada issue bloqueada por todas as anteriores) não pode explodir; a
+// subárvore já mostrada vira "ver acima", no texto e no JSON.
+test('grafo denso: cada subárvore aparece uma vez e as repetições dizem ver acima', async t => {
+  const p = projeto(t);
+  const N = 30;
+  const issues = {};
+  for (let k = 1; k <= N; k++) {
+    issues[k] = { numero: k, titulo: `Tarefa ${k}`, estado: 'aberta', bloqueadoPor: Array.from({ length: k - 1 }, (_, j) => ({ numero: k - 1 - j, repo: null, titulo: null, estado: 'aberta' })) };
+  }
+  fs.mkdirSync(dirDoTeste(p), { recursive: true });
+  fs.writeFileSync(cacheDe(p), JSON.stringify({ esquema: 1, repo: 'exemplo/loja', lidoEm: new Date().toISOString(), fonte: 'api', completa: true, issues }));
+  const rodar = async args => {
+    const { processo, fim } = p.ahAoFundo(args, FORA);
+    const prazo = setTimeout(() => processo.kill('SIGKILL'), 20000);
+    const r = await fim;
+    clearTimeout(prazo);
+    return r;
+  };
+  const r = await rodar(['deps']);
+  assert.equal(r.codigo, 0, `${r.erro} (sinal ${r.sinal})`);
+  assert.match(r.saida, /^#30 Tarefa 30\n {2}bloqueada por #29 Tarefa 29 \(aberta\)\n {4}bloqueada por #28 Tarefa 28 \(aberta\)\n/m);
+  assert.match(r.saida, /^ {2}bloqueada por #28 Tarefa 28 \(aberta, ver acima\)$/m);
+  const j = JSON.parse((await rodar(['deps', '--json'])).saida);
+  // No JSON, cada issue tem a subárvore expandida uma vez só; as repetições vêm com verAcima e sem filhos.
+  const expandidas = new Map();
+  const percorrer = nos => {
+    for (const n of nos) {
+      if (n.verAcima) assert.deepEqual(n.bloqueadaPor, []);
+      if (n.bloqueadaPor.length) expandidas.set(n.numero, (expandidas.get(n.numero) ?? 0) + 1);
+      percorrer(n.bloqueadaPor);
+    }
+  };
+  for (const i of j.issues) percorrer(i.bloqueadaPor);
+  assert.ok([...expandidas.values()].every(v => v === 1), JSON.stringify([...expandidas]));
+  assert.ok(j.issues.some(i => i.bloqueadaPor.some(b => b.verAcima)));
+  const uma = await rodar(['deps', '30']);
+  assert.equal(uma.codigo, 0, uma.erro);
+  assert.ok(uma.saida.split('\n').length < 2000, `${uma.saida.split('\n').length} linhas`);
 });
