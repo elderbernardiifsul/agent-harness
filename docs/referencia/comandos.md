@@ -309,6 +309,7 @@ Nota registrada na frente as-1 carrinho.
 
 ```
 ah board [--json]
+ah board --numeros [--desde AAAA-MM-DD] [--ate AAAA-MM-DD] [--json]
 ```
 
 Mostra as frentes do estado em tabela e, abaixo dela, as sessões vivas. Sem frentes, mostra `Nenhuma frente aberta.` e a linha das sessões. Colunas:
@@ -339,6 +340,50 @@ as-9  parada  sessao-m (morta)  abrindo (parada)  —        —         —    
 as-1  alheia  —                 passada           —        —         —      —
 as-2  orfa    sessao-m (morta)  órfã              —        —         —      —
 ```
+
+### Números do registro (`--numeros`)
+
+Com `--numeros`, o `board` não mostra o quadro: agrega `<estado>/eventos.jsonl` e mostra o uso do harness no período (seção 12.5 do desenho). A agregação é local e não envia dados para fora da máquina.
+
+| Linha | Origem nos eventos |
+|---|---|
+| Frentes abertas e fechadas | `abertura`; `fechamento` e `fechamento-local` (estes contados também à parte, como "só local") |
+| Tempo por frente fechada (médio e mediano) | de `aberta` a `fechada` nos eventos de fechamento do período |
+| Passagens de bastão, tomadas, retomadas | `passagem`, `tomada`, `retomada` |
+| Sessões iniciadas, por modelo | `sessao-inicio`, agrupado por `modelo` (`não informado` quando o agente não o envia) |
+| Recusas por trava | `recusa`, por `trava` (inclusive as de extensão, `<extensão>/<id>`) |
+| Liberações por trava | `liberacao`, por `trava` |
+| Recusas de comando | `recusa-de-comando`, por `comando` |
+| Pesado | `pesado`: número de execuções, espera média e máxima (`esperaMs`) e duração média (`duracaoMs`) |
+
+**Período.** `--desde` e `--ate` recebem datas `AAAA-MM-DD` e fecham o intervalo nos dois lados. O dia de cada evento é calculado no fuso da configuração (`fuso`), a partir do `em`. Sem período, vale o registro inteiro; com período, evento sem `em` legível fica fora. Uma frente entra no tempo médio quando o fechamento cai no período, mesmo que a abertura seja anterior.
+
+**Linhas ilegíveis.** Uma linha de `eventos.jsonl` que não é JSON não interrompe o comando: fica fora da conta e é informada à parte (`Linhas ilegíveis em eventos.jsonl: N`), com qualquer período, porque não tem data legível.
+
+`--json` imprime `{"periodo","frentes","passagens","tomadas","retomadas","sessoes","recusas","pesado","linhasIlegiveis"}`; os tempos vêm em milissegundos (`tempoMedioMs`, `tempoMedianoMs`, `esperaMediaMs`, `esperaMaximaMs`, `duracaoMediaMs`, `null` quando não há o que medir) e as contagens por chave em objetos (`sessoes.porModelo`, `recusas.porTrava`, `recusas.liberacoesPorTrava`, `recusas.deComando`).
+
+| Recusa | Próximo passo |
+|---|---|
+| `data inválida em --desde: …` (ou `--ate`) | escrever a data como `AAAA-MM-DD` |
+| `--desde pede uma data AAAA-MM-DD` | informar a data depois da opção |
+| `período invertido: …` | trocar as datas de lugar |
+| `--desde e --ate só valem com --numeros` | acrescentar `--numeros` |
+
+```
+$ tools/ah board --numeros --desde 2026-11-09 --ate 2026-11-11
+Números de 2026-11-09 a 2026-11-11 (fuso America/Sao_Paulo)
+Frentes: 3 abertas, 3 fechadas (1 só local)
+Tempo por frente fechada: médio 7 h 0 min, mediano 6 h 0 min (3 frentes)
+Passagens de bastão: 1; tomadas: 1; retomadas: 1
+Sessões iniciadas: 4 (modelo-a 2, modelo-b 1, não informado 1)
+Recusas por trava: T2 2, recursos/porta 1
+Liberações por trava: T5 1
+Recusas de comando: open 2, close 1
+Pesado: 2 execuções; espera média 2 s, máxima 3 s; duração média 1 min 30 s
+Linhas ilegíveis em eventos.jsonl: 1 (fora da conta)
+```
+
+O exemplo corresponde ao registro de teste `teste/eventos-de-exemplo/eventos.jsonl`.
 
 ## whoami
 

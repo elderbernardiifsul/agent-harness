@@ -106,3 +106,10 @@ Cada tarefa: testes primeiro, suíte inteira verde, `node ferramentas/varre-term
 - Isolamento da extensão (decisão 11).
 - Ensaio com agente real das travas de extensão; Windows e macOS.
 - As demais pendências das fatias anteriores (`*-pendencias.md` e seções "Pendências").
+
+## Decisões da execução (linha B)
+
+Tarefas 1, 4 e 5, executadas no ramo `fatia-5b-numeros`, em paralelo às tarefas 2 e 3.
+
+- **Tarefa 1.** Além da marca, a pasta tomada só é apagada se continuar vencida pela leitura nova (a conferência anterior permanece). Marca ausente nos dois lados (trava sem `dono.json`) conta como a mesma marca; nesse caso, vale a data da pasta, como antes. O ponto de troca para o teste é `ganchosDeTeste.antesDeTomar`, exportado por `estado.mjs` e `null` fora dos testes.
+- **Tarefa 4.** Linhas ilegíveis de `eventos.jsonl` não têm data: contam com qualquer período. Com período, evento sem `em` legível fica fora; sem período, entra. As liberações ocupam linha própria ("Liberações por trava"). Nas listas por chave, a ordem é decrescente pela contagem e alfabética no empate. `--desde`/`--ate` sem `--numeros` são recusados com o próximo passo. A lógica fica em `nucleo/lib/numeros.mjs`; o `board` apenas delega quando recebe `--numeros`.
