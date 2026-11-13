@@ -640,6 +640,7 @@ Para retomar: tools/ah open carrinho
 | `A frente carrinho não é desta sessão: é da sessão sessao-b.` (ou `já está passada, sem dona`) | rode `ah board` (passada: `ah open carrinho` para retomá-la) |
 | `A frente as-1 carrinho não está ativa (estado abrindo).` | se o `ah open` dela parou no meio, `ah open carrinho` para terminar ou `ah close carrinho` para desistir |
 | `A frente as-1 carrinho está sendo fechada agora (processo <pid>).` | espere esse `ah close` terminar (o quadro mostra `fechando` enquanto ele roda); se a frente continuar no quadro, repita |
+| `A frente as-1 carrinho está com o fechamento parado: os tickets já receberam (ou estavam recebendo) o comentário de fechamento.` | termine com `ah close carrinho`, que não comenta de novo (o quadro mostra `fechamento parado`); a passagem chegaria aos tickets depois do fechamento |
 | `O worktree da frente as-1 carrinho não existe (…).` | se o trabalho já está no ramo ou na base, `ah close carrinho`; senão `git worktree add <worktree> feat/carrinho` e repita |
 | `O worktree <worktrees>/carrinho tem alterações não commitadas (1): ?? x.txt.` | faça o commit no worktree (um commit `wip:` serve) e rode `ah handoff` de novo |
 | o worktree fora do ramo da frente ou com operação em andamento | corrija o que a recusa descreve e repita |

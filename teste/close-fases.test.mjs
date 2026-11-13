@@ -205,3 +205,22 @@ test('frente que ficou passada depois do comentário de fechamento: o close segu
   assert.match(ultimo, /ah:fechamento id=as-1 /);
   assert.equal(fechamentosNoTicket(p), 2);
 });
+
+// ---- Achado 3: handoff de frente com o fechamento parado
+
+test('handoff de frente com o fechamento parado recusa e diz para terminar com ah close', async t => {
+  const { p } = comFrente();
+  t.after(() => p.limpar());
+  const r = await closeQueParouNaFase3(t, p);
+  assert.equal(r.codigo, 1, r.saida);
+  const antes = p.ghChamadas().length;
+  const h = p.ah(['handoff']);
+  assert.equal(h.codigo, 1, h.saida);
+  assert.match(h.erro, /^Recusado: A frente as-1 carrinho está com o fechamento parado: os tickets já receberam \(ou estavam recebendo\) o comentário de fechamento\.\nFaça: termine com ah close carrinho \(não comenta de novo\)/);
+  assert.equal(p.ghChamadas().length, antes);
+  assert.equal(lerF(p).estado, 'ativa');
+  assert.equal(passagensNaFila(p).length, 0);
+  const c = p.ah(['close']);
+  assert.equal(c.codigo, 0, c.erro);
+  assert.equal(chamadasDeFechamento(p).length, 1);
+});
