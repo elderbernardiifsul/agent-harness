@@ -4,7 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import * as estado from '../nucleo/lib/estado.mjs';
 import { lerJson, gravarJson, comTrava, registrarEvento, lerEventos, identidadeDaMaquina, ganchosDeTeste } from '../nucleo/lib/estado.mjs';
+
+const PRAZO_MAXIMO_MS = estado.PRAZO_MAXIMO_MS ?? 120000;
 
 function temp(t) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'ah-est-'));
@@ -82,7 +85,8 @@ test('dois esperadores sobre a mesma trava vencida nunca entram juntos', async t
   const d = temp(t);
   const pasta = path.join(d, 'travas', 'x');
   fs.mkdirSync(pasta, { recursive: true });
-  const antiga = new Date(Date.now() - 60000);
+  // pasta vazia vence pelo maior prazo (PRAZO_MAXIMO_MS)
+  const antiga = new Date(Date.now() - 200000);
   fs.utimesSync(pasta, antiga, antiga);
   let dentro = 0, max = 0;
   const entrar = async () => { dentro++; max = Math.max(max, dentro); await espera(60); dentro--; };
@@ -364,4 +368,54 @@ fs.chmodSync(path.join(pasta, 'dono.json'), 0);
 velha(path.join(pasta, 'dono.json')); velha(pasta);
 console.log(JSON.stringify(presa(() => 'entrou', { esperaMs: 500 })));`);
   assert.equal(r.entrou, 'entrou', JSON.stringify(r));
+});
+
+// Uma trava de outro no lugar da desta chamada: X tomou a de W (vencida) e entrou; W solta tarde.
+const donoDe = (marca, extra = {}) => JSON.stringify({ pid: process.pid, em: new Date().toISOString(), marca, venceMs: 120000, ...identidadeDaMaquina(), ...extra });
+function trocarPelaDeOutro(pasta, texto) {
+  fs.rmSync(path.join(pasta, 'dono.json'));
+  fs.writeFileSync(path.join(pasta, 'dono.json'), texto);
+}
+
+test('revisão 2, achado 2: sem hard link, a liberação tardia devolve o dono do outro (wx), não o descarta', async t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  const original = fs.linkSync;
+  fs.linkSync = () => { throw Object.assign(new Error('EPERM: operation not permitted, link'), { code: 'EPERM' }); };
+  t.after(() => { fs.linkSync = original; });
+  const deX = donoDe('X');
+  await comTrava(d, 'x', () => trocarPelaDeOutro(pasta, deX), { venceMs: 50 });
+  fs.linkSync = original;
+  assert.equal(fs.readFileSync(path.join(pasta, 'dono.json'), 'utf8'), deX);
+});
+
+test('revisão 2, achado 2: pasta vazia e dono ilegível vencem pelo maior prazo, não pelo de quem julga', async t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  const envelhecer = (alvo, s) => { const v = new Date(Date.now() - s * 1000); fs.utimesSync(alvo, v, v); };
+  const presa = () => assert.rejects(comTrava(d, 'x', () => 1, { venceMs: 30000, esperaMs: 60 }), e => e.travaPresa === true);
+  // pasta vazia há 60 s: o dono que sumiu podia ter 120 s
+  fs.mkdirSync(pasta, { recursive: true });
+  envelhecer(pasta, 60);
+  await presa();
+  envelhecer(pasta, 200);
+  assert.equal(await comTrava(d, 'x', () => 'entrou', { venceMs: 30000, esperaMs: 500 }), 'entrou');
+  // dono ilegível (vazio) há 60 s: idem
+  fs.mkdirSync(pasta, { recursive: true });
+  fs.writeFileSync(path.join(pasta, 'dono.json'), '');
+  envelhecer(path.join(pasta, 'dono.json'), 60);
+  envelhecer(pasta, 60);
+  await presa();
+  envelhecer(path.join(pasta, 'dono.json'), 200);
+  envelhecer(pasta, 200);
+  assert.equal(await comTrava(d, 'x', () => 'entrou', { venceMs: 30000, esperaMs: 500 }), 'entrou');
+});
+
+test('revisão 2, achado 2: o prazo tem teto: venceMs acima dele é recusado, e o do dono é cortado nele', async t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  await assert.rejects(comTrava(d, 'x', () => 1, { venceMs: PRAZO_MAXIMO_MS + 1 }), e => e.name === 'ErroDeEstado' && /teto/.test(e.message));
+  fs.mkdirSync(pasta, { recursive: true });
+  fs.writeFileSync(path.join(pasta, 'dono.json'), donoDe('longa', { venceMs: 10 * 86400000, em: new Date(Date.now() - PRAZO_MAXIMO_MS - 1000).toISOString() }));
+  assert.equal(await comTrava(d, 'x', () => 'entrou', { venceMs: 30000, esperaMs: 500 }), 'entrou');
 });

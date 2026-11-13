@@ -88,12 +88,19 @@ function lerArquivoDono(arquivo) {
 }
 const lerDono = pasta => lerArquivoDono(path.join(pasta, 'dono.json'));
 
+// Teto do prazo de uma trava (o maior em uso: open, close, handoff, takeover e sweep seguram 120 s). Quem julga
+// uma pasta sem dono legível não sabe o prazo de quem a criou, e usa este: um dono que sumiu (devolução que não
+// achou lugar, morte entre o mkdir e o dono) nunca é julgado por um prazo menor que o dele.
+export const PRAZO_MAXIMO_MS = 120000;
+
 // Vencida: o dono, desta máquina, morreu (vence na hora), ou passou o prazo desde o `em` do dono (ou desde
-// `mtimeMs`, quando não há `em` legível). O prazo é o `venceMs` gravado pelo dono, que sabe quanto vai segurar;
-// sem ele (dono gravado antes), o de quem julga. Dono sem identidade ou de outra máquina: só o prazo.
+// `mtimeMs`, quando não há `em` legível). O prazo é o `venceMs` gravado pelo dono, que sabe quanto vai segurar
+// (cortado no teto); dono legível sem ele (gravado antes), o de quem julga; sem dono legível (pasta vazia ou
+// dono.json ilegível), o teto. Dono sem identidade ou de outra máquina: só o prazo.
 function vencida(dono, mtimeMs, venceMs) {
   if (dono && eDestaMaquina(dono) && donoMorto(dono.pid)) return true;
-  const prazo = Number.isFinite(dono?.venceMs) && dono.venceMs > 0 ? dono.venceMs : venceMs;
+  const prazo = !dono ? Math.max(venceMs, PRAZO_MAXIMO_MS)
+    : Number.isFinite(dono.venceMs) && dono.venceMs > 0 ? Math.min(dono.venceMs, PRAZO_MAXIMO_MS) : venceMs;
   let em = Date.parse(dono?.em);
   if (!Number.isFinite(em)) em = mtimeMs;
   return Number.isFinite(em) && Date.now() - em > prazo;
@@ -128,11 +135,16 @@ function tirarDono(pasta, marca) {
   }
 }
 
-// Devolve à trava o dono.json tirado por engano. link não sobrescreve: se o lugar já tem dono, ou a pasta
-// sumiu, o tirado é descartado (a trava fica sem dono e vence pelo prazo, sem que ninguém entre antes).
+// Devolve à trava o dono.json tirado por engano, regravando o texto dele com 'wx' (O_EXCL: não sobrescreve; vale
+// onde não há hard link, como FAT, exFAT e alguns FUSE e SMB). Se o lugar já tem dono, ou a pasta sumiu, ou a
+// gravação falha, o tirado é descartado: a pasta fica sem dono e vence pelo teto (PRAZO_MAXIMO_MS), que não é
+// menor que o prazo do dono descartado; ninguém entra antes.
 function devolverDono(fora, pasta) {
-  try { fs.linkSync(fora, path.join(pasta, 'dono.json')); } catch { /* lugar ocupado ou pasta sumiu */ }
-  fs.rmSync(fora, { force: true });
+  try {
+    const texto = fs.readFileSync(fora, 'utf8');
+    fs.writeFileSync(path.join(pasta, 'dono.json'), texto, { flag: 'wx' });
+  } catch { /* lugar ocupado, pasta sumiu ou erro: descarta */ }
+  try { fs.rmSync(fora, { force: true }); } catch { /* resto sem dono */ }
 }
 
 // O que há na pasta da trava além do dono.json (arquivo comum): lixo que só um humano sabe o que é. Com lixo,
@@ -198,8 +210,11 @@ function tirarPastaVazia(pasta) {
   }
 }
 
-function prepararTrava(dir, nome) {
+function prepararTrava(dir, nome, venceMs) {
   validarNomeSeguro(nome, 'Nome da trava');
+  if (!(Number.isFinite(venceMs) && venceMs > 0 && venceMs <= PRAZO_MAXIMO_MS)) {
+    throw new ErroDeEstado(`Prazo da trava "${nome}" fora do teto: venceMs=${venceMs} (de 1 a ${PRAZO_MAXIMO_MS} ms)`, null, 'corrija quem chamou comTrava');
+  }
   const pasta = path.join(dir, 'travas', nome);
   fs.mkdirSync(path.dirname(pasta), { recursive: true });
   return { pasta, marca: randomUUID() };
@@ -245,7 +260,7 @@ function soltar(pasta, marca) {
 // `venceMs` precisa ser maior que o pior caso de `fn`: passado esse prazo outra chamada pode tomar a trava
 // (a liberação só apaga a trava se ainda for desta chamada, mas a exclusão já terá sido perdida).
 export async function comTrava(dir, nome, fn, { esperaMs = 5000, venceMs = 30000 } = {}) {
-  const { pasta, marca } = prepararTrava(dir, nome);
+  const { pasta, marca } = prepararTrava(dir, nome, venceMs);
   const limite = Date.now() + esperaMs;
   while (!(tentarPegar(pasta, venceMs, marca) && confirmarDono(pasta, marca, venceMs))) {
     if (Date.now() >= limite) throw travaPresa(nome, pasta, esperaMs, venceMs);
@@ -261,7 +276,7 @@ export async function comTrava(dir, nome, fn, { esperaMs = 5000, venceMs = 30000
 // Versão síncrona do comTrava, com a mesma pasta e o mesmo dono.json (as duas se excluem entre si).
 // Para trechos curtos que só mexem em arquivo, chamados de código síncrono.
 export function comTravaSinc(dir, nome, fn, { esperaMs = 5000, venceMs = 30000 } = {}) {
-  const { pasta, marca } = prepararTrava(dir, nome);
+  const { pasta, marca } = prepararTrava(dir, nome, venceMs);
   const limite = Date.now() + esperaMs;
   while (!(tentarPegar(pasta, venceMs, marca) && confirmarDono(pasta, marca, venceMs))) {
     if (Date.now() >= limite) throw travaPresa(nome, pasta, esperaMs, venceMs);
