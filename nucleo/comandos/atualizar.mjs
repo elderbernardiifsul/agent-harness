@@ -258,7 +258,10 @@ export async function executar(args, amb) {
   amb.escrever(relatorio);
   if (aMao.length) amb.escrever(lista('Descartei (--forcar)', aMao));
   if (fora.length) amb.escrever(foraTexto(fora));
-  amb.escrever(passosDoCommit(raiz, amb.config.git.base, amb.env, { caminhos: ['.harness/nucleo', ARQUIVO_AGENTS], mensagem: MENSAGEM_DO_COMMIT }));
+  amb.escrever(passosDoCommit(raiz, amb.config.git.base, amb.env, {
+    caminhos: ['.harness/nucleo', ARQUIVO_AGENTS], mensagem: MENSAGEM_DO_COMMIT,
+    falta: `Falta levar a atualização para o ramo base ${amb.config.git.base} (as frentes partem dele)`,
+  }));
   return 0;
 }
 

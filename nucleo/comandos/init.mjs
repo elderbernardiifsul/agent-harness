@@ -401,7 +401,7 @@ const MENSAGEM_DO_COMMIT = 'chore: instala o agent-harness';
 
 // As frentes partem do ramo base: o commit do harness tem de ir para lá, senão o worktree
 // nasce sem tools/ah e o gancho não existe. Diz os comandos exatos.
-export function passosDoCommit(raiz, base, env, { caminhos: candidatos = CAMINHOS_DO_COMMIT, mensagem = MENSAGEM_DO_COMMIT } = {}) {
+export function passosDoCommit(raiz, base, env, { caminhos: candidatos = CAMINHOS_DO_COMMIT, mensagem = MENSAGEM_DO_COMMIT, falta = null } = {}) {
   const caminhos = candidatos.filter(c => fs.existsSync(path.join(raiz, ...c.split('/'))));
   const pendentes = git(['status', '--porcelain', '--untracked-files=all', '--', ...caminhos], { cwd: raiz, env }).saida.trim() !== '';
   const atual = ramoAtual(raiz, env);
@@ -414,5 +414,5 @@ export function passosDoCommit(raiz, base, env, { caminhos: candidatos = CAMINHO
   } else if (atual && atual !== base) {
     passos.push(`git merge ${atual}`);
   }
-  return `Falta levar o harness para o ramo base ${base} (as frentes partem dele; fora dele não há tools/ah nem gancho):\n${passos.map(l => `  ${l}`).join('\n')}\nDepois rode: tools/ah doctor\n`;
+  return `${falta ?? `Falta levar o harness para o ramo base ${base} (as frentes partem dele; fora dele não há tools/ah nem gancho)`}:\n${passos.map(l => `  ${l}`).join('\n')}\nDepois rode: tools/ah doctor\n`;
 }
