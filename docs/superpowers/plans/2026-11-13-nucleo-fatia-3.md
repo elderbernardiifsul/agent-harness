@@ -65,3 +65,4 @@ docs/referencia/comandos.md, README.md, docs/referencia/capacidades-por-agente.m
 - Contêineres com o mesmo hostname e a mesma pasta de estado ou de fila compartilhada: no Linux o boot e o namespace de pid gravados no `dono.json` separam os casos comuns; fora do Linux só o hostname, e um pid "morto" de outro contêiner com o mesmo nome faria a trava vencer na hora.
 - A janela entre iniciar o comando e gravar o grupo (e a hora do líder) na entrada: um `kill -9` no `ah` nesses milissegundos deixa o comando sem dono, rodando fora da fila.
 - A trava devolvida no rename de volta (`.vencida.*`) não é apagada quando o lugar já tem outra trava; fica como lixo inofensivo na pasta `travas/`.
+- Tomar uma trava vencida não é atômico (conferir e depois renomear): uma corrida de três processos, em microssegundos, ainda pode dar dois donos. Conserto previsto: depois do rename, conferir se a marca da pasta tomada é a que foi vista vencida.
