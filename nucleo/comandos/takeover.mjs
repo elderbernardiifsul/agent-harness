@@ -6,7 +6,7 @@ import { loginDeQuemAge } from '../lib/github.mjs';
 import { pendentesDoTicket, reenviarComAviso, temDoTicket } from '../lib/pendentes.mjs';
 import { avisarDaMarcacao, marcarTickets, quemTemAFrente, sessoesDaquiDaFrente } from '../lib/reserva.mjs';
 import { gravarSessao, idCurto, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
-import { aberturaEmCurso, inicioDoProcesso, pidDeComando, prazoMs, vidaDaSessao } from '../lib/vida.mjs';
+import { aberturaEmCurso, frenteOrfa, inicioDoProcesso, pidDeComando, prazoMs, vidaDaDona } from '../lib/vida.mjs';
 
 export const descricao = 'assume a frente de uma sessão que morreu (com a confirmação do executivo)';
 export const uso = 'ah takeover <nome> [--confirmado]';
@@ -25,9 +25,13 @@ function lerOpcoes(args) {
   return o;
 }
 
-// Vida da sessão dona. Só o registro que não existe conta como sem dona viva; o que não se lê (JSON quebrado,
-// esquema de um harness mais novo) sobe como erro de estado e recusa: a dona pode estar viva.
-const vidaDa = (dirEstado, id, config) => vidaDaSessao(dirEstado, id, { config });
+// Vida da sessão dona, a mesma do sweep (vidaDaDona). Só o registro que não existe conta como sem dona viva; o que
+// não se lê (JSON quebrado, esquema de um harness mais novo) sobe como erro de estado e recusa: a dona pode estar viva.
+function vidaDa(dirEstado, id, config) {
+  const v = vidaDaDona(dirEstado, id, { config });
+  if (v?.estado === 'ilegivel') throw v.erro;
+  return v;
+}
 
 // Recusas locais, sob a trava `frentes`, sem mudar nada. Devolve a vida da dona (null na frente sem dona).
 function conferir({ f, nome, amb, sessao }) {
@@ -36,7 +40,7 @@ function conferir({ f, nome, amb, sessao }) {
   const qual = `${f.id} ${f.nome}`;
   if (f.estado === 'abrindo') {
     // As mesmas saídas do open e do close: abertura em curso espera; parada se retoma pelo open ou se desfaz.
-    const outraViva = Boolean(f.dona) && f.dona !== amb.sessaoId && vidaDa(dirEstado, f.dona, cfg).estado === 'viva';
+    const outraViva = Boolean(f.dona) && f.dona !== amb.sessaoId && vidaDa(dirEstado, f.dona, cfg)?.estado === 'viva';
     if (aberturaEmCurso(f.processo) ?? outraViva) {
       throw recusa(`Há uma abertura da frente ${nome} em curso (sessão ${f.dona ?? 'sem dona'}${f.processo ? `, processo ${f.processo.pid}` : ''}).`,
         `espere esse ah open terminar (ah board mostra a frente) ou escolha outro nome; se ele parou, rode ah open ${nome} de novo`);
@@ -47,8 +51,8 @@ function conferir({ f, nome, amb, sessao }) {
   if (f.estado === 'passada') throw recusa(`A frente ${qual} está passada, sem dona: retome-a em vez de assumir.`, `ah open ${nome}`);
   if (f.estado !== 'ativa') throw recusa(`A frente ${qual} não está ativa (estado ${f.estado}).`, 'confira a frente em ah board');
   if (f.dona === amb.sessaoId) throw recusa(`A frente ${qual} é desta sessão.`, `a frente já é sua: trabalhe em ${f.worktree}`);
-  const vida = f.dona ? vidaDa(dirEstado, f.dona, cfg) : null;
-  if (vida?.estado === 'viva') {
+  const vida = vidaDa(dirEstado, f.dona, cfg);
+  if (!frenteOrfa(f, vida)) {
     throw recusa(`A frente ${qual} é da sessão ${idCurto(f.dona)}, que está viva.`,
       `peça à sessão ${idCurto(f.dona)} que rode ah handoff; ou espere o sinal dela vencer (${Math.round(prazoMs(cfg) / 60000)} min)`);
   }
@@ -112,7 +116,7 @@ export async function executar(args, amb) {
     }
     const sessoesDaqui = sessoesDaquiDaFrente(dirEstado, frente, [frente.dona]);
     const q = quemTemAFrente({ frente, login, sessao: amb.sessaoId, rotulo, sessoesDaqui }, oGh);
-        switch (q.situacao) {
+    switch (q.situacao) {
       case 'daqui':
       case 'propria':
         break;

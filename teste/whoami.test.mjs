@@ -104,7 +104,7 @@ test('R3: o despacho obedece ao requisitos que o comando declara', async () => {
 test('I3: ah <comando> --help e -h mostram descrição e uso, saem 0 e não executam', async () => {
   const fora = mkdtempSync(path.join(os.tmpdir(), 'ah-ajuda-'));
   try {
-    for (const nome of ['board', 'close', 'doctor', 'gancho', 'init', 'nota', 'open', 'takeover', 'whoami']) {
+    for (const nome of ['board', 'close', 'doctor', 'gancho', 'init', 'nota', 'open', 'sweep', 'takeover', 'whoami']) {
       const m = await import(`../nucleo/comandos/${nome}.mjs`);
       assert.equal(typeof m.uso, 'string', nome);
       assert.match(m.uso, new RegExp(`^ah ${nome}`), nome);

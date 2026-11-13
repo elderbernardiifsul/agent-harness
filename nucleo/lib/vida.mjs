@@ -111,3 +111,20 @@ export function aberturaParada(frente, donaViva, opcoes) {
   const emCurso = aberturaEmCurso(frente?.processo, opcoes);
   return emCurso === null ? !donaViva : !emCurso;
 }
+
+// Vida da dona de uma frente, a mesma para quem decide se ela pode ser tomada (takeover, sweep, board).
+// null sem dona; registro que não existe é `desconhecida` (sem dona viva); registro que não se lê (JSON
+// quebrado, esquema de um harness mais novo) é `ilegivel`, com o erro em `erro`: a dona pode estar viva.
+export function vidaDaDona(dirEstado, id, opcoes = {}) {
+  if (!id) return null;
+  try {
+    return vidaDaSessao(dirEstado, id, opcoes);
+  } catch (e) {
+    if (e?.name !== 'ErroDeEstado') throw e;
+    return { estado: 'ilegivel', motivo: 'registro ilegível', idadeDoSinalMs: null, erro: e };
+  }
+}
+
+// Frente órfã: ativa sem dona viva (dona morta, encerrada, sem registro ou nenhuma). Com o registro da dona
+// ilegível não é órfã: ninguém a pode tomar até o arquivo ser consertado.
+export const frenteOrfa = (f, vida) => f?.estado === 'ativa' && (!vida || (vida.estado !== 'viva' && vida.estado !== 'ilegivel'));

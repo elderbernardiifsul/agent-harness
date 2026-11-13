@@ -1,8 +1,9 @@
+import path from 'node:path';
 import { ErroDeUso } from '../lib/caminhos.mjs';
-import { listarFrentes } from '../lib/frente.mjs';
+import { listarFrentesTolerante } from '../lib/frente.mjs';
 import { arquivosDaFrenteOuNulo, contaNaSobreposicao, sobreposicoes as calcularSobreposicoes } from '../lib/sobreposicao.mjs';
 import { idCurto, listarSessoes } from '../lib/sessao.mjs';
-import { aberturaParada, vidaDaSessao } from '../lib/vida.mjs';
+import { aberturaParada, vidaDaDona } from '../lib/vida.mjs';
 
 export const descricao = 'mostra as frentes abertas e as sessões vivas';
 export const uso = 'ah board [--json]';
@@ -40,19 +41,17 @@ export async function executar(args, amb) {
     else throw new ErroDeUso(`Argumento a mais: ${arg.slice(0, 40)}\nPróximo passo: use ${uso}`);
   }
   const dirEstado = amb.dirEstado;
-  const frentes = listarFrentes(dirEstado);
+  // Arquivo de frente que não se lê não derruba o quadro: vira aviso e as outras frentes seguem.
+  const { frentes, ilegiveis } = listarFrentesTolerante(dirEstado);
+  for (const nome of ilegiveis) {
+    amb.avisar(`Aviso: arquivo de frente ilegível: ${path.join(dirEstado, 'frentes', `${nome}.json`)} (rode ah doctor)\n`);
+  }
   // Estado de vida por sessão: 'viva', 'morta' (qualquer outro estado) ou 'ilegivel' (arquivo que não se lê).
   const vidas = new Map();
   const vida = id => {
     if (!vidas.has(id)) {
-      let v;
-      try {
-        v = vidaDaSessao(dirEstado, id, { config: amb.config }).estado === 'viva' ? 'viva' : 'morta';
-      } catch (e) {
-        if (e.name !== 'ErroDeEstado') throw e;
-        v = 'ilegivel';
-      }
-      vidas.set(id, v);
+      const v = vidaDaDona(dirEstado, id, { config: amb.config }).estado;
+      vidas.set(id, v === 'viva' || v === 'ilegivel' ? v : 'morta');
     }
     return vidas.get(id);
   };

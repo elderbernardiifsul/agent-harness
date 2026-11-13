@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 
 export class ErroDeUso extends Error {
@@ -46,4 +47,46 @@ export function dirWorktrees(config, env, plataforma, casa) {
   else if (plataforma === 'darwin') cache = path.join(casa, 'Library', 'Caches');
   else cache = env.XDG_CACHE_HOME ?? path.join(casa, '.cache');
   return path.join(cache, 'agent-harness', config.projeto, 'wt');
+}
+
+const modDe = plataforma => (plataforma === 'win32' ? path.win32 : path.posix);
+
+// Caminho real para comparar caminhos escritos de jeitos diferentes (link simbólico, `..`, `/private/var` do
+// macOS, caixa no Windows): os componentes são resolvidos na ordem, cada um pelo caminho real enquanto existir
+// (o `..` depois de um link volta da pasta real); do primeiro que não existe em diante, só se juntam.
+// No Windows, em minúsculas.
+export function normalizarCaminho(p, plataforma = process.platform) {
+  const mod = modDe(plataforma);
+  const bruto = mod.isAbsolute(p) ? String(p) : `${process.cwd()}${mod.sep}${p}`;
+  const raiz = mod.parse(bruto).root || mod.sep;
+  const real = c => {
+    try { return fs.realpathSync(c); } catch { return null; }
+  };
+  let atual = real(raiz) ?? raiz;
+  let existe = atual !== null && fs.existsSync(atual);
+  for (const parte of bruto.slice(raiz.length).split(/[\\/]+/)) {
+    if (parte === '' || parte === '.') continue;
+    if (parte === '..') {
+      atual = mod.dirname(atual);
+      if (!existe) {
+        const r = real(atual);
+        if (r !== null) { existe = true; atual = r; }
+      }
+      continue;
+    }
+    const proximo = mod.join(atual, parte);
+    const r = existe ? real(proximo) : null;
+    if (r === null) existe = false;
+    atual = r ?? proximo;
+  }
+  return plataforma === 'win32' ? atual.toLowerCase() : atual;
+}
+
+// `p` está dentro de `pasta` (ou é ela)? Puro, pelo `path.relative` da plataforma; no Windows sem
+// diferenciar caixa. Quem chama normaliza os dois antes (normalizarCaminho).
+export function dentroDe(p, pasta, plataforma = process.platform) {
+  const mod = modDe(plataforma);
+  const [a, b] = plataforma === 'win32' ? [String(p).toLowerCase(), String(pasta).toLowerCase()] : [String(p), String(pasta)];
+  const rel = mod.relative(b, a);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${mod.sep}`) && !mod.isAbsolute(rel));
 }
