@@ -305,3 +305,84 @@ test('o fim do atualizar diz como levar a atualização para o ramo base', t => 
   const r = clone.ah(p, ['atualizar']);
   assert.match(r.saida, /Falta levar a atualização para o ramo base dev \(as frentes partem dele\):\n {2}git add -- \.harness\/nucleo AGENTS\.md\n {2}git commit -m "chore: atualiza o agent-harness"\nDepois rode: tools\/ah doctor\n$/);
 });
+
+test('dois atualizar ao mesmo tempo: o segundo espera a trava "atualizar" do estado antes de mexer no núcleo', async t => {
+  const { p, clone } = cenario(t);
+  const { comTrava } = await import('../nucleo/lib/estado.mjs');
+  const { spawn } = await import('node:child_process');
+  const whoami = path.join(nucleo(p), 'comandos', 'whoami.mjs');
+  const antes = fs.readFileSync(whoami, 'utf8');
+  let soltouEm = 0;
+  let filho;
+  await comTrava(dirDoTeste(p), 'atualizar', async () => {
+    filho = new Promise(resolve => {
+      const c = spawn(process.execPath, [path.join(clone.raiz, 'nucleo', 'bin', 'ah.mjs'), 'atualizar'], { cwd: p.raiz, env: p.env });
+      let erro = '';
+      c.stderr.on('data', d => { erro += d; });
+      c.on('close', codigo => resolve({ codigo, erro, fim: Date.now() }));
+    });
+    await new Promise(r => setTimeout(r, 800));
+    // Com a trava presa por outro, nada mudou: nem o núcleo nem as pastas de troca.
+    assert.equal(fs.readFileSync(whoami, 'utf8'), antes);
+    assert.deepEqual(fs.readdirSync(path.join(p.raiz, '.harness')).filter(n => n.startsWith('nucleo.')), []);
+    soltouEm = Date.now();
+  });
+  const r = await filho;
+  assert.equal(r.codigo, 0, r.erro);
+  assert.ok(r.fim >= soltouEm);
+  assert.notEqual(fs.readFileSync(whoami, 'utf8'), antes);
+});
+
+// Checkout do núcleo com core.autocrlf=true: o git reescreve os arquivos de texto com CRLF no disco.
+function checkoutComCrlf(p) {
+  p.git(['config', 'core.autocrlf', 'true']);
+  fs.rmSync(nucleo(p), { recursive: true, force: true });
+  const r = p.git(['checkout', '--', '.harness/nucleo']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(ler(p, '.harness/nucleo/comandos/whoami.mjs'), /\r\n/);
+}
+
+test('CRLF: com core.autocrlf=true o atualizar não acusa alteração à mão que não houve', t => {
+  const { p, clone } = cenario(t);
+  checkoutComCrlf(p);
+  const r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.doesNotMatch(r.erro, /alterado/);
+  assert.match(ler(p, '.harness/nucleo/comandos/whoami.mjs'), /\/\/ versão nova/);
+});
+
+test('CRLF: mudança à mão de verdade num checkout com CRLF continua acusada', t => {
+  const { p, clone } = cenario(t);
+  checkoutComCrlf(p);
+  fs.appendFileSync(path.join(nucleo(p), 'comandos', 'board.mjs'), '// mexi aqui\r\n');
+  const r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /comandos\/board\.mjs \(mudou\)/);
+  assert.match(r.erro, /Recusado: 1 arquivo\(s\) de \.harness\/nucleo\/ alterado\(s\) à mão/);
+});
+
+test('CRLF: arquivo binário do núcleo conta o sha256 exato (trocar CRLF por LF nele é mudança)', t => {
+  const { p, clone } = cenario(t);
+  const binario = Buffer.from([0x89, 0x50, 0x00, 0x0d, 0x0a, 0x41, 0x0d, 0x0a, 0x00]);
+  clone.gravar('nucleo/lib/figura.bin', binario);
+  assert.equal(clone.ah(p, ['atualizar']).codigo, 0);
+  fs.writeFileSync(path.join(nucleo(p), 'lib', 'figura.bin'), Buffer.from([0x89, 0x50, 0x00, 0x0a, 0x41, 0x0a, 0x00]));
+  clone.gravar('nucleo/lib/novidade.mjs', 'export const nova = 2;\n');
+  const r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /lib\/figura\.bin \(mudou\)/);
+});
+
+test('--simular que termina em recusa não grava nada, nem o evento recusa-de-comando', t => {
+  const { p, clone } = cenario(t);
+  fs.appendFileSync(path.join(nucleo(p), 'comandos', 'board.mjs'), '// mexi aqui\n');
+  const eventos = path.join(dirDoTeste(p), 'eventos.jsonl');
+  const antes = fs.existsSync(eventos) ? fs.readFileSync(eventos, 'utf8') : '';
+  const s = clone.ah(p, ['atualizar', '--simular']);
+  assert.equal(s.codigo, 1);
+  assert.match(s.erro, /Recusado: 1 arquivo\(s\) de \.harness\/nucleo\/ alterado\(s\) à mão/);
+  assert.equal(fs.existsSync(eventos) ? fs.readFileSync(eventos, 'utf8') : '', antes);
+  // Sem --simular, a mesma recusa continua registrada.
+  assert.equal(clone.ah(p, ['atualizar']).codigo, 1);
+  assert.match(fs.readFileSync(eventos, 'utf8'), /"tipo":"recusa-de-comando","comando":"atualizar"/);
+});

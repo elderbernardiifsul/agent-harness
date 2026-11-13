@@ -565,3 +565,128 @@ test('frente integrada só na base local (a base não foi enviada): o ramo remot
   assert.match(r.erro, /Aviso: o ramo remoto feat\/carrinho ficou porque a dev ainda não foi enviada .*\nFaça: git push origin dev e depois git push origin --delete feat\/carrinho/);
   assert.equal(temRamoNoRemoto(p, 'feat/carrinho'), true);
 });
+
+// ---- Pendências da linha A: close em duas fases (rede fora da trava) e remoção do worktree recusada
+const esperarArquivo = async (arquivo, ms = 15000) => {
+  const ate = Date.now() + ms;
+  while (!fs.existsSync(arquivo)) {
+    if (Date.now() > ate) throw new Error(`não apareceu: ${arquivo}`);
+    await new Promise(r => setTimeout(r, 25));
+  }
+};
+// O whoami de outra sessão pega a trava das frentes: responder logo prova que o close não a segura.
+const semTrava = p => {
+  const inicio = Date.now();
+  const w = p.ah(['whoami'], OUTRA);
+  assert.equal(w.codigo, 0, w.erro);
+  assert.ok(Date.now() - inicio < 4000, 'o whoami esperou a trava');
+};
+
+test('close com o comentário no ticket demorando: a trava fica livre, o quadro mostra fechando e outro close/handoff recusa', async t => {
+  const { p } = comFrente();
+  t.after(() => p.limpar());
+  mescla(p);
+  const pausa = path.join(path.dirname(p.raiz), 'pausa');
+  const c = p.ahAoFundo(['close'], { env: { GH_FALSO_PAUSA_COMENTARIO: pausa, GH_FALSO_PAUSA_TEXTO: 'ah:fechamento' } });
+  t.after(() => { c.processo.kill('SIGKILL'); try { fs.writeFileSync(`${pausa}.solta`, ''); } catch { /* pasta já limpa */ } });
+  try {
+    await esperarArquivo(`${pausa}.chegou`);
+    semTrava(p);
+    assert.match(p.ah(['board']).saida, /carrinho .*fechando/);
+    const outro = p.ah(['close', 'carrinho']);
+    assert.equal(outro.codigo, 1);
+    assert.match(outro.erro, /^Recusado: A frente as-1 carrinho está sendo fechada agora \(processo \d+\)\.\nFaça: espere esse ah close terminar/);
+    const h = p.ah(['handoff']);
+    assert.equal(h.codigo, 1);
+    assert.match(h.erro, /está sendo fechada agora/);
+  } finally {
+    fs.writeFileSync(`${pausa}.solta`, '');
+  }
+  const r = await c.fim;
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Frente as-1 carrinho fechada\./);
+  assert.ok(!fs.existsSync(arquivoDaFrente(p, 'carrinho')));
+  assert.equal(comentarios(p).length, 2); // abertura e fechamento, uma vez só
+});
+
+test('close de frente passada com a retomada no ticket demorando: a retomada pelo open recusa no meio', async t => {
+  const { p } = comFrente();
+  t.after(() => p.limpar());
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const pausa = path.join(path.dirname(p.raiz), 'pausa');
+  const c = p.ahAoFundo(['close', 'carrinho'], { env: { ...OUTRA.env, GH_FALSO_PAUSA_COMENTARIO: pausa, GH_FALSO_PAUSA_TEXTO: 'ah:retomada' } });
+  t.after(() => { c.processo.kill('SIGKILL'); try { fs.writeFileSync(`${pausa}.solta`, ''); } catch { /* pasta já limpa */ } });
+  try {
+    await esperarArquivo(`${pausa}.chegou`);
+    const o = p.ah(['open', 'carrinho'], { env: { AH_SESSAO: 'sessao-teste-0003' } });
+    assert.equal(o.codigo, 1);
+    assert.match(o.erro, /^Recusado: A frente as-1 carrinho está sendo fechada agora \(processo \d+\)\.\nFaça: espere esse ah close terminar/m);
+    assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'passada');
+  } finally {
+    fs.writeFileSync(`${pausa}.solta`, '');
+  }
+  const r = await c.fim;
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Frente as-1 carrinho fechada\./);
+});
+
+test('close com o push que apaga o ramo remoto demorando: a trava fica livre', { skip: process.platform === 'win32' ? 'gancho do remoto em sh' : false }, async t => {
+  const { p, wt } = comFrente();
+  t.after(() => p.limpar());
+  assert.equal(p.git(['push', '-u', 'origin', 'feat/carrinho'], { cwd: wt }).codigo, 0);
+  mescla(p);
+  assert.equal(p.git(['push', 'origin', 'dev']).codigo, 0);
+  const pausa = path.join(path.dirname(p.raiz), 'pausa-push');
+  const gancho = path.join(p.remoto, 'hooks', 'pre-receive');
+  fs.writeFileSync(gancho, `#!/bin/sh\ntouch '${pausa}.chegou'\ni=0\nwhile [ ! -e '${pausa}.solta' ] && [ $i -lt 200 ]; do sleep 0.1; i=$((i+1)); done\n`, { mode: 0o755 });
+  const c = p.ahAoFundo(['close']);
+  t.after(() => { c.processo.kill('SIGKILL'); try { fs.writeFileSync(`${pausa}.solta`, ''); } catch { /* pasta já limpa */ } });
+  try {
+    await esperarArquivo(`${pausa}.chegou`);
+    semTrava(p);
+  } finally {
+    fs.writeFileSync(`${pausa}.solta`, '');
+  }
+  const r = await c.fim;
+  assert.equal(r.codigo, 0, r.erro);
+  assert.equal(temRamoNoRemoto(p, 'feat/carrinho'), false);
+});
+
+test('worktree trancado: close recusa antes de mexer nos tickets', t => {
+  const { p, wt } = comFrente();
+  t.after(() => p.limpar());
+  mescla(p);
+  assert.equal(p.git(['worktree', 'lock', '--reason', 'teste', wt]).codigo, 0);
+  const antes = comentarios(p).length;
+  const r = p.ah(['close']);
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /^Recusado: O worktree .* está trancado no git \(teste\); o git não o remove\.\nFaça: .*git worktree unlock /);
+  assert.equal(comentarios(p).length, antes);
+  assert.ok(!fs.existsSync(path.join(p.estado, 'loja', 'fechamentos', 'carrinho.json')), 'marca de comentário de fechamento');
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').fechando, undefined);
+  assert.equal(p.git(['worktree', 'unlock', wt]).codigo, 0);
+  const c = p.ah(['close']);
+  assert.equal(c.codigo, 0, c.erro);
+});
+
+test('remoção do worktree recusada depois do comentário: o quadro mostra e o segundo close termina sem comentar de novo',
+  { skip: process.platform === 'win32' ? 'embrulho do git em sh' : false }, t => {
+    const { p, wt } = comFrente();
+    t.after(() => p.limpar());
+    mescla(p);
+    const gitReal = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+    const dirBin = path.join(path.dirname(p.raiz), 'bin-embrulho');
+    fs.mkdirSync(dirBin, { recursive: true });
+    fs.writeFileSync(path.join(dirBin, 'git'), `#!/bin/sh\ncase "$*" in *"worktree remove"*) eval "ult=\\\${$#}"; echo novo > "$ult/novo.txt";; esac\nexec "${gitReal}" "$@"\n`);
+    fs.chmodSync(path.join(dirBin, 'git'), 0o755);
+    const r = p.ah(['close'], { env: { PATH: `${dirBin}${path.delimiter}${p.env.PATH ?? process.env.PATH}` } });
+    assert.equal(r.codigo, 1, r.saida + r.erro);
+    assert.match(r.erro, /^Recusado: O git não removeu o worktree .*\nFaça: .*; os tickets já receberam o comentário de fechamento, e o próximo ah close não comenta de novo/m);
+    assert.equal(comentarios(p).length, 2);
+    assert.match(p.ah(['board']).saida, /carrinho .*fechamento parado/);
+    fs.rmSync(path.join(wt, 'novo.txt'));
+    const c = p.ah(['close']);
+    assert.equal(c.codigo, 0, c.erro);
+    assert.equal(comentarios(p).length, 2);
+    assert.ok(!fs.existsSync(wt));
+  });

@@ -574,8 +574,10 @@ test('revisão 2, achado 7: a tomada de trava vencida limpa os restos com mais d
   const d = temp(t);
   const travas = path.join(d, 'travas');
   const ha = min => Date.now() - min * 60000;
-  fs.mkdirSync(path.join(travas, `y.vencida.1.${ha(20)}.ab12cd34`), { recursive: true });
-  fs.writeFileSync(path.join(travas, `y.vencida.1.${ha(20)}.ab12cd34`, 'dono.json'), '{}');
+  // O nome é calculado uma vez: duas chamadas a Date.now() podem cair em milissegundos diferentes.
+  const vencidaAntiga = path.join(travas, `y.vencida.1.${ha(20)}.ab12cd34`);
+  fs.mkdirSync(vencidaAntiga, { recursive: true });
+  fs.writeFileSync(path.join(vencidaAntiga, 'dono.json'), '{}');
   fs.writeFileSync(path.join(travas, `x.dono.123.${ha(20)}.abcdef12`), '{}');
   const novo = `z.dono.9.${ha(1)}.ff00ff00`;
   fs.writeFileSync(path.join(travas, novo), '{}');

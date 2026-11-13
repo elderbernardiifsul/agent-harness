@@ -6,7 +6,7 @@ import { loginDeQuemAge } from '../lib/github.mjs';
 import { pendentesDoTicket, reenviarComAviso, temDoTicket } from '../lib/pendentes.mjs';
 import { avisarDaMarcacao, marcarTickets, quemTemAFrente, sessoesDaquiDaFrente } from '../lib/reserva.mjs';
 import { gravarSessao, idCurto, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
-import { aberturaEmCurso, frenteOrfa, inicioDoProcesso, pidDeComando, prazoMs, vidaDaDona } from '../lib/vida.mjs';
+import { aberturaEmCurso, fechamentoEmCurso, frenteOrfa, inicioDoProcesso, pidDeComando, prazoMs, vidaDaDona } from '../lib/vida.mjs';
 
 export const descricao = 'assume a frente de uma sessão que morreu (com a confirmação do executivo)';
 export const uso = 'ah takeover <nome> [--confirmado]';
@@ -50,6 +50,9 @@ function conferir({ f, nome, amb, sessao }) {
   }
   if (f.estado === 'passada') throw recusa(`A frente ${qual} está passada, sem dona: retome-a em vez de assumir.`, `ah open ${nome}`);
   if (f.estado !== 'ativa') throw recusa(`A frente ${qual} não está ativa (estado ${f.estado}).`, 'confira a frente em ah board');
+  if (fechamentoEmCurso(f)) {
+    throw recusa(`A frente ${qual} está sendo fechada agora (processo ${f.fechando.pid}).`, 'espere esse ah close terminar (ah board mostra fechando enquanto ele roda)');
+  }
   if (f.dona === amb.sessaoId) throw recusa(`A frente ${qual} é desta sessão.`, `a frente já é sua: trabalhe em ${f.worktree}`);
   const vida = vidaDa(dirEstado, f.dona, cfg);
   if (!frenteOrfa(f, vida)) {

@@ -174,9 +174,44 @@ test('C2. o que não troca para ramo protegido continua passando na T5', () => {
   for (const c of ['git checkout -b x && git push -u origin x', 'git switch -c nova && git push', 'git checkout main && git -C /w push', 'git checkout main && git merge dev'])
     assert.equal(av(c).trava, 'T1', c);
 });
-test('C2. troca não afrouxa o ramo protegido que já estava em uso', () => {
-  assert.equal(avaliar({ tipo: 'comando', comando: 'git switch dev && git push', cwd: '/r' }, comRamo('main')).trava, 'T5');
-  assert.equal(avaliar({ tipo: 'comando', comando: 'git checkout src/a.js && git push', cwd: '/r' }, comRamo('main')).trava, 'T5');
+test('C2. troca que pode não ter acontecido não afrouxa o ramo protegido que já estava em uso', () => {
+  const emMain = c => avaliar({ tipo: 'comando', comando: c, cwd: '/r' }, comRamo('main'));
+  // A troca pode falhar (;, ||, segundo plano, negação) ou não ser troca (checkout de arquivo,
+  // corpo de função, status de outro comando): o ramo de antes continua possível.
+  for (const c of ['git switch dev; git push', 'git checkout src/a.js && git push', 'git switch dev || true && git push',
+    'git switch dev & git push', '! git switch dev && git push', 'git switch dev | cat && git push', 'f() { git switch dev; } && git push',
+    `bash -c 'exit 0; git switch dev' && git push`, `bash -c 'false || git switch dev' && git push`, 'setsid git switch dev && git push',
+    'xargs -r git switch dev && git push', 'coproc git switch dev && git push', 'git checkout nao-existe && git push',
+    'case x in y) git switch dev;; esac && git push', '{ git switch dev; true; } && git push', 'AH_GUARD=off git switch HEAD && git push'])
+    assert.equal(emMain(c).trava, 'T5', c);
+  // No worktree (sem T1): a troca para main deu certo; a para dev, depois do `;`, pode ter falhado.
+  assert.equal(av('git switch main && git switch dev; git push', '/w').trava, 'T5');
+});
+test('C2. troca que deu certo antes do push define o ramo do push (pendência 7)', () => {
+  // No worktree da frente a T1 não vale: o push roda na dev, último destino.
+  assert.ok(av('git switch main && git pull && git switch dev && git push', '/w').permite);
+  assert.ok(av(soTrocaLiberada('git switch main && git pull && git switch dev && git push')).permite);
+  const emMain = c => avaliar({ tipo: 'comando', comando: c, cwd: '/r' }, comRamo('main'));
+  for (const c of ['git switch dev && git push', 'git checkout dev && git push', '(git switch dev) && git push', `bash -c 'git switch dev' && git push`,
+    'git switch dev && { git pull; git push; }', 'git switch dev && bash -c "git pull; git push"', 'AH_GUARD=off git switch -c nova && git push'])
+    assert.ok(emMain(c).permite, c);
+  // E o último destino conhecido protegido recusa, mesmo vindo de um ramo livre.
+  assert.equal(av('git switch dev && AH_GUARD=off git switch main && git push', '/w').trava, 'T5');
+});
+test('C2. a troca que deu certo só descarta as que certamente rodaram antes dela (terceira revisão)', () => {
+  // Corpo de função, texto de trap, segundo plano e coproc rodam em outro momento: podem trocar depois.
+  for (const c of ['f() { git switch main; }; git switch dev && f && git push', 'function f { git switch main; }; git switch dev && f && git push',
+    'f() { git switch main; } && git switch dev && f && git push', 'f() { git switch main; }\ngit switch dev && f && git push',
+    'trap "git switch main" DEBUG; git switch dev && git push', `trap 'git switch main' RETURN; git switch dev && git push`,
+    '(sleep 1; git switch main) & git switch dev && sleep 2 && git push', 'git switch main & git switch dev && sleep 2 && git push',
+    'coproc { sleep 1; git switch main; }; git switch dev && sleep 2 && git push', 'coproc git switch main; git switch dev && git push',
+    'git switch dev && f() { git switch main; } && f && git push', `eval 'f() { git switch main; }'; git switch dev && f && git push`])
+    assert.equal(av(c, '/w').trava, 'T5', c);
+  // A que certamente rodou antes (só && entre as duas) continua descartada, também dentro do corpo e do trap.
+  for (const c of ['git switch main && git pull && git switch dev && git push', 'f() { git status; }; git switch main && git switch dev && f && git push',
+    'trap "git status" EXIT; git switch main && git switch dev && git push', 'f() { git switch main && git switch dev && git push; }; f',
+    '(sleep 1; git status) & git switch main && git switch dev && git push', 'git switch main && { git switch feat/x && git switch dev; } && git push'])
+    assert.ok(av(c, '/w').permite, c);
 });
 
 // ---- onda final: I4 (formas de "tudo" no checkout principal)
@@ -195,6 +230,30 @@ test('I4. caminhos literais e opções seguem passando', () => {
     assert.ok(av(c).permite, c);
   assert.ok(av('git add $(git ls-files -m)', '/w').permite);
   assert.ok(av('git add .', '/w').permite);
+});
+test('T2: $ ou crase em caminho literal (aspas simples, escape) não é expansão (pendência 8)', () => {
+  for (const c of [`git add 'a$b.txt'`, "git add 'src/`x`.js'", `git commit -m x -- 'a$b'`, `git add "a\\$b"`, `git add a\\$b`,
+    `bash -c "git add 'a\\$b'"`, `git stage -- 'docs/$ver.md' src/a.js`])
+    assert.ok(av(c).permite, c);
+  // O que expande continua ilegível, mesmo ao lado (ou com o mesmo texto) de um literal.
+  for (const c of [`git add "$X"`, `git add 'a'$X`, `git add 'a$b' a$b`, `git add 'a$b' "$X"`, 'git add "src/`x`.js"',
+    `git commit -m x -- "$(pwd)"`, `git add 'a$b'*`, `bash -c 'git add "$X"'`]) {
+    const r = av(c);
+    assert.equal(r.trava, 'T2', c);
+    assert.match(r.motivo, /não consegui ler os caminhos/, c);
+  }
+  assert.equal(av(`git add 'a$b' .`).trava, 'T2'); // o literal não esconde o "tudo" ao lado
+});
+test('T2: no texto relido que veio de palavra com expansão, as aspas simples não seguram o $ (terceira revisão)', () => {
+  // A camada de fora expande o $ (e a crase) antes de o texto ser relido: não é literal.
+  for (const c of [`bash -c "git add '$(pwd)'"`, "bash -c \"git add '`pwd`'\"", `bash -c "git commit -m x -- '$PWD'"`, `eval "git add '$X'"`,
+    `su -c "git add '$X'"`, `bash -c "bash -c \\"git add '\\$X'\\""`, `echo "git add '$X'" | sh`, `sh <<EOF\ngit add '$X'\nEOF`,
+    `sh <<< "git add '$X'"`, `trap "git add '$X'" EXIT`, `env -S "git add '$X'"`, `env -S"git add '$X'"`, `sudo bash -c "git add '$X'"`])
+    assert.equal(av(c).trava, 'T2', c);
+  // Sem expansão na camada de fora, o literal continua literal.
+  for (const c of [`sh -c "git add 'a\\$b'"`, `sh <<'EOF'\ngit add 'a$b'\nEOF`, `bash -c 'git add '"'"'a$b'"'"`, `echo "git add 'a\\$b'" | sh`,
+    `env -S "git add 'a\\$b'"`, `eval 'git add '"'"'a$b'"'"`])
+    assert.ok(av(c).permite, c);
 });
 
 // ---- onda final: M6 (cd que pode falhar seguido de ;)
@@ -383,6 +442,30 @@ test('T4: curinga que não casa nenhum worktree alheio vivo passa', () => {
     assert.ok(av4(c).permite, c);
   assert.ok(avaliar({ tipo: 'comando', comando: 'rm -rf /wt/*', cwd: '/r' }, { ...ctx4, viva: () => false }).permite, 'dona morta');
 });
+test('T4: *, ? e [!…] não casam o ponto do começo de um nome (pendência 9)', () => {
+  const oculto = { ...ctx4, frentes: [{ ...ctx4.frentes[0], worktree: '/loja/.wt/frete' }] };
+  const av = (c, cwd = '/loja') => avaliar({ tipo: 'comando', comando: c, cwd }, oculto);
+  for (const c of ['rm -rf *', 'rm -rf ./*', 'rm -rf /loja/*', 'rm -rf /loja/?wt', 'rm -rf /loja/[!x]wt', 'rm -rf /loja/*/frete', 'chmod -R 700 *'])
+    assert.ok(av(c).permite, c);
+  // O ponto escrito, a lista entre colchetes (o POSIX deixa em aberto), o dotglob e a pasta comum acima recusam.
+  for (const c of ['rm -rf .*', 'rm -rf .w*', 'rm -rf /loja/.wt/*', 'rm -rf /loja/.??', 'rm -rf /loja/[.]wt', 'rm -rf /loja/.wt/fre*',
+    'shopt -s dotglob; rm -rf *', 'setopt globdots; rm -rf *', 'GLOBIGNORE=x; rm -rf *', 'rm -rf /*'])
+    assert.equal(av(c).trava, 'T4', c);
+  const funda = { ...ctx4, frentes: [{ ...ctx4.frentes[0], worktree: '/loja/a/.wt/frete' }] };
+  assert.equal(avaliar({ tipo: 'comando', comando: 'rm -rf /loja/*', cwd: '/r' }, funda).trava, 'T4', 'rm -r de uma pasta comum leva o oculto junto');
+  assert.ok(avaliar({ tipo: 'comando', comando: 'rm -rf /loja/*/*', cwd: '/r' }, funda).permite);
+});
+test('T4: dotglob escrito com aspas, escape, caixa ou _ também liga o ponto (terceira revisão)', () => {
+  const oculto = { ...ctx4, frentes: [{ ...ctx4.frentes[0], worktree: '/loja/.wt/frete' }] };
+  const av = c => avaliar({ tipo: 'comando', comando: c, cwd: '/loja' }, oculto);
+  // zsh ignora caixa e `_` no nome da opção; argumento ilegível de shopt/setopt/set liga por precaução.
+  for (const c of ['shopt -s dot\\glob; rm -rf *', "shopt -s dotg''lob; rm -rf *", 'setopt GLOB_DOTS; rm -rf *', 'setopt glob_dots; rm -rf *',
+    'setopt Glob_Dots; rm -rf *', 'unsetopt NO_GLOB_DOTS; rm -rf *', "shopt -s $'dot\\x67lob'; rm -rf *", 'o=dot; shopt -s ${o}glob; rm -rf *',
+    'shopt -s "$o"; rm -rf *', 'set -o $o; rm -rf *', 'set -4; rm -rf *', 'export GLOB""IGNORE=x; rm -rf *'])
+    assert.equal(av(c).trava, 'T4', c);
+  for (const c of ['shopt -s nullglob; rm -rf *', 'setopt extendedglob; rm -rf *', 'set -e; rm -rf *', 'set -o pipefail; rm -rf *', 'set -- $x; rm -rf *'])
+    assert.ok(av(c).permite, c);
+});
 
 test('T4: recusa própria para git branch sobre o ramo de frente alheia', () => {
   assert.equal(textoDaRecusa(av4('git branch -D feat/frete')),
@@ -417,4 +500,84 @@ test('T6 passa: pela fila, liberada, aninhada, sem classes, comando que não cas
   assert.ok(av6('npm run build', { aninhado: true }).permite);
   assert.ok(avaliar({ tipo: 'comando', comando: 'npm run build', cwd: '/w' }, ctx).permite);
   assert.ok(av6('npm test && npm run lint && echo npm run build').permite);
+});
+
+// ---- pendência 10: cd que pode falhar no meio
+test('M6. cd x && a; b: a avaliado só em x, b também na pasta de antes', () => {
+  assert.ok(av('cd /w && git add -A; git status').permite);
+  for (const c of ['cd /w && git status; git add -A', 'cd /w && git log && git status; git add -A', 'cd /w && true; git commit -a -m x'])
+    assert.equal(av(c).trava, 'T2', c);
+});
+test('M6. cd absoluto (e git -C absoluto) desfaz a pasta alternativa do cd que pode ter falhado (terceira revisão)', () => {
+  const ctxOutro = { ...ctx, topoDe: c => (c?.startsWith('/w') ? '/w' : c?.startsWith('/outro') ? '/outro' : '/r') };
+  for (const c of ['cd /w && git status; cd /w && git add -A', 'cd /w && npm test; cd /w && git add -A && git commit -m x', 'cd /w && git status; git -C /w add -A',
+    'cd /w && git status; cd /w || exit; git add -A', 'cd /w; cd /w && git add -A', 'cd /w; git -C /w add -A', 'cd /w || true; cd /w && git add -A',
+    'cd /w && git status; cd /w && git status; cd /w && git add -A', 'cd /w && git status; cd /w/sub && git add -A', 'cd /w && git status; git -C /w/sub add -A'])
+    assert.ok(av(c).permite, c);
+  assert.ok(avaliar({ tipo: 'comando', comando: 'cd /w && git status; cd /outro && git add -A', cwd: '/r' }, ctxOutro).permite);
+  // O cd que pode falhar de novo, o relativo e o git -C relativo continuam vendo a pasta de antes.
+  for (const c of ['cd /w && git status; cd /w; git add -A', 'cd /w && git status; cd sub && git add -A', 'cd /w && git status; git -C sub add -A',
+    'cd /w && git status; cd /w && true; git add -A', 'cd /w || true; cd /w || true; git add -A', 'cd /w && git status; cd /w || true; git add -A'])
+    assert.equal(av(c).trava, 'T2', c);
+});
+
+// ---- pendência 11: merge de PR pela API
+test('T5: gh api …/pulls/<n>/merge com PUT é avaliado como gh pr merge (pendência 11)', () => {
+  for (const c of ['gh api -X PUT repos/{owner}/{repo}/pulls/8/merge', 'gh api repos/:owner/:repo/pulls/8/merge --method PUT',
+    'gh api --method=put /repos/{owner}/{repo}/pulls/8/merge -f merge_method=squash', 'gh api -XPUT repos/{owner}/{repo}/pulls/8/merge',
+    'gh api repos/{owner}/{repo}/pulls/8/merge -f merge_method=squash', 'gh api repos/exemplo/loja/pulls/7/merge -X PUT',
+    'gh api repos/{owner}/{repo}/pulls/9/merge -X PUT', 'gh api repos/{owner}/{repo}/pulls/8/merge -X $M', 'gh api repos/{owner}/{repo}/pulls/$N/merge -X PUT',
+    'gh api https://api.github.com/repos/exemplo/loja/pulls/8/merge -X PUT', 'gh api -H "Accept: x" repos/{owner}/{repo}/pulls/8/merge/ -X PUT']) {
+    const r = av(c);
+    assert.equal(r.trava, 'T5', c);
+    assert.ok(r.saida, c);
+  }
+  assert.match(av('gh api -X PUT repos/{owner}/{repo}/pulls/8/merge').motivo, /main/);
+  // A base livre passa; ler o estado do merge (GET) e outras rotas também.
+  for (const c of ['gh api -X PUT repos/{owner}/{repo}/pulls/7/merge', 'gh api repos/{owner}/{repo}/pulls/8/merge', 'gh api repos/{owner}/{repo}/pulls/8/merge -X GET',
+    'gh api repos/{owner}/{repo}/pulls/8', 'gh api -X PATCH repos/{owner}/{repo}/pulls/8 -f title=x', 'gh api repos/{owner}/{repo}/pulls/8/merge --jq .merged'])
+    assert.ok(av(c).permite, c);
+});
+
+// ---- pendência 12: caminhos que chegam pelo xargs
+test('T2: xargs git add/commit no checkout principal tem caminhos que não dá para ler (pendência 12)', () => {
+  for (const c of ['git ls-files -m | xargs git add', 'xargs -0 git add < lista.txt', `find . -name '*.js' -print0 | xargs -0 git add --`,
+    'xargs -I{} git add {}', 'xargs git commit -m x', 'xargs git stage', 'xargs -r -n 10 git add', 'cat lista | xargs git -C /r add']) {
+    const r = av(c);
+    assert.equal(r.trava, 'T2', c);
+    assert.match(r.motivo, /xargs/, c);
+    assert.ok(r.saida, c);
+  }
+  assert.match(av('xargs git add -A').motivo, /git add com tudo/);
+  for (const c of ['xargs git status', 'git ls-files -m | xargs git diff --', 'xargs grep x', 'xargs echo git add'])
+    assert.ok(av(c).permite, c);
+  assert.ok(av('git ls-files -m | xargs git add', '/w').permite, 'no worktree da frente');
+});
+
+// ---- terceira revisão: checkout com -- sem caminhos e o repositório do gh
+test('git checkout <ramo> -- sem caminhos troca de ramo (T1 e T5; terceira revisão)', () => {
+  for (const c of ['git checkout main -- && git push', 'git checkout stage -- && git push origin HEAD', 'git checkout main --; git push'])
+    assert.equal(av(c, '/w').trava, 'T5', c);
+  assert.equal(av(soTrocaLiberada('git checkout main -- && git push')).trava, 'T5');
+  for (const c of ['git checkout main --', 'git checkout stage --', 'git checkout feat/x --'])
+    assert.equal(av(c).trava, 'T1', c);
+  // Com caminhos depois do --, é checkout de arquivo; o da base e o de ramo livre passam.
+  for (const c of ['git checkout dev -- && git push', 'git checkout main -- arquivo.txt && git push', 'git checkout -- && git push'])
+    assert.ok(av(c, '/w').permite, c);
+  for (const c of ['git checkout dev --', 'git checkout main -- src/a.js', 'git checkout -- main']) assert.ok(av(c).permite, c);
+});
+test('T5: merge de PR com o repositório vindo de GH_REPO, --repo ou -R não sabe a base (terceira revisão)', () => {
+  for (const c of ['GH_REPO=exemplo/outro gh api -X PUT repos/{owner}/{repo}/pulls/7/merge', 'gh api -X PUT repos/{owner}/{repo}/pulls/7/merge -R exemplo/outro',
+    'gh api --repo exemplo/outro -X PUT repos/{owner}/{repo}/pulls/7/merge', 'gh api -R exemplo/outro -X PUT repos/{owner}/{repo}/pulls/7/merge',
+    'gh api --repo=exemplo/outro -X PUT repos/{owner}/{repo}/pulls/7/merge', 'gh -R exemplo/outro api -X PUT repos/{owner}/{repo}/pulls/7/merge',
+    'env GH_REPO=exemplo/outro gh api -X PUT repos/{owner}/{repo}/pulls/7/merge', 'export GH_REPO=exemplo/outro; gh api -X PUT repos/{owner}/{repo}/pulls/7/merge',
+    'GH_REPO=exemplo/outro gh pr merge 7', 'export GH_REPO=exemplo/outro; gh pr merge 7']) {
+    const r = av(c);
+    assert.equal(r.trava, 'T5', c);
+    assert.match(r.motivo, /não consigo saber/, c);
+    assert.ok(r.saida, c);
+  }
+  for (const c of ['gh api -X PUT repos/{owner}/{repo}/pulls/7/merge', 'GH_REPO=exemplo/outro gh api repos/{owner}/{repo}/pulls/7/merge',
+    'gh api -R exemplo/outro repos/{owner}/{repo}/pulls/8', 'gh pr merge 7'])
+    assert.ok(av(c).permite, c);
 });

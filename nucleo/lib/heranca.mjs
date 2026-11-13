@@ -7,15 +7,20 @@ import { lerSessao, gravarSessao, listarSessoes } from './sessao.mjs';
 import { listarFrentesTolerante, gravarFrente, frentesDa } from './frente.mjs';
 import { enfileirar } from './pendentes.mjs';
 import { corpoDaMarcacao } from './reserva.mjs';
+import { fechamentoDa } from './fechamento.mjs';
+import { fechamentoEmCurso } from './vida.mjs';
 
 // Mesmo processo só com a hora de início conhecida e igual nos dois lados: sem ela, um pid
 // reaproveitado (Windows, ps que falhou) encerraria uma sessão viva. Na dúvida, não (seção 11).
 const comAnterior = (f, id) => [...new Set([...(Array.isArray(f.sessoesAnteriores) ? f.sessoesAnteriores : []), id])];
 const mesmoProcesso = (s, pid, pidInicio) => s.pid === pid && pidInicio != null && s.pidInicio === pidInicio;
+// Frente com um `ah close` no meio (marca `fechando` viva) ou com o comentário de fechamento já nos tickets (marca em
+// fechamentos/): passá-la poria uma passagem depois do comentário de fechamento, e o close não terminaria.
+const emFechamento = (dirEstado, f) => fechamentoEmCurso(f) || fechamentoDa(dirEstado, f) !== null;
 
 export function continuarSessao(dirEstado, { sessao, pid, pidInicio = null, origem }) {
   return comTrava(dirEstado, 'frentes', async () => {
-    const resultado = { substituidas: [], herdadas: [], soltas: [], passadas: [] };
+    const resultado = { substituidas: [], herdadas: [], soltas: [], passadas: [], emFechamento: [] };
     if (pid === null || pid === undefined || pidInicio === null || pidInicio === undefined) return resultado;
     const velhas = listarSessoes(dirEstado).sessoes.filter(s => s.id !== sessao && !s.fim && mesmoProcesso(s, pid, pidInicio));
     if (!velhas.length) return resultado;
@@ -33,6 +38,13 @@ export function continuarSessao(dirEstado, { sessao, pid, pidInicio = null, orig
         registrarEvento(dirEstado, { tipo: 'substituida', de: velha.id, por: sessao });
         resultado.substituidas.push(velha.id);
       };
+      // A frente em fechamento vai para a sessão nova sem passar (com a marca intacta), em qualquer caso: o close
+      // em curso termina, ou o seguinte termina sem comentar de novo.
+      const paraANova = f => {
+        gravarFrente(dirEstado, { ...f, dona: sessao, sessoesAnteriores: comAnterior(f, velha.id) });
+        resultado.emFechamento.push({ id: f.id, nome: f.nome });
+        registrarEvento(dirEstado, { tipo: 'frente-em-fechamento', sessao: velha.id, frente: f.nome, por: sessao });
+      };
       const vinculo = origem === 'continuacao';
       // Destino executor que já tem frente ativa (o /resume de uma conversa com frente): não herda as da velha, que
       // ficam passadas como no handoff (a passagem vai para os tickets pela fila); papel e foco do destino ficam.
@@ -40,6 +52,7 @@ export function continuarSessao(dirEstado, { sessao, pid, pidInicio = null, orig
         && frentesDa(listarFrentesTolerante(dirEstado).frentes, sessao).length > 0;
       if (destinoOcupado) {
         for (const f of daVelha) {
+          if (emFechamento(dirEstado, f)) { paraANova(f); continue; }
           const passada = { ...f, estado: 'passada', dona: null, passadaEm: agora, passadaPor: velha.id, passadaDe: velha.id, sessoesAnteriores: comAnterior(f, velha.id) };
           delete passada.tomadaDe;
           delete passada.tomadaEm;
@@ -68,6 +81,7 @@ export function continuarSessao(dirEstado, { sessao, pid, pidInicio = null, orig
         registrarEvento(dirEstado, { tipo: 'heranca', de: velha.id, sessao, frentes: nomes });
       } else {
         for (const f of daVelha) {
+          if (emFechamento(dirEstado, f)) { paraANova(f); continue; }
           // `passadaDe`: a sessão de quem a frente ficou solta (a retomada a reconhece como desta máquina).
           gravarFrente(dirEstado, { ...f, estado: 'passada', dona: null, passadaEm: agora, passadaPor: 'continuacao-sem-vinculo', passadaDe: velha.id, sessoesAnteriores: comAnterior(f, velha.id) });
           resultado.soltas.push(f.nome);

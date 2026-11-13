@@ -349,3 +349,226 @@ Os comandos somam menos de 2 s; a duração da demonstração é determinada pel
 $ node ferramentas/varre-termos.mjs
 Nenhum termo proibido encontrado.
 ```
+
+## Ensaio de 2026-11-13: trava de extensão, pesado e recursos
+
+Data: 2026-11-13. Agente: Claude Code 2.1.319 (`claude --version`), modelo padrão da conta (sem `--model`; o `modelUsage` da saída JSON registrou `claude-opus-5-5` nas três execuções válidas). Núcleo: o do ramo `pend-integracao`.
+
+Objetivo: verificar com o agente real (a) a recusa de uma trava de extensão (`revisao/gerados`, do guia `docs/extensoes/como-estender.md`) numa edição de arquivo, (b) a recusa T6 de um comando de trabalho pesado executado fora da fila e a execução dele pelo `ah pesado` e (c) a recusa do `close` de uma frente com recurso reservado pela extensão `recursos`.
+
+### Preparo
+
+Repositório descartável `loja` numa pasta temporária nova, sem remoto, com estado, worktrees e fila de pesado dentro dela e um `gh` falso (cópia de `teste/apoio/gh-falso.mjs`, que responde `api user` com o login `ana-souza`). Como nas fatias anteriores, todos os comandos rodaram num ambiente sem as variáveis `CLAUDECODE` e `CLAUDE*` da sessão externa e sem `AH_PID_AGENTE` e `AH_SESSAO`, e todo `claude -p` recebeu `--setting-sources project`.
+
+```
+export AH_ESTADO=<tmp>/estado AH_WORKTREES=<tmp>/wt AH_FILA=<tmp>/fila AH_GH=<tmp>/bin/gh-falso.mjs
+git init -b main <tmp>/loja
+cd <tmp>/loja
+git config user.name ana-souza
+git config user.email ana@exemplo.test
+echo loja > README.md
+git add README.md
+git commit -m "commit inicial"
+git branch dev
+git branch stage
+git switch dev
+node <harness>/nucleo/bin/ah.mjs init --projeto loja --sigla as --sem-protecao
+git add -- .harness tools/ah tools/ah.cmd AGENTS.md docs/agents/sessoes-paralelas.md docs/agents/historico-das-frentes.md .claude/settings.json .github/workflows/ah-ci.yml
+git commit -m "chore: instala o agent-harness"
+```
+
+Em seguida, a extensão `revisao` foi copiada do guia (os dois arquivos da seção 6, `extensao.mjs` e `extensao.test.mjs`, extraídos do texto sem alteração) para `.harness/extensoes/revisao/`, e o `.harness/config.json` recebeu:
+
+```json
+"extensoes": { "revisao": true, "recursos": true },
+"pesado": { "classes": { "build": { "vagas": 1, "padroes": ["npm run build*"] } }, … }
+```
+
+com um `package.json` cujo `build` é `sleep 2 && echo build ok`, um `src/app.js` e um `dist/app.js` (`var total=0;`) versionado, para que o worktree da frente tenha um arquivo na pasta protegida pela trava:
+
+```
+node --test .harness/extensoes/        # 3 testes, pass 3, fail 0
+git add -- .harness/config.json .harness/extensoes/revisao package.json src/app.js dist/app.js
+git commit -m "chore: extensão revisao, recursos e classe de pesado"
+tools/ah doctor
+```
+
+Saída do `doctor` (código 0):
+
+```
+ok      Node 22 ou mais novo
+ok      git presente
+ok      Shell POSIX
+ok      .harness é uma pasta do projeto
+ok      .harness/config.json válido
+ok      Cópia do núcleo (MANIFEST.json)
+ok      Núcleo igual ao clone de origem
+ok      Arquivos de estado legíveis
+ok      Sigla sem choque
+ok      gh presente e autenticado
+ok      Ramo base e ramos protegidos
+ok      Ganchos do Claude Code instalados
+ok      Harness no ramo base
+ok      Gancho responde
+ok      Hora de início do processo
+ok      Gancho recusa troca de ramo
+ok      Ganchos vigiam a edição
+ok      Comentários pendentes
+ok      Frentes órfãs
+ok      Proteção de stage no servidor
+ok      Proteção de main no servidor
+aviso   CI com comando de teste: defina ci.comandoDeTeste em .harness/config.json e rode ah init
+ok      Frentes com worktree
+ok      Fila de pesado
+ok      Extensão recursos (harness)
+ok      Extensão revisao (projeto)
+ok      Recursos sem conflito (recursos)
+0 falha(s), 1 aviso(s).
+```
+
+As três execuções usaram `--output-format json`; o código de saída é o do `claude`, e as mensagens recebidas pelo agente foram conferidas na transcrição da sessão (os `tool_result` das chamadas). Cada execução levou de 10 a 13 s.
+
+### Execução 1: trava de extensão na edição
+
+```
+claude -p --setting-sources project --permission-mode acceptEdits --allowedTools Bash Read Edit Write --add-dir <tmp>/wt --output-format json \
+  "Ensaio do harness num repositório descartável. Passo 1: chame a ferramenta Bash com o comando exato \`tools/ah open ensaio\` (sem nada depois). Passo 2: no worktree da frente que o comando informar, leia dist/app.js e use a ferramenta Edit para trocar o conteúdo por \`var total=1;\`. Não contorne nenhuma recusa. Diga o que aconteceu em cada passo, citando as mensagens recebidas." < /dev/null
+```
+
+Código de saída: 0. Esperado: recusa `revisao/gerados` com motivo e próximo passo. Obtido: o esperado. O `open` abriu `as-1 ensaio`; o `Read` passou; o `Edit` recebeu:
+
+```
+PreToolUse:Edit hook error: ["$CLAUDE_PROJECT_DIR"/tools/ah gancho claude-code]: Recusado (revisao/gerados): <tmp>/wt/ensaio/dist/app.js fica na pasta dist, gerada pelo build
+Faça: edite a fonte e rode o build de novo
+```
+
+Resposta do agente (trecho):
+
+> **Passo 2: editar `dist/app.js` nesse worktree**
+> - **Leitura:** o arquivo continha `var total=0;`.
+> - **Edit para `var total=1;`:** o gancho `tools/ah gancho claude-code` barrou a edição antes de ela acontecer, com esta mensagem:
+>   > Recusado (revisao/gerados): <tmp>/wt/ensaio/dist/app.js fica na pasta dist, gerada pelo build
+>   > Faça: edite a fonte e rode o build de novo
+>
+> A trava `revisao/gerados` se comportou como esperado: bloqueou a escrita direta num arquivo gerado pelo build. O caminho que ela indica é alterar o arquivo-fonte e rodar o build de novo.
+
+O arquivo permaneceu `var total=0;`, e a saída JSON listou o `Edit` em `permission_denials`. Eventos:
+
+```
+{"tipo":"sessao-inicio","sessao":"<sessão>","agente":"claude-code","origem":"novo","modelo":null,"em":"2026-11-13T19:06:03.019Z"}
+{"tipo":"abertura","sessao":"<sessão>","frente":"ensaio","id":"as-1","tickets":[],"em":"2026-11-13T19:06:05.429Z"}
+{"tipo":"recusa","sessao":"<sessão>","trava":"revisao/gerados","extensao":"revisao","ferramenta":"Edit","caminho":"<tmp>/wt/ensaio/dist/app.js","em":"2026-11-13T19:06:09.448Z"}
+{"tipo":"sessao-fim","sessao":"<sessão>","motivo":"other","em":"2026-11-13T19:06:15.392Z"}
+```
+
+A `recusa` traz `trava` no formato `<extensão>/<id>`, o campo `extensao` e, por ser edição, `ferramenta` e `caminho`, como descreve a tabela de eventos de `comandos.md`.
+
+**Tentativa descartada (defeito do ensaio).** A primeira redação do pedido terminava o comando com um ponto separado (`com o comando exato: tools/ah open ensaio . 2) …`). O agente executou `tools/ah open ensaio .`, que o `open` recusou com `Recusado: Argumento a mais: .` e `Faça: use ah open <nome> [--tickets 1,2] [--plano <arquivo>] [--caminhos <globs>] [--para <id curto>]` (código 1; evento `recusa-de-comando` com `motivo` `Argumento a mais: .`). O agente não repetiu o comando sem o ponto, por ter recebido a ordem de não contornar recusas, e parou. A recusa é correta; o defeito foi da redação do pedido, refeito com o comando entre crases. Nessa tentativa, o `modelUsage` registrou `claude-fable-5-2`, e a saída de erro, `[claude-code:unrecognized_model] {"model":"claude-fable-5-2","query_source":"sdk"}`; nas três execuções válidas o modelo foi `claude-opus-5-5`, sem esse aviso.
+
+### Execução 2: pesado e T6
+
+```
+claude -p --setting-sources project --permission-mode acceptEdits --allowedTools Bash Read --output-format json \
+  "Ensaio do harness num repositório descartável. Chame a ferramenta Bash com o comando exato \`npm run build\`, diretamente. Se ele for recusado, siga a instrução da recusa para rodar o build pelo caminho indicado. Diga o que aconteceu em cada tentativa, citando as mensagens recebidas e o código de saída." < /dev/null
+```
+
+Código de saída: 0. Esperado: recusa T6 com a indicação de `tools/ah pesado -- npm run build` e, em seguida, o build pelo `pesado`. Obtido: o esperado. Comandos executados pelo agente, conforme a transcrição: `npm run build` (recusado) e `tools/ah pesado -- npm run build; echo "exit=$?"` (o `; echo` foi acrescentado pelo agente, como na fatia 1, e não aciona trava).
+
+Resposta do agente (trecho):
+
+> **Tentativa 1: `npm run build`, chamado direto.** O gancho do harness (`tools/ah gancho claude-code`) recusou o comando antes de ele rodar. A mensagem foi:
+>
+> > Recusado (T6): npm é trabalho pesado (classe build) e roda fora da fila; vários juntos esgotam a memória da máquina
+> > Faça: tools/ah pesado -- npm run build
+>
+> **Tentativa 2: `tools/ah pesado -- npm run build`, o caminho que a recusa indicou.** Desta vez passou pela fila de trabalho pesado e rodou o script de build:
+>
+> ```
+> > loja@1.0.0 build
+> > sleep 2 && echo build ok
+>
+> build ok
+> ```
+>
+> O código de saída foi **0**.
+
+Eventos:
+
+```
+{"tipo":"sessao-inicio","sessao":"<sessão>","agente":"claude-code","origem":"novo","modelo":null,"em":"2026-11-13T19:06:28.745Z"}
+{"tipo":"recusa","sessao":"<sessão>","trava":"T6","comando":"npm run build","em":"2026-11-13T19:06:30.533Z"}
+{"tipo":"pesado","sessao":"<sessão>","senha":1,"classe":"build","esperaMs":1,"duracaoMs":2129,"codigo":0,"em":"2026-11-13T19:06:34.540Z"}
+{"tipo":"sessao-fim","sessao":"<sessão>","motivo":"other","em":"2026-11-13T19:06:39.434Z"}
+```
+
+O evento `pesado` registra a classe `build`, a espera de 1 ms (fila vazia) e a duração de 2,1 s, compatível com o `sleep 2`. Ao fim, `<tmp>/fila/fila.json` ficou com `"proximaSenha": 2` e `"entradas": []`, ou seja, a vaga foi liberada.
+
+### Execução 3: recursos e `close`
+
+A frente `ensaio` da execução 1 ficou órfã quando a sessão dela terminou, e uma sessão nova de `claude -p` não é dona dela. Por isso, o pedido abre uma frente própria na mesma sessão antes de reservar.
+
+```
+claude -p --setting-sources project --permission-mode acceptEdits --allowedTools Bash Read --output-format json \
+  "Ensaio do harness num repositório descartável. Rode, nesta pasta (o checkout principal), um comando por chamada da ferramenta Bash, com o texto exato e nada mais: 1) \`tools/ah open portas\` 2) \`tools/ah recursos reservar porta 3001\` 3) \`tools/ah recursos listar\` 4) \`tools/ah close\`. Não rode nenhum outro comando, nem para corrigir uma recusa. Diga o que aconteceu em cada um, citando as mensagens recebidas e o código de saída." < /dev/null
+```
+
+Código de saída: 0. Esperado: o `close` recusa pelos recursos e indica como liberar. Obtido: o esperado. Saídas recebidas pelo agente, na ordem:
+
+```
+Frente as-2 portas aberta.
+Trabalhe em: <tmp>/wt/portas
+
+Reservado: porta 3001 para a frente as-2 portas.
+
+as-2 portas: porta 3001
+
+Exit code 1
+Recusado: a extensão recursos não deixa fechar a frente as-2 portas: a frente ainda tem recursos reservados: porta 3001
+Faça: libere com ah recursos liberar --todos --frente portas e rode ah close de novo
+```
+
+Resposta do agente (trecho):
+
+> 4. **`tools/ah close`**: recusado, **código de saída 1**.
+>    > Recusado: a extensão recursos não deixa fechar a frente as-2 portas: a frente ainda tem recursos reservados: porta 3001
+>    > Faça: libere com ah recursos liberar --todos --frente portas e rode ah close de novo
+>
+> Como você pediu, não rodei a liberação sugerida. Por isso a frente as-2 portas ainda está aberta e a porta 3001 continua reservada para ela.
+
+Eventos:
+
+```
+{"tipo":"sessao-inicio","sessao":"<sessão>","agente":"claude-code","origem":"novo","modelo":null,"em":"2026-11-13T19:06:51.932Z"}
+{"tipo":"abertura","sessao":"<sessão>","frente":"portas","id":"as-2","tickets":[],"em":"2026-11-13T19:06:53.882Z"}
+{"tipo":"recusa-de-comando","comando":"close","sessao":"<sessão>","motivo":"a extensão recursos não deixa fechar a frente as-2 portas: a frente ainda tem recursos reservados: porta 3001","em":"2026-11-13T19:06:58.220Z"}
+{"tipo":"sessao-fim","sessao":"<sessão>","motivo":"other","em":"2026-11-13T19:07:05.007Z"}
+```
+
+A reserva não gera evento próprio (a tabela de eventos de `comandos.md` não prevê um); ela fica no registro da frente, em `extensoes.recursos.itens`. Depois da execução, de fora do agente:
+
+```
+$ tools/ah board
+ID    NOME    DONA              ESTADO  TICKETS  SOBREPÕE  PLANO  ÚLTIMA NOTA  RECURSOS
+as-1  ensaio  <sessão> (morta)  órfã    —        —         —      —            —
+as-2  portas  <sessão> (morta)  órfã    —        —         —      —            porta 3001
+Sessões vivas: nenhuma
+$ tools/ah recursos listar
+as-2 portas: porta 3001
+```
+
+### Resultado
+
+| Execução | Esperado | Obtido | Eventos |
+|---|---|---|---|
+| 1, trava de extensão | `Recusado (revisao/gerados)` com motivo e `Faça:` | igual; arquivo intacto | `recusa` com `trava: revisao/gerados`, `extensao`, `ferramenta`, `caminho` |
+| 2, pesado | `Recusado (T6)` com `Faça: tools/ah pesado -- npm run build`; build pela fila | igual; build com código 0 | `recusa` T6, `pesado` (classe `build`, código 0) |
+| 3, recursos | `close` recusado pelos recursos, com o `liberar --todos` | igual; código 1 | `abertura`, `recusa-de-comando` do `close` |
+
+Nenhum defeito do harness foi observado. O único desvio foi do ensaio (a redação do primeiro pedido da execução 1). Em `-p`, as frentes das duas execuções ficaram órfãs no fim da sessão, como na fatia 2; a `portas` mantém a porta 3001 até um `ah recursos liberar --todos --frente portas`, que vale para frente órfã.
+
+### Varredura de termos (ensaio de 2026-11-13)
+
+```
+$ node ferramentas/varre-termos.mjs
+Nenhum termo proibido encontrado.
+```

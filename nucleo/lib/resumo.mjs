@@ -1,4 +1,6 @@
 // Resumo injetado no começo da sessão: curto, para não gastar o contexto do agente.
+import path from 'node:path';
+import { duracaoCurta } from './fila.mjs';
 import { idCurto } from './sessao.mjs';
 
 export const LIMITE_RESUMO = 1200;
@@ -47,10 +49,26 @@ function linhasDaSituacao({ semDona = [], sobreposicoes = [], avisos = [] }) {
   return linhas;
 }
 
+const RODANDO_NO_RESUMO = 3;
+
+// Uma linha sobre a fila de pesado da máquina (o retrato de retratoDaFila), ou null com a fila vazia ou ilegível
+// (o quadro e o doctor mostram o erro). No máximo 200 caracteres.
+export function linhaDoPesado(retrato) {
+  const entradas = Array.isArray(retrato?.entradas) ? retrato.entradas : [];
+  if (retrato?.erro || !entradas.length) return null;
+  const rodando = entradas.filter(e => e.estado === 'rodando');
+  const esperando = entradas.length - rodando.length;
+  const quem = e => `senha ${e.senha} (${linha(e.projeto ?? '?', 20)}, ${linha(path.basename(String(e.worktree ?? '?')), 30)}, há ${duracaoCurta(e.haMs)})`;
+  let texto = rodando.length ? `rodando ${rodando.slice(0, RODANDO_NO_RESUMO).map(quem).join(', ')}` : 'ninguém rodando';
+  if (rodando.length > RODANDO_NO_RESUMO) texto += ` e mais ${rodando.length - RODANDO_NO_RESUMO}`;
+  if (esperando) texto += `; ${esperando} esperando`;
+  return linha(`Pesado: ${texto} (tools/ah board).`, LIMITE_LINHA_DA_SITUACAO);
+}
+
 // `situacao` = {semDona: [{id, nome, saida}], sobreposicoes: [{arquivo, frentes: [ids das outras frentes]}], avisos: [texto]}.
 // `extensoes`: linhas das extensões (até duas de cada, já juntadas), somadas antes da cauda; se não couberem no
-// limite nem sem a lista das outras frentes, saem as últimas.
-export function montarResumo({ sessao, frentes = [], config, baseLimpa, situacao = {}, extensoes = [] }) {
+// limite nem sem a lista das outras frentes, saem as últimas. `pesado`: a linha de linhaDoPesado (ou null).
+export function montarResumo({ sessao, frentes = [], config, baseLimpa, situacao = {}, extensoes = [], pesado = null }) {
   const minha = nomeDaFrente(sessao.frente);
   const listadasSemDona = new Set((situacao.semDona ?? []).map(f => f.nome));
   const outras = frentes.filter(f => f.nome !== minha && !listadasSemDona.has(f.nome))
@@ -61,6 +79,7 @@ export function montarResumo({ sessao, frentes = [], config, baseLimpa, situacao
     `Sessão ${linha(idCurto(sessao.id), 8)} (${linha(sessao.papel ?? 'executor', 20)}) no harness.`,
     linhaDaSuaFrente(sessao, frentes),
     ...linhasDaSituacao(situacao),
+    ...(pesado ? [linha(pesado, LIMITE_LINHA_DA_SITUACAO)] : []),
   ];
   const cauda = [
     textoDaBase(config, baseLimpa),

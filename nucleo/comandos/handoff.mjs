@@ -2,12 +2,14 @@ import fs from 'node:fs';
 import { ErroDeUso } from '../lib/caminhos.mjs';
 import { comTrava, registrarEvento } from '../lib/estado.mjs';
 import { reagir } from '../lib/extensoes.mjs';
+import { fechamentoDa } from '../lib/fechamento.mjs';
 import { frentesDa, gravarFrente, lerFrente, listarFrentes, listarFrentesTolerante, nomeValido } from '../lib/frente.mjs';
 import { git, recusaDoWorktree } from '../lib/git.mjs';
 import { loginDeQuemAge } from '../lib/github.mjs';
 import { enfileirar, pendentesDoTicket, reenviarComAviso } from '../lib/pendentes.mjs';
 import { avisarDaMarcacao, corpoDaMarcacao } from '../lib/reserva.mjs';
 import { gravarSessao, idCurto, lerSessao, tocarSinal } from '../lib/sessao.mjs';
+import { fechamentoEmCurso } from '../lib/vida.mjs';
 
 export const descricao = 'passa a frente adiante sem fechá-la: empurra o ramo, comenta a passagem e solta a frente';
 export const uso = 'ah handoff [<nome>] [--nota "<texto>"]';
@@ -16,6 +18,13 @@ export const requisitos = { config: true, sessao: true };
 const recusa = (motivo, saida) => new ErroDeUso(`${motivo}\nPróximo passo: ${saida}`);
 const primeiraLinha = r => (r.erro || r.saida || `código ${r.codigo}`).trim().split('\n')[0].slice(0, 300);
 const COMMITS_NO_COMENTARIO = 3;
+// Um `ah close` entre as fases (marca `fechando` de processo vivo): passar a frente agora brigaria com ele.
+const recusaDoFechamento = f => recusa(`A frente ${f.id} ${f.nome} está sendo fechada agora (processo ${f.fechando.pid}).`,
+  `espere esse ah close terminar (ah board mostra fechando enquanto ele roda); se a frente continuar no quadro, rode ah handoff ${f.nome} de novo`);
+// Um `ah close` que começou a comentar o fechamento nos tickets e parou (marca em fechamentos/): a passagem chegaria
+// aos tickets depois do fechamento. O caminho é terminar o fechamento.
+const recusaDoFechamentoParado = f => recusa(`A frente ${f.id} ${f.nome} está com o fechamento parado: os tickets já receberam (ou estavam recebendo) o comentário de fechamento.`,
+  `termine com ah close ${f.nome} (não comenta de novo)`);
 
 function lerOpcoes(args) {
   const o = { nome: null, nota: undefined };
@@ -107,6 +116,8 @@ export async function executar(args, amb) {
       throw recusa(`A frente ${f.id} ${f.nome} não está ativa (estado ${f.estado}).`,
         `se o ah open dela parou no meio, rode ah open ${f.nome} para terminar ou ah close ${f.nome} para desistir`);
     }
+    if (fechamentoEmCurso(f)) throw recusaDoFechamento(f);
+    if (fechamentoDa(dirEstado, f)) throw recusaDoFechamentoParado(f);
     return { frente: f, topo: conferirWorktree(f, env) };
   }, { venceMs: 120000 });
 
@@ -142,6 +153,8 @@ export async function executar(args, amb) {
       throw recusa(`A frente ${frente.nome} mudou durante o handoff (agora: ${f ? `${f.estado}, dona ${f.dona ?? '—'}` : 'sem registro'}).`,
         'rode ah board para ver quem está com ela; o estado local não mudou');
     }
+    if (fechamentoEmCurso(f)) throw recusaDoFechamento(f);
+    if (fechamentoDa(dirEstado, f)) throw recusaDoFechamentoParado(f);
     if (conferirWorktree(f, env) !== topo) {
       throw recusa(`O ramo ${f.ramo} ganhou commits durante o handoff.`, 'rode ah handoff de novo para empurrá-los; o estado local não mudou');
     }

@@ -150,12 +150,13 @@ export function lerCache(dirEstado) {
 // Cache gravado antes do campo `parcial`: o de `ah deps <n>` sem lista guardada ficava com `completa: null`.
 const cacheParcial = c => c.parcial ?? c.completa == null;
 
-// Data e hora (AAAA-MM-DD HH:MM) no fuso da configuração.
+// Data e hora (AAAA-MM-DD HH:MM) no fuso da configuração, seguidas do nome do fuso: a tela diz em que fuso
+// está a hora (os registros guardam UTC).
 export function quando(iso, fuso) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
     timeZone: fuso, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).formatToParts(new Date(iso)).map(x => [x.type, x.value]));
-  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute} ${fuso}`;
 }
 
 // --- Montagem ---
@@ -308,9 +309,16 @@ export function avisosDeBloqueio(dirEstado, tickets, fuso) {
   if (!cache) return [];
   const linhas = [];
   for (const t of tickets ?? []) {
-    const abertos = (cache.issues[t]?.bloqueadoPor ?? []).filter(b => b.estado === 'aberta' || (b.repo === null && cache.issues[b.numero]?.estado === 'aberta'));
+    const abertos = bloqueiosAbertos(cache, t);
     if (!abertos.length) continue;
-    linhas.push(`Aviso: o ticket #${t} está bloqueado por ${abertos.map(b => `${b.repo ? `${b.repo}#` : '#'}${b.numero} (aberta)`).join(', ')}; a frente abre assim mesmo (leitura de ah deps de ${quando(cache.lidoEm, fuso)}).`);
+    linhas.push(`Aviso: o ticket #${t} está bloqueado por ${abertos.map(b => `${refDoBloqueio(b)} (aberta)`).join(', ')}; a frente abre assim mesmo (leitura de ah deps de ${quando(cache.lidoEm, fuso)}).`);
   }
   return linhas;
 }
+
+// O que bloqueia o ticket e está aberto, pela leitura guardada (sem rede).
+export function bloqueiosAbertos(cache, ticket) {
+  const lista = cache?.issues?.[ticket]?.bloqueadoPor;
+  return (Array.isArray(lista) ? lista : []).filter(b => b?.estado === 'aberta' || (b?.repo === null && cache.issues[b.numero]?.estado === 'aberta'));
+}
+export const refDoBloqueio = b => `${b.repo ? `${b.repo}#` : '#'}${b.numero}`;

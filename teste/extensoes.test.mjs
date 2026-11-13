@@ -277,7 +277,8 @@ test('ciclo: depoisDeAbrir, coluna no quadro, antesDeFechar recusa sem mexer em 
   assert.match(recusa.erro, /^Recusado: a extensão eco não deixa fechar a frente as-1 carrinho: a frente está presa pelo eco\nFaça: rode ah eco-marcar carrinho solta\n$/);
   assert.ok(fs.existsSync(wt));
   assert.equal(frenteDoTeste(p, 'carrinho').estado, 'ativa');
-  assert.equal(frenteDoTeste(p, 'carrinho').fechamentoComentado, undefined);
+  assert.ok(!fs.existsSync(path.join(dirDoTeste(p), 'fechamentos', 'carrinho.json')), 'marca de comentário de fechamento');
+  assert.equal(frenteDoTeste(p, 'carrinho').fechando, undefined);
   assert.ok(!lerEventos(dirDoTeste(p)).some(e => e.tipo === 'fechamento'));
   const noTicket = p.ghChamadas().slice(antes).filter(c => c.argv[0] === 'issue' && ['comment', 'edit'].includes(c.argv[1]));
   assert.deepEqual(noTicket, [], 'a recusa veio depois de mexer no ticket');
@@ -287,6 +288,35 @@ test('ciclo: depoisDeAbrir, coluna no quadro, antesDeFechar recusa sem mexer em 
   const c = p.ah(['close']);
   assert.equal(c.codigo, 0, c.erro);
   assert.equal(log(p), 'depoisDeAbrir carrinho\nantesDeFechar carrinho\nantesDeFechar carrinho\ndepoisDeFechar carrinho\n');
+});
+
+test('close da abertura desfeita: antesDeFechar pode recusar sem mexer em nada; depoisDeFechar roda', t => {
+  const p = projetoComEco(t);
+  // Registro `abrindo` de um open que morreu (processo que não existe), da própria sessão, com ticket.
+  const dir = path.join(dirDoTeste(p), 'frentes');
+  fs.mkdirSync(dir, { recursive: true });
+  const abrindo = {
+    esquema: 2, id: 'as-7', nome: 'carrinho', ramo: 'feat/carrinho', worktree: path.join(p.env.AH_WORKTREES, 'carrinho'),
+    tickets: [1], plano: null, caminhos: [], dona: 'sessao-teste-0001', abertaPor: 'ana-souza', abertaEm: '2026-11-13T10:00:00-03:00',
+    estado: 'abrindo', notas: [], reserva: { logins: ['ana-souza'], tickets: [1] }, processo: { pid: 2 ** 22 + 12345, inicio: null },
+    extensoes: { eco: { marca: 'presa' } },
+  };
+  fs.writeFileSync(path.join(dir, 'carrinho.json'), JSON.stringify(abrindo));
+  p.ghSemear(1, { assignees: ['ana-souza'], labels: ['em-andamento'], comments: [] });
+  const antes = p.ghChamadas().length;
+  const recusa = p.ah(['close', 'carrinho']);
+  assert.equal(recusa.codigo, 1);
+  assert.match(recusa.erro, /^Recusado: a extensão eco não deixa fechar a frente as-7 carrinho: a frente está presa pelo eco\nFaça: rode ah eco-marcar carrinho solta\n$/);
+  assert.equal(frenteDoTeste(p, 'carrinho').estado, 'abrindo');
+  const noTicket = p.ghChamadas().slice(antes).filter(c => c.argv[0] === 'issue' && c.argv[1] === 'edit');
+  assert.deepEqual(noTicket, [], 'a recusa veio depois de mexer no ticket');
+  assert.equal(log(p), 'antesDeFechar carrinho\n');
+
+  assert.equal(p.ah(['eco-marcar', 'carrinho', 'solta']).codigo, 0);
+  const c = p.ah(['close', 'carrinho']);
+  assert.equal(c.codigo, 0, c.erro);
+  assert.match(c.saida, /Abertura de as-7 carrinho desfeita/);
+  assert.equal(log(p), 'antesDeFechar carrinho\nantesDeFechar carrinho\ndepoisDeFechar carrinho (abertura desfeita)\n');
 });
 
 test('antesDeFechar que lança recusa o fechamento; reação que lança vira aviso', t => {

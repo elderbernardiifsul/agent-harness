@@ -136,7 +136,8 @@ test('CI editada à mão (sem a marca do harness) não é sobrescrita sem --sobr
   const p = criarRepo();
   p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']);
   fs.writeFileSync(path.join(p.raiz, ARQ), 'name: minha\n');
-  const r = p.ah(['init', '--sigla', 'as', '--sem-protecao', '--teste', 'npm test']);
+  // Sem --teste: com a configuração existente, --teste diferente dela é recusado antes (teste no init.test).
+  const r = p.ah(['init', '--sigla', 'as', '--sem-protecao']);
   assert.equal(r.codigo, 1);
   assert.match(r.erro, /ah-ci\.yml/);
   assert.equal(ler(p, ARQ), 'name: minha\n');

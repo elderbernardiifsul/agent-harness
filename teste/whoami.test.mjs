@@ -110,7 +110,10 @@ test('I3: ah <comando> --help e -h mostram descrição e uso, saem 0 e não exec
       assert.match(m.uso, new RegExp(`^ah ${nome}`), nome);
       for (const opcao of ['--help', '-h']) {
         // sem configuração, sem sessão e até fora de repositório
-        for (const [r, onde] of [[semConfig.ah([nome, opcao], { env: { AH_SESSAO: '' } }), 'sem config'], [semConfig.ah([nome, 'x', opcao], { cwd: fora, env: { AH_SESSAO: '' } }), 'fora']]) {
+        // O comando que declara ajudaSoComoUnicoArgumento (nota) só mostra a ajuda com a opção sozinha.
+        const casos = [[semConfig.ah([nome, opcao], { env: { AH_SESSAO: '' } }), 'sem config']];
+        if (!m.ajudaSoComoUnicoArgumento) casos.push([semConfig.ah([nome, 'x', opcao], { cwd: fora, env: { AH_SESSAO: '' } }), 'fora']);
+        for (const [r, onde] of casos) {
           assert.equal(r.codigo, 0, `${nome} ${opcao} ${onde}: ${r.erro}`);
           assert.equal(r.saida, `ah ${nome}: ${m.descricao}\nUso: ${m.uso}\n`, `${nome} ${opcao} ${onde}`);
         }
@@ -132,6 +135,14 @@ test('I3: nota --help não grava nota; depois de -- o --help é texto', () => {
   assert.deepEqual(frente().notas ?? [], []);
   assert.equal(q.ah(['nota', '--', '--help']).codigo, 0);
   assert.deepEqual(frente().notas.map(n => n.texto), ['--help']);
+  // No meio do texto, -h e --help são palavras da nota: só pedem ajuda como único argumento.
+  const t = q.ah(['nota', 'corrigir', 'o', '-h', 'do', 'parser']);
+  assert.equal(t.codigo, 0, t.erro);
+  assert.match(t.saida, /^Nota registrada/);
+  assert.equal(q.ah(['nota', 'documentar', '--help']).codigo, 0);
+  assert.deepEqual(frente().notas.map(n => n.texto), ['--help', 'corrigir o -h do parser', 'documentar --help']);
+  assert.match(q.ah(['nota', '-h']).saida, /^ah nota: /);
+  assert.equal(frente().notas.length, 3);
   q.limpar();
 });
 

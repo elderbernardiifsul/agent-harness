@@ -5,6 +5,7 @@ import path from 'node:path';
 import { criarProjeto, dirDoTeste } from './apoio/repo.mjs';
 import { processoVivo } from './apoio/processo.mjs';
 import { idCurto } from '../nucleo/lib/sessao.mjs';
+import { inicioDoProcesso } from '../nucleo/lib/vida.mjs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { lerMarcadores, lerTicket, liberarTickets, marcarTickets, montarMarcador, reservar, situacaoDoTicket } from '../nucleo/lib/reserva.mjs';
@@ -606,6 +607,53 @@ test('quem escreve depois desiste mesmo tendo aberto antes e com id menor (ordem
   assert.deepEqual([s.livre, s.id], [false, 'as-2']);
   assert.equal(lerFrenteDoTeste(p, 'frete'), null);
   assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'ativa');
+});
+
+test('close de abertura parada: a leitura dos tickets roda fora da trava, e o registro fica com o close até ele terminar', async t => {
+  const p = projeto(t);
+  gravarAbrindo(p, { id: 'as-7', tickets: [1], processo: { pid: await pidMorto(), inicio: null } });
+  p.ghSemear(1, { assignees: ['ana-souza'], labels: ['em-andamento'], comments: [{ author: 'ana-souza', body: marcadorDe('as-7', 'carrinho', 'ana-souza') }] });
+  const pausa = path.join(path.dirname(p.raiz), 'pausa');
+  const c = ahAssinc(p, ['close', 'carrinho'], { GH_FALSO_PAUSA: pausa });
+  try {
+    await esperarArquivo(`${pausa}.chegou`);
+    const B = { env: { AH_SESSAO: 'sessao-b-0002' } };
+    const inicio = Date.now();
+    const w = p.ah(['whoami'], B);
+    assert.equal(w.codigo, 0, w.erro);
+    assert.ok(Date.now() - inicio < 4000, 'o whoami esperou a trava');
+    const o = p.ah(['open', 'carrinho'], B);
+    assert.equal(o.codigo, 1);
+    assert.match(o.erro, /abertura da frente carrinho em curso/);
+  } finally {
+    fs.writeFileSync(`${pausa}.solta`, '');
+  }
+  const r = await c;
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Abertura de as-7 carrinho desfeita/);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho'), null);
+  assert.match(p.ghTicket(1).comments.at(-1).body, /ah:desistencia id=as-7 /);
+});
+
+test('close de abertura parada: registro tomado por outro processo durante a leitura dos tickets fica intocado', async t => {
+  const p = projeto(t);
+  gravarAbrindo(p, { id: 'as-7', tickets: [1], processo: { pid: await pidMorto(), inicio: null } });
+  p.ghSemear(1, { assignees: ['ana-souza'], labels: ['em-andamento'], comments: [{ author: 'ana-souza', body: marcadorDe('as-7', 'carrinho', 'ana-souza') }] });
+  const pausa = path.join(path.dirname(p.raiz), 'pausa');
+  const c = ahAssinc(p, ['close', 'carrinho'], { GH_FALSO_PAUSA: pausa });
+  try {
+    await esperarArquivo(`${pausa}.chegou`);
+    // Como se outro processo vivo (o deste teste) tivesse tomado o registro no meio.
+    const arq = path.join(dirDoTeste(p), 'frentes', 'carrinho.json');
+    fs.writeFileSync(arq, JSON.stringify({ ...JSON.parse(fs.readFileSync(arq, 'utf8')), processo: { pid: process.pid, inicio: inicioDoProcesso(process.pid) } }));
+  } finally {
+    fs.writeFileSync(`${pausa}.solta`, '');
+  }
+  const r = await c;
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /^Recusado: O registro da frente carrinho mudou enquanto eu desfazia a abertura \(agora as-7, abrindo\); não mexi nele\.\nFaça: rode ah board/);
+  const f = lerFrenteDoTeste(p, 'carrinho');
+  assert.deepEqual([f.estado, f.processo.pid], ['abrindo', process.pid]);
 });
 
 test('close de abertura parada com outro login tira a responsável que a reserva pôs', async t => {
