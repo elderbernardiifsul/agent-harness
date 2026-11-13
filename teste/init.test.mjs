@@ -314,3 +314,33 @@ test('M3: o cabeçalho do histórico descreve a linha que o close grava, sem con
   // nenhuma linha do cabeçalho tem id e @login juntos (o doctor leria como choque de sigla)
   for (const l of t.split('\n')) assert.ok(!(idsNoHistorico(l, 'as').length && /@[A-Za-z0-9]/.test(l)), l);
 });
+
+// ---- Segunda onda
+function repoSemCommit(t, ramo = 'main') {
+  const p = criarRepo({ remoto: false });
+  t.after(() => fs.rmSync(path.dirname(p.raiz), { recursive: true, force: true }));
+  fs.rmSync(path.join(p.raiz, '.git'), { recursive: true, force: true });
+  fs.rmSync(path.join(p.raiz, 'README.md'));
+  assert.equal(p.git(['init', '-b', ramo]).codigo, 0);
+  return p;
+}
+
+test('init em repositório sem nenhum commit recusa logo, com código 1, sem gravar nada', t => {
+  const p = repoSemCommit(t);
+  const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']);
+  assert.equal(r.codigo, 1, r.saida + r.erro);
+  assert.match(r.erro, /^Recusado: o repositório ainda não tem commit/m);
+  assert.match(r.erro, /Faça: faça o primeiro commit \(git commit --allow-empty -m "começo"\) e rode ah init de novo/);
+  assert.deepEqual(fs.readdirSync(p.raiz), ['.git']);
+  assert.equal(fs.existsSync(path.join(p.estado, 'maquina.json')), false);
+});
+
+test('init em repositório só com a master cria dev, stage e main a partir dela e não troca de ramo', t => {
+  const p = repoSemCommit(t, 'master');
+  assert.equal(p.git(['commit', '--allow-empty', '-m', 'começo']).codigo, 0);
+  const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.deepEqual(p.git(['branch', '--format=%(refname:short)']).saida.trim().split('\n').sort(), ['dev', 'main', 'master', 'stage']);
+  assert.equal(p.git(['branch', '--show-current']).saida.trim(), 'master');
+  assert.match(r.saida, /git switch dev/);
+});

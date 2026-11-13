@@ -44,7 +44,9 @@ Instala o harness no projeto atual a partir do clone do agent-harness: copia o n
 - `--teste "<comando>"` liga a CI: o comando entra no arquivo entre aspas simples. Só vale quando a configuração ainda não existe; depois, edite `ci.comandoDeTeste` em `.harness/config.json` e rode `ah init` de novo. Sem a opção, a CI nasce desligada.
 - Antes de proteger um ramo, o `init` consulta a proteção no servidor e não altera ramo que já está protegido ("já está protegido no servidor; não alterei"). `--sem-protecao` pula essa etapa.
 - Repetir o `init` é seguro: o que existe fica como está ("Mantive como estavam"); `--sobrescrever` troca os arquivos do harness pelos do clone. Um documento de `docs/agents/` editado à mão não é trocado sem `--sobrescrever`: o `init` lista em "Não sobrescrevi" e sai com código 1.
-- O `init` cria os ramos que faltam (`dev`, `stage`) a partir da `main`, sem trocar de ramo, e não faz commit.
+- O `init` cria os ramos que faltam (a base e os protegidos de `.harness/config.json`; no padrão, `dev`, `stage` e `main`) a partir do primeiro ramo protegido que já existe (no padrão, a `main`) ou, sem nenhum, do ramo atual; não troca de ramo e não faz commit.
+- Repositório cujo único ramo é `master`: o `init` cria `dev`, `stage` e `main` a partir da `master` e a deixa como está (ela não é base nem protegida). Para usar a `master` como ramo protegido no lugar da `main`, troque `git.protegidos` em `.harness/config.json` e rode `ah init` de novo.
+- Repositório sem nenhum commit: o `init` recusa logo, com código 1, sem gravar nada (não há de onde criar os ramos).
 
 Recusas e o que fazer:
 
@@ -59,6 +61,7 @@ Recusas e o que fazer:
 | `Este núcleo é a cópia instalada no projeto, não o clone do agent-harness.` | rode `node <clone>/nucleo/bin/ah.mjs init` |
 | `.claude/settings.json … não mexi nele` | conserte (ou apague) o arquivo e rode o `init` de novo |
 | `Valor inválido para ci.comandoDeTeste` | escreva o comando numa linha só, sem `${{ }}` |
+| `o repositório ainda não tem commit` | faça o primeiro commit (`git commit --allow-empty -m "começo"`) e rode `ah init` de novo |
 
 Exemplo, num repositório que só tinha a `main`:
 

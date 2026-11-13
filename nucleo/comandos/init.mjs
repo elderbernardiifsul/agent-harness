@@ -202,6 +202,11 @@ export async function executar(args, amb) {
     throw new ErroDeUso('Este é o próprio clone do agent-harness, não um projeto de destino.\nPróximo passo: entre na pasta do projeto e rode o init de lá, usando o caminho do clone');
   }
 
+  // Sem nenhum commit não há de onde criar os ramos nem onde commitar o harness: recusa antes de gravar qualquer coisa.
+  if (git(['rev-parse', '--verify', '-q', 'HEAD^{commit}'], { cwd: raiz, env: amb.env }).codigo !== 0) {
+    throw new ErroDeUso('o repositório ainda não tem commit\nPróximo passo: faça o primeiro commit (git commit --allow-empty -m "começo") e rode ah init de novo');
+  }
+
   const arquivoMaquina = arquivoDaMaquina(amb.env, process.platform, os.homedir());
   const sigla = resolverSigla(o, amb, arquivoMaquina);
   const configExiste = fs.existsSync(path.join(raiz, '.harness', 'config.json'));

@@ -27,6 +27,8 @@ Várias sessões e várias pessoas no mesmo repositório:
 
 ## Como preparar um projeto pelo agente
 
+Pré-requisitos do projeto: um repositório git com pelo menos um commit (num repositório recém-criado, faça antes `git commit --allow-empty -m "começo"`; sem commit o `init` recusa), Node 22 ou mais novo e, para tickets e proteção de ramo, o `gh` com login.
+
 Clone este repositório, abra o agente na pasta do seu projeto e peça: "prepare meu projeto com o harness, a partir do clone em `<caminho>`". O agente roda, na pasta do projeto:
 
 ```
