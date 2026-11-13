@@ -12,6 +12,19 @@ Harness de programação com vários agentes: várias sessões de agentes trabal
 - Travas no gancho do agente: T0 (recusa o que não consegue ler), T2 (`git add -A` e `git commit -a` no checkout principal) e T5 (push e `gh pr merge` em ramo protegido).
 - Adaptador do Claude Code, ensaiado com o agente real (`docs/referencia/ensaio-claude-code.md`).
 
+## O que a fatia 2 entrega
+
+Várias sessões e várias pessoas no mesmo repositório:
+
+- Sessão viva: processo do agente de pé e sinal de vida dentro do prazo (`sessoes.prazoDoSinalMin`, 120 minutos por padrão). Um `/clear` ou uma conversa retomada no mesmo processo herda a frente.
+- Reserva de ticket no `ah open --tickets` (comentário, responsável e rótulo), liberada no `ah close`, com fila para o que falha por falta de rede.
+- `ah handoff`: passa a frente adiante sem fechá-la; `ah open <nome>` a retoma, nesta máquina ou em outra.
+- `ah takeover`: assume a frente de uma sessão que morreu, com `--confirmado` (ordem do executivo).
+- `ah papel`: executor (uma frente) ou orquestrador (várias, e `ah open --para` para abrir frente para outra sessão).
+- `ah sweep`: lista o que ficou fora do lugar e, com `--reparar`, arruma o estado.
+- Sobreposição de arquivos entre frentes no `open`, no `board` e no começo da sessão.
+- Travas novas: T1 (troca de ramo no checkout principal), T3 (descartar trabalho no checkout principal) e T4 (escrever no worktree ou no ramo de outra sessão viva).
+
 ## Como preparar um projeto pelo agente
 
 Clone este repositório, abra o agente na pasta do seu projeto e peça: "prepare meu projeto com o harness, a partir do clone em `<caminho>`". O agente roda, na pasta do projeto:
@@ -28,7 +41,7 @@ O `init` não faz commit. Ele termina com os comandos exatos do commit, que vai 
 tools/ah doctor
 ```
 
-Depois disso, cada sessão do agente abre sua frente com `tools/ah open <nome>`, trabalha no worktree, integra na `dev` e fecha com `tools/ah close`. Quem roda o `open` e o `close` é o agente: a sessão vem do gancho dele. Para rodar à mão, num terminal, diga qual é a sessão com `AH_SESSAO` (um nome qualquer, o mesmo no `open` e no `close`):
+Depois disso, cada sessão do agente abre sua frente com `tools/ah open <nome>`, trabalha no worktree, integra na `dev` e fecha com `tools/ah close` (ou para no meio com `tools/ah handoff`). Quem roda esses comandos é o agente: a sessão vem do gancho dele. Para rodar à mão, num terminal, diga qual é a sessão com `AH_SESSAO` (um nome qualquer, o mesmo no `open` e no `close`):
 
 ```
 AH_SESSAO=ana-terminal tools/ah open carrinho
@@ -39,12 +52,16 @@ AH_SESSAO=ana-terminal tools/ah close
 
 ## Referência
 
-- `docs/referencia/comandos.md`: cada comando, as recusas e exemplos; limites das travas e como publicar.
+- `docs/referencia/comandos.md`: cada comando, as recusas e exemplos; a vida da sessão, os eventos, os limites das travas e como publicar.
 - `docs/referencia/capacidades-por-agente.md`: o que cada agente de código permite ao harness.
-- `docs/referencia/ensaio-claude-code.md`: o ensaio com o Claude Code 2.1.319.
+- `docs/referencia/ensaio-claude-code.md`: os ensaios com o Claude Code 2.1.319.
 
 Testes: `node --test teste/`.
 
 ## Próximas fatias
 
-Adaptadores para outros agentes (Codex, OpenCode), extensões do projeto em `.harness/extensoes/`, mais travas e a tomada de frente de outra sessão. A ordem e o escopo ainda podem mudar.
+- Fatia 3, máquina: `ah pesado` (fila de trabalho pesado, como builds e testes ponta a ponta) e a trava T6, que recusa rodá-lo fora da fila.
+- Fatia 4, outros agentes: adaptadores do Codex e do OpenCode, com ensaio nos três.
+- Fatia 5, abertura: extensões do projeto em `.harness/extensoes/` com exemplo e guia, `atualizar`, `deps` e números de uso.
+
+A ordem e o escopo ainda podem mudar.

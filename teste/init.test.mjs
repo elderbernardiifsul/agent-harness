@@ -298,7 +298,8 @@ test('C1: já no ramo base o init não manda trocar; commit na main é acusado p
 const MODELOS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'modelos');
 test('I2: sessoes-paralelas.md descreve só as travas que existem nesta fatia', () => {
   const t = fs.readFileSync(path.join(MODELOS, 'sessoes-paralelas.md'), 'utf8');
-  for (const trava of ['T0', 'T2', 'T5']) assert.ok(t.includes(trava), trava);
+  for (const trava of ['T0', 'T1', 'T2', 'T3', 'T4', 'T5']) assert.ok(t.includes(trava), trava);
+  assert.ok(!t.includes('T6'), 'a T6 é da fatia 3');
   assert.doesNotMatch(t, /não grava arquivos fora do worktree da própria frente|só por uma vez|pull request: `feat/);
   assert.match(t, /git merge --no-ff feat\/<nome>/);
   assert.match(t, /próxima versão/);
