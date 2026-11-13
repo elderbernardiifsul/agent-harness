@@ -552,3 +552,20 @@ test('revisão 2, achado 5: falha ao gravar o dono (ENOSPC) recolhe o dono pela 
   assert.deepEqual(fs.readdirSync(path.join(d, 'travas')), []);
   assert.equal(await comTrava(d, 'x', () => 'entrou', { esperaMs: 100 }), 'entrou');
 });
+
+test('revisão 2, achado 6: a liberação espera, com recuo, o dono voltar de quem o confere', t => {
+  const d = temp(t);
+  const pasta = trava(d);
+  const fora = path.join(d, 'conferindo');
+  let t0 = null;
+  ganchosDeTeste.naEspera = () => {
+    t0 ??= Date.now();
+    // quem conferia (parado um pouco: troca de contexto, disco lento) devolve o dono depois de 80 ms
+    if (Date.now() - t0 >= 80 && fs.existsSync(fora)) fs.renameSync(fora, path.join(pasta, 'dono.json'));
+  };
+  t.after(() => { ganchosDeTeste.naEspera = null; });
+  estado.comTravaSinc(d, 'x', () => fs.renameSync(path.join(pasta, 'dono.json'), fora));
+  ganchosDeTeste.naEspera = null;
+  assert.equal(fs.existsSync(fora), false, 'o dono não voltou durante a espera');
+  assert.equal(fs.existsSync(pasta), false);
+});

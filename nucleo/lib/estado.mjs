@@ -121,8 +121,8 @@ export function validarNomeSeguro(nome, rotulo) {
 // Pontos de troca para os testes, onde outro processo pode mexer na trava; fora dos testes, ficam null.
 // antesDeTomar(pasta): entre a leitura da trava vencida e a tomada. depoisDoMkdir(pasta): entre o mkdir e a
 // gravação do dono (a parada de quem criou a pasta). devolvendo(pasta, tentativa): antes de cada gravação da
-// devolução de um dono.
-export const ganchosDeTeste = { antesDeTomar: null, depoisDoMkdir: null, devolvendo: null };
+// devolução de um dono. naEspera(pasta): a cada pausa de quem recolhe o próprio dono (soltar).
+export const ganchosDeTeste = { antesDeTomar: null, depoisDoMkdir: null, devolvendo: null, naEspera: null };
 
 // Quanto a devolução de um dono espera o lugar vagar (o escritor atrasado se recolhe logo depois de gravar), e
 // quanto quem recolhe o próprio dono espera o outro devolvê-lo depois de conferir.
@@ -193,6 +193,7 @@ function recolherDono(t, ehMeu, { tirarPasta, esperaMs }) {
       return true;
     }
     if (!fs.existsSync(t.pasta) || Date.now() >= limite) return false;
+    ganchosDeTeste.naEspera?.(t.pasta);
     dormirSinc(pausa); // sem dono no lugar (outro o confere) ou erro passageiro
   }
 }
@@ -342,12 +343,13 @@ function confirmarDono(t) {
 }
 
 // Solta pelo mesmo caminho da tomada: tira o dono.json e só tira a pasta se o tirado for desta chamada. Sem
-// dono.json, outro o tirou para conferir e vai devolvê-lo: tenta de novo por pouco tempo. Nunca lança (roda no
-// finally e trocaria o resultado de fn): o que não sair vence sozinho.
+// dono.json, outro o tirou para conferir e vai devolvê-lo: espera com recuo (1, 2, 4… até 50 ms entre tentativas)
+// por até ESPERA_DO_RECOLHER_MS, para uma parada curta de quem confere não deixar a trava fechada até vencer.
+// Nunca lança (roda no finally e trocaria o resultado de fn): o que não sair vence sozinho.
 function soltar(t) {
   const marcaDe = texto => { try { return JSON.parse(texto)?.marca; } catch { return undefined; } };
   try {
-    recolherDono(t, texto => marcaDe(texto) === t.marca, { tirarPasta: true, esperaMs: 10 });
+    recolherDono(t, texto => marcaDe(texto) === t.marca, { tirarPasta: true, esperaMs: ESPERA_DO_RECOLHER_MS });
   } catch { /* vence sozinha */ }
 }
 
