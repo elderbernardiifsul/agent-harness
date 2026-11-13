@@ -4,12 +4,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { criarProjeto } from './apoio/repo.mjs';
+import { criarProjeto, envelhecerSinal } from './apoio/repo.mjs';
 import { comTrava } from '../nucleo/lib/estado.mjs';
 import { continuarSessao } from '../nucleo/lib/heranca.mjs';
 import { listarPendentes } from '../nucleo/lib/pendentes.mjs';
 import { corpoDaMarcacao } from '../nucleo/lib/reserva.mjs';
-import { gravarSessao, lerSessao } from '../nucleo/lib/sessao.mjs';
+import { gravarSessao, lerSessao, registrarSessao } from '../nucleo/lib/sessao.mjs';
+import { inicioDoProcesso } from '../nucleo/lib/vida.mjs';
 
 const dirDe = p => path.join(p.estado, 'loja');
 const arquivoDaFrente = (p, nome) => path.join(dirDe(p), 'frentes', `${nome}.json`);
@@ -88,7 +89,8 @@ test('fase 3 com a trava das frentes ocupada além da espera: a recusa diz que o
   assert.match(r.erro, JA_COMENTADO);
   assert.equal(chamadasDeFechamento(p).length, 1);
   assert.match(linhaNoQuadro(p), /fechamento parado/);
-  const r2 = p.ah(['close']);
+  // Comentado em todos os tickets: o close seguinte nem precisa do GitHub.
+  const r2 = p.ah(['close'], { env: { GH_FALSO_FORA: '1' } });
   assert.equal(r2.codigo, 0, r2.erro);
   assert.equal(chamadasDeFechamento(p).length, 1);
   assert.ok(!fs.existsSync(wt));
@@ -218,9 +220,149 @@ test('handoff de frente com o fechamento parado recusa e diz para terminar com a
   assert.equal(h.codigo, 1, h.saida);
   assert.match(h.erro, /^Recusado: A frente as-1 carrinho está com o fechamento parado: os tickets já receberam \(ou estavam recebendo\) o comentário de fechamento\.\nFaça: termine com ah close carrinho \(não comenta de novo\)/);
   assert.equal(p.ghChamadas().length, antes);
+  assert.equal(temRamoNoRemoto(p), false, 'o handoff empurrou o ramo');
   assert.equal(lerF(p).estado, 'ativa');
   assert.equal(passagensNaFila(p).length, 0);
   const c = p.ah(['close']);
   assert.equal(c.codigo, 0, c.erro);
   assert.equal(chamadasDeFechamento(p).length, 1);
+});
+
+// ---- Achado 4: as conferências entre as fases, cada uma com um teste que a pega
+
+const temRamoNoRemoto = (p, ramo = 'feat/carrinho') => p.git(['ls-remote', '--heads', 'origin', ramo]).saida.trim() !== '';
+// `ah handoff` ao fundo com o push parado por um gancho pre-receive no remoto de teste, até `soltar()`.
+function handoffParadoNoPush(t, p) {
+  const pausa = path.join(path.dirname(p.raiz), `pausa-push-${++pausas}`);
+  fs.writeFileSync(path.join(p.remoto, 'hooks', 'pre-receive'),
+    `#!/bin/sh\ntouch '${pausa}.chegou'\ni=0\nwhile [ ! -e '${pausa}.solta' ] && [ $i -lt 200 ]; do sleep 0.1; i=$((i+1)); done\n`, { mode: 0o755 });
+  const h = p.ahAoFundo(['handoff']);
+  const soltar = () => { try { fs.writeFileSync(`${pausa}.solta`, ''); } catch { /* pasta já limpa */ } };
+  t.after(() => { h.processo.kill('SIGKILL'); soltar(); });
+  return { ...h, soltar, chegou: () => esperarQue(() => fs.existsSync(`${pausa}.chegou`), `${pausa}.chegou`) };
+}
+const semGancho = process.platform === 'win32' ? 'gancho do remoto em sh' : false;
+
+test('takeover recusa a frente órfã que está sendo fechada', async t => {
+  const { p } = comFrente();
+  t.after(() => p.limpar());
+  envelhecerSinal(p, 'sessao-teste-0001', 500);
+  const c = closeParado(t, p, ['close', 'carrinho'], { AH_SESSAO: 'sessao-teste-0002' });
+  await c.chegou();
+  const tk = p.ah(['takeover', 'carrinho', '--confirmado'], { env: { AH_SESSAO: 'sessao-teste-0003' } });
+  assert.equal(tk.codigo, 1, tk.saida);
+  assert.match(tk.erro, /^Recusado: A frente as-1 carrinho está sendo fechada agora \(processo \d+\)\./);
+  assert.equal(lerF(p).dona, 'sessao-teste-0001');
+  c.soltar();
+  const fim = await c.fim;
+  assert.equal(fim.codigo, 0, fim.erro);
+});
+
+test('handoff durante o fechamento recusa na primeira fase, antes do push', async t => {
+  const { p } = comFrente();
+  t.after(() => p.limpar());
+  const c = closeParado(t, p);
+  await c.chegou();
+  const h = p.ah(['handoff']);
+  assert.equal(h.codigo, 1, h.saida);
+  assert.match(h.erro, /está sendo fechada agora/);
+  assert.equal(temRamoNoRemoto(p), false, 'o handoff empurrou o ramo');
+  c.soltar();
+  assert.equal((await c.fim).codigo, 0);
+});
+
+test('close que começa durante o push do handoff: a segunda fase do handoff recusa', { skip: semGancho }, async t => {
+  const { p } = comFrente();
+  t.after(() => p.limpar());
+  const h = handoffParadoNoPush(t, p);
+  await h.chegou();
+  const c = closeParado(t, p);
+  await c.chegou();
+  h.soltar();
+  const rh = await h.fim;
+  assert.equal(rh.codigo, 1, rh.saida);
+  assert.match(rh.erro, /^Recusado: A frente as-1 carrinho está sendo fechada agora/);
+  assert.equal(lerF(p).estado, 'ativa');
+  c.soltar();
+  const rc = await c.fim;
+  assert.equal(rc.codigo, 0, rc.erro);
+});
+
+test('close que comenta e para durante o push do handoff: a segunda fase do handoff recusa pelo fechamento parado', { skip: semGancho }, async t => {
+  const { p } = comFrente();
+  t.after(() => p.limpar());
+  const h = handoffParadoNoPush(t, p);
+  await h.chegou();
+  const r = await closeQueParouNaFase3(t, p);
+  assert.equal(r.codigo, 1, r.saida);
+  h.soltar();
+  const rh = await h.fim;
+  assert.equal(rh.codigo, 1, rh.saida);
+  assert.match(rh.erro, /^Recusado: A frente as-1 carrinho está com o fechamento parado/);
+  assert.equal(lerF(p).estado, 'ativa');
+  assert.deepEqual(passagensNaFila(p), []);
+});
+
+test('marca de outro close no registro durante a fase de rede: a fase 3 recusa sem apagar e o close seguinte não comenta de novo', async t => {
+  const { p, wt } = comFrente();
+  t.after(() => p.limpar());
+  const c = closeParado(t, p);
+  await c.chegou();
+  // Como se outro close (vivo: o processo deste teste) tivesse tomado a frente no meio.
+  gravarF(p, { ...lerF(p), fechando: { pid: process.pid, inicio: inicioDoProcesso(process.pid) } });
+  c.soltar();
+  const r = await c.fim;
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /^Recusado: A frente carrinho mudou durante o fechamento \(agora: as-1, ativa\)\.\nFaça: rode ah board para ver como ela está; os tickets já receberam o comentário de fechamento, e o próximo ah close não comenta de novo/);
+  assert.ok(fs.existsSync(wt));
+  assert.equal(lerF(p).fechando.pid, process.pid, 'a marca do outro fica');
+  const f = lerF(p);
+  delete f.fechando;
+  gravarF(p, f);
+  const r2 = p.ah(['close']);
+  assert.equal(r2.codigo, 0, r2.erro);
+  assert.equal(chamadasDeFechamento(p).length, 1);
+});
+
+test('recusa na fase de rede (sem GitHub para a frente passada) tira a marca do registro', t => {
+  const { p } = comFrente();
+  t.after(() => p.limpar());
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const r = p.ah(['close', 'carrinho'], { env: { AH_SESSAO: 'sessao-teste-0002', GH_FALSO_FORA: '1' } });
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /preciso do GitHub para confirmar que ninguém retomou carrinho/);
+  assert.equal(lerF(p).fechando, undefined);
+});
+
+test('ramo base trocado durante a fase de rede: a fase 3 recusa, tira a marca, e o close seguinte termina sem comentar de novo', async t => {
+  const { p } = comFrente();
+  t.after(() => p.limpar());
+  const c = closeParado(t, p);
+  await c.chegou();
+  assert.equal(p.git(['switch', '-c', 'outro']).codigo, 0);
+  c.soltar();
+  const r = await c.fim;
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /^Recusado: O checkout principal não está no ramo base dev\.\nFaça: .*git switch dev; os tickets já receberam o comentário de fechamento, e o próximo ah close não comenta de novo/);
+  assert.equal(lerF(p).fechando, undefined);
+  assert.doesNotMatch(p.git(['log', '-1', '--format=%s']).saida, /fecha as-1/);
+  assert.equal(p.git(['switch', 'dev']).codigo, 0);
+  const r2 = p.ah(['close']);
+  assert.equal(r2.codigo, 0, r2.erro);
+  assert.equal(chamadasDeFechamento(p).length, 1);
+});
+
+test('continuação de sessão durante o fechamento: a fase 3 vale pelo registro relido e solta o foco da sessão nova', async t => {
+  const { p } = comFrente();
+  t.after(() => p.limpar());
+  comProcesso(p);
+  registrarSessao(dirDe(p), { id: 'sessao-nova-0009', agente: 'claude-code' });
+  const c = closeParado(t, p);
+  await c.chegou();
+  await continuar(p, 'sessao-nova-0009', 'continuacao');
+  assert.deepEqual([lerF(p).dona, lerSessao(dirDe(p), 'sessao-nova-0009').frente], ['sessao-nova-0009', 'carrinho']);
+  c.soltar();
+  const r = await c.fim;
+  assert.equal(r.codigo, 0, r.erro);
+  assert.equal(lerSessao(dirDe(p), 'sessao-nova-0009').frente, null);
 });
