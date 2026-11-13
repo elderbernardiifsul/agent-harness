@@ -182,7 +182,7 @@ test('coluna BLOQUEIOS: só com a leitura guardada do ah deps, sem rede, e o rod
   assert.match(r.saida, /^ID .* ÚLTIMA NOTA +BLOQUEIOS$/m);
   assert.match(r.saida, /^as-1 +carrinho .* #3,dono\/outro#7$/m);
   assert.match(r.saida, /^as-2 +frete .* —$/m);
-  assert.match(r.saida, /^Bloqueios: leitura de ah deps de 2026-11-13 10:05 \(rode ah deps para atualizar\)\.$/m);
+  assert.match(r.saida, /^Bloqueios: leitura de ah deps de 2026-11-13 10:05 America\/Sao_Paulo \(rode ah deps para atualizar\)\.$/m);
   const j = JSON.parse(p.ah(['board', '--json']).saida);
   assert.equal(j.bloqueiosLidosEm, '2026-11-13T13:05:00Z');
   assert.deepEqual(j.frentes.map(f => [f.nome, f.bloqueios]), [['carrinho', ['#3', 'dono/outro#7']], ['frete', []]]);
