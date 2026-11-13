@@ -179,13 +179,169 @@ aviso   Frente carrinho órfã: dona <A> (encerrada (fim)); ah takeover carrinho
 - frente-orfa: frente as-2 carrinho, dona <A> (encerrada (fim)). Faça: ah takeover carrinho (com a ordem do executivo)
 ```
 
-**Limite encontrado:** no Claude Code 2.1.319, o `/clear` não leva a frente para a sessão nova (a decisão 5 da fatia 2 não se cumpre), porque o `SessionEnd` da sessão velha chega antes do `SessionStart` da nova e o harness trata todo `SessionEnd` como fim. Que esse `SessionEnd` veio com `reason: "clear"` (e o `SessionStart` com `source: "clear"`) é inferido da documentação e da ordem dos eventos: os eventos gravados neste ensaio não guardavam o `reason` nem o `source` (o `sessao-fim` acima não tem `motivo`, e o `sessao-inicio` de `<C>` só diz `origem: continuacao`, que `resume` também daria). A frente fica órfã até um `ah takeover`. Consertado em seguida (ver "Conserto" logo abaixo); o reensaio com o agente real está registrado em "Reensaio do `/clear`", mais abaixo.
+**Limite encontrado:** no Claude Code 2.1.319, o `/clear` não leva a frente para a sessão nova (a decisão 5 da fatia 2 não se cumpre), porque o `SessionEnd` da sessão velha chega antes do `SessionStart` da nova e o harness trata todo `SessionEnd` como fim. Que esse `SessionEnd` veio com `reason: "clear"` (e o `SessionStart` com `source: "clear"`) é inferido da documentação e da ordem dos eventos: os eventos gravados neste ensaio não guardavam o `reason` nem o `source` (o `sessao-fim` acima não tem `motivo`, e o `sessao-inicio` de `<C>` só diz `origem: continuacao`, que `resume` também daria). A frente fica órfã até um `ah takeover`. Consertado em seguida (ver "Conserto" logo abaixo); o reensaio com o agente real está registrado em "Reensaio do `/clear`", mais abaixo, e confirmou o `reason: "clear"` e o `source: "clear"` com o JSON gravado.
 
 **Conserto (depois do ensaio; o reensaio vem a seguir):** o adaptador passa o `reason` do `SessionEnd` adiante; com `clear` ou `resume` (os dois anunciam uma sessão nova no mesmo processo) o fim sai com `continuacao: true`, e o contrato não encerra a sessão: grava `aguardandoContinuacao` com o instante e registra `sessao-fim` com `motivo` e `aguardandoContinuacao: true`. O `SessionStart` seguinte com o mesmo pid (e a mesma hora de início) acha a sessão sem `fim`, a substitui e herda a frente com vínculo (eventos `substituida` e `heranca`; a frente ganha a velha em `sessoesAnteriores`). Se o início não vier, a sessão fica sem `fim` e a vida dela é a do pid e do sinal: com o processo morto a frente fica órfã e o `ah takeover` passa. Outros motivos (`logout`, `prompt_input_exit`, `other`) continuam encerrando. Onde a hora de início não se lê (Windows), a herança não acontece; a T4 não barra a sessão nova no worktree da velha (dona no mesmo pid do agente e sem hora de início não conta como outra sessão viva). Esperado no reensaio: `sessao-fim` de `<A>` com `"motivo":"clear"`, depois `sessao-inicio` de `<C>`, `heranca` e `substituida` de `<A>` para `<C>` (nessa ordem desde que a frente passou a mudar de dona antes de a sessão velha ser encerrada).
 
 ### Reensaio do `/clear`
 
-A preencher.
+Data: 2026-11-13. Agente: Claude Code 2.1.319 (`claude --version`), modelo `haiku` (`--model haiku`; o que se testa é o gancho). Núcleo: o do ramo `dev` depois do conserto acima.
+
+**Preparo.** Repositório descartável `loja` numa pasta temporária, com remoto local (`git init --bare`, ligado como `origin`, com `main`, `dev` e `stage` enviados) e um `gh` falso no `PATH` (o `teste/apoio/gh-falso.mjs`, sem rede); `ah init --projeto loja --sigla as --sem-protecao` e o commit do harness na `dev`, como na fatia 1. O `tools/ah doctor` deu `0 falha(s), 1 aviso(s)` (só a CI sem comando de teste). Todo comando rodou num ambiente sem as variáveis `CLAUDECODE` e `CLAUDE*` da sessão de fora e sem `AH_PID_AGENTE` e `AH_SESSAO`.
+
+**Espião.** Para ver o JSON que o agente entrega, um gancho espião em `.claude/settings.local.json` (posto em `.git/info/exclude`, para não sujar o checkout principal) grava a entrada de cada evento (`SessionStart`, `UserPromptSubmit`, `PreToolUse` com seletor `*`, `Stop`, `SessionEnd`, `PreCompact`, `PostCompact`) num arquivo. Por isso o `claude` rodou com `--setting-sources project,local` (o projeto mais o espião, sem as configurações pessoais da máquina), em vez do `--setting-sources project` das fatias anteriores.
+
+#### Como disparar o `/clear`
+
+`claude -p` com `--input-format stream-json` aceita várias mensagens numa invocação, e um `/clear` entre elas é executado (o `/clear` do ensaio da fatia 2, `claude -p "/clear" --resume <A>`, também valia). A sessão interativa foi dirigida por `tmux` (servidor separado, `tmux -L <nome>`), com `send-keys`; na primeira abertura da pasta o agente pede para confiar nela, e a resposta fica gravada na configuração do usuário.
+
+```
+m() { printf '{"type":"user","message":{"role":"user","content":"%s"}}\n' "$1"; }
+{ m "Rode exatamente: tools/ah open carrinho"; sleep 25; m "/clear"; sleep 5; m "Rode exatamente: tools/ah whoami"; sleep 30; } | \
+  claude -p --input-format stream-json --output-format stream-json --verbose --model haiku --setting-sources project,local --allowedTools Bash
+```
+
+Código de saída: 0. Os `sleep` dão tempo a cada resposta antes da mensagem seguinte.
+
+#### JSON real (campos de sessão; caminhos trocados por `<tmp>`)
+
+```
+{"session_id":"<A>","transcript_path":"<tmp>/…/<A>.jsonl","cwd":"<tmp>/loja","hook_event_name":"SessionStart","source":"startup"}
+{"session_id":"<A>","transcript_path":"<tmp>/…/<A>.jsonl","cwd":"<tmp>/loja","prompt_id":"<id>","hook_event_name":"SessionEnd","reason":"clear"}
+{"session_id":"<C>","transcript_path":"<tmp>/…/<C>.jsonl","cwd":"<tmp>/loja","hook_event_name":"SessionStart","source":"clear"}
+{"session_id":"<C>","transcript_path":"<tmp>/…/<C>.jsonl","cwd":"<tmp>/loja","prompt_id":"<id>","hook_event_name":"SessionEnd","reason":"other"}
+```
+
+Visto, não mais inferido: o `/clear` gera `SessionEnd` com `"reason": "clear"` na sessão velha e, logo depois, `SessionStart` com `"source": "clear"` e `session_id` novo, no mesmo processo. O fim do `claude -p` (fim da entrada) gera `SessionEnd` com `"reason": "other"`. Nenhum dos dois `SessionStart` trouxe `model`. Igual na sessão interativa (abaixo), em que o `/exit` deu `"reason": "prompt_input_exit"`.
+
+#### Herança da frente no `/clear`
+
+Eventos do harness (`<estado>/loja/eventos.jsonl`), na ordem em que foram gravados:
+
+```
+{"tipo":"sessao-inicio","sessao":"<A>","agente":"claude-code","origem":"novo","modelo":null,…}
+{"tipo":"abertura","sessao":"<A>","frente":"carrinho","id":"as-1","tickets":[],…}
+{"tipo":"sessao-fim","sessao":"<A>","motivo":"clear","aguardandoContinuacao":true,…}
+{"tipo":"sessao-inicio","sessao":"<C>","agente":"claude-code","origem":"continuacao","modelo":null,…}
+{"tipo":"substituida","de":"<A>","por":"<C>",…}
+{"tipo":"heranca","de":"<A>","sessao":"<C>","frentes":["carrinho"],…}
+{"tipo":"sessao-fim","sessao":"<C>","motivo":"other",…}
+```
+
+Na sessão nova, o `tools/ah whoami` rodado pelo agente respondeu `Sessão <C> (executor) · frente: as-1 carrinho`. **O conserto funciona:** a frente passou para a sessão do `/clear`. A ordem dos eventos é `substituida` e depois `heranca` (o texto do conserto, acima, esperava o contrário): a frente muda de dona antes, mas o evento `substituida` é gravado ao encerrar a velha, e o `heranca` só depois.
+
+Em `-p`, o fim da entrada encerra a sessão `<C>` (`reason: other`), e a frente fica órfã até outra sessão a assumir ou a conversa ser retomada; é o fim de sessão de verdade, não defeito:
+
+```
+$ tools/ah board
+ID    NOME      DONA              ESTADO  TICKETS  SOBREPÕE  PLANO  ÚLTIMA NOTA
+as-1  carrinho  <C> (morta)       órfã    —        —         —      —
+Sessões vivas: nenhuma
+```
+
+**Sessão interativa** (`claude --model haiku --setting-sources project,local --allowedTools Bash` no `tmux`): o agente abriu `frete` (`as-3`), `/clear`, e na sessão nova o `whoami` deu `frente: as-3 frete`. Com ela de pé, o `board` rodado de fora mostrou `as-3 frete <C'> ativa` e `Sessões vivas: <C'> (executor, frete)`, sem órfã. Eventos: `sessao-fim` (`motivo: clear`, `aguardandoContinuacao: true`), `sessao-inicio` (`continuacao`), `substituida`, `heranca` (`frentes: ["frete"]`), como em `-p`. No `startup` interativo o `SessionStart` trouxe `model` (`claude-haiku-5-5`); no `clear`, não.
+
+#### `--resume`, `/compact` e `/resume`
+
+`--resume` em `-p` (`claude -p "Rode exatamente: tools/ah whoami ; tools/ah board" --resume <C> …`, depois de `<C>` encerrada): `SessionStart` com `"source": "resume"` e **o mesmo** `session_id` `<C>`, sem `model`; nenhum `SessionEnd` antes dele (o processo é novo). O harness registrou `sessao-inicio` de `<C>` com `origem: continuacao`, sem `substituida` nem `heranca` (não há sessão anterior no mesmo processo), e a frente voltou com a sessão, porque a dona é a mesma: dentro dela o `whoami` deu `frente: as-1 carrinho` e o `board` mostrou `as-1 carrinho <C> ativa`. No fim (`reason: other`) a frente voltou a ficar órfã.
+
+`/compact` (em `stream-json`, depois de o agente abrir `cupom`): `PreCompact` e `PostCompact` com `"trigger": "manual"` e, entre eles, `SessionStart` com `"source": "compact"`, **o mesmo** `session_id` e `"model": "claude-haiku-5-5"`; nenhum `SessionEnd`. O harness gravou um `sessao-inicio` com `origem: continuacao` e o modelo, sem `substituida` nem `heranca`, e o `whoami` seguinte continuou com `frente: as-2 cupom`.
+
+`/resume <id>` dentro da conversa: em `-p` (`stream-json`) não existe (`/resume isn't available in this environment.`). Na sessão interativa, `/resume <id da conversa da cupom>` deu `SessionEnd` com `"reason": "resume"` na sessão de pé e `SessionStart` com `"source": "resume"` e o `session_id` **da conversa retomada** (não um id novo), com `model`, no mesmo processo. O harness tratou como continuação: `sessao-fim` (`motivo: resume`, `aguardandoContinuacao: true`), `substituida` e `heranca` da `frete` para a sessão retomada. Ver o defeito abaixo.
+
+#### Defeito: `/resume` de uma conversa que já tem frente
+
+Reprodução (sessão interativa, papel `executor`):
+
+1. Conversa X abre a frente `cupom` e termina (`claude -p` ou `/exit`).
+2. Numa sessão interativa nova, o agente abre `frete`; `/clear` (a sessão nova herda `frete`, como deve).
+3. Na mesma sessão, `/resume <X>`.
+
+Obtido:
+
+```
+$ tools/ah board
+ID    NOME      DONA   ESTADO  …
+as-2  cupom     <X>    ativa   …
+as-3  frete     <X>    ativa   …
+Sessões vivas: <X> (executor, frete)
+$ AH_SESSAO=<X> tools/ah papel
+Sessão <X>: executor.
+```
+
+A sessão `<X>`, executora, ficou dona de duas frentes ativas, o que a regra do executivo (uma frente só) não permite, e o foco dela passou de `cupom` para `frete`, uma frente de que a conversa retomada não sabe nada (o agente estranhou: "O resultado mudou de as-2 cupom para as-3 frete"). Causa (`nucleo/lib/heranca.mjs`, `continuarSessao`): na continuação, as frentes da sessão velha passam para a nova e o foco da nova é trocado pelo da velha, sem olhar se a nova já tem frente. Gravidade: média. Só acontece com `/resume` interativo de uma conversa que já era dona de frente, mas quebra uma regra que `open` e `takeover` garantem, e o agente passa a trabalhar no foco errado. Não consertado neste reensaio.
+
+#### Recusas com o agente real
+
+No projeto da demonstração do roteiro (abaixo), entre os passos 5b e 6, com `ana-terminal` dona de `carrinho` e viva pelo sinal:
+
+```
+claude -p "Ensaio de um gancho num repositório descartável. Chame a ferramenta Bash uma vez com o comando exato: git reset --hard ; depois copie a mensagem de erro ou a saída. Não rode nada antes nem depois." --model haiku --setting-sources project --allowedTools Bash --output-format json < /dev/null
+```
+
+| Pedido | Recusa | Evento |
+|---|---|---|
+| `git switch main` | T1, citada pelo agente | `recusa` T1 |
+| `git reset --hard` | T3: `PreToolUse:Bash hook error: ["$CLAUDE_PROJECT_DIR"/tools/ah gancho claude-code]: Recusado (T3): git reset --hard no checkout principal descarta …` | `recusa` T3 |
+| `git push origin dev:main` | T5: `… Recusado (T5): push para o ramo protegido main` | `recusa` T5 |
+| `Edit` em `<wt>/carrinho/src/total.js` | T4 (o `Read` antes passou) | `recusa` T4, `ferramenta: Edit` |
+| `echo '// x' >> <wt>/carrinho/src/total.js` | T4 | `recusa` T4, `comando` |
+
+O arquivo da `carrinho` ficou intacto (`git status --short` vazio no worktree). Cada `claude -p` levou de 5 a 10 s. Cuidado ao repetir: com um pedido vago ("Rode no shell exatamente: git reset --hard. Diga em uma linha o que aconteceu"), o haiku não chamou ferramenta nenhuma e respondeu que o comando "descartou as alterações", sem tê-lo rodado, e no push preferiu investigar o remoto; nenhum dos dois chegou ao gancho. Com o pedido acima, que manda chamar a ferramenta uma vez com o comando exato, as duas recusas aconteceram. Num pedido com três comandos em sequência, o agente parou depois da primeira recusa.
+
+#### Demonstração do roteiro do professor
+
+`docs/aula/2026-11-13-roteiro-do-professor.md`, passos 1 a 7, com os comandos exatos do roteiro (o `mktemp -d` numa pasta temporária do ensaio). Todas as saídas conferem com o roteiro. Diferenças:
+
+| Passo | O roteiro diz | Saiu |
+|---|---|---|
+| 2 | só o `doctor` | também `Switched to branch 'dev'` do `git switch dev` (o `doctor` deu 20 itens, `0 falha(s), 4 aviso(s)`, como o roteiro diz) |
+| 5 | `… Atenção: as-1 carrinho já mudou 1 arquivo(s) …` | antes do `Atenção`, `Notas de as-1 carrinho:` / `2026-11-13 mexendo no total` (é o `…` do roteiro) |
+| 5b | "rode neste mesmo terminal, que é o processo da sessão `ana-terminal` e a mantém viva" | a saída confere, mas a `ana-terminal` não tem processo: o `board` mostra `ana-term (executor, carrinho, sem processo)`, e ela está viva pelo sinal de vida (120 min desde o último `ah`), não pelo terminal |
+| 6 | `Frente as-2 cupom retomada.` | também `Notas de as-1 carrinho: …` e `Atenção: as-1 carrinho já mudou 1 arquivo(s) de --caminhos: src/total.js` (a frente retomada guarda os `--caminhos` da Carla) |
+
+Fora do roteiro, no mesmo projeto: dona morta de verdade (`sleep 900 &` como `AH_PID_AGENTE` da sessão `<M>`, que abriu `entrega`, e `kill` no `sleep`):
+
+```
+$ tools/ah sweep
+- frente-orfa: frente as-3 entrega, dona <M> (processo não existe). Faça: ah takeover entrega (com a ordem do executivo)
+$ tools/ah doctor
+…
+aviso   Frente `entrega` órfã: dona <M> (processo não existe); ah takeover entrega com a ordem do executivo
+…
+0 falha(s), 5 aviso(s).
+$ AH_SESSAO=carla-segunda tools/ah takeover entrega
+Recusado: A frente as-3 entrega é da sessão <M> (morta: processo não existe; último sinal há 0 min).
+Faça: peça ao executivo que confirme e rode ah takeover entrega --confirmado
+$ AH_SESSAO=carla-segunda tools/ah takeover entrega --confirmado
+Frente as-3 entrega assumida.
+Trabalhe em: <D>/wt/entrega
+$ AH_SESSAO=carla-segunda tools/ah close
+Frente as-3 entrega fechada.
+$ tools/ah sweep --reparar
+Reparos: nada a fazer.
+Nada fora do lugar.
+```
+
+Tempos (relógio da máquina do ensaio, em milissegundos, só os comandos, sem a fala):
+
+| Passo | Tempo |
+|---|---|
+| 1 repositório | 10 ms |
+| 2 instalar e `doctor` | 227 ms |
+| 3 seis recusas | 298 ms |
+| 4 abrir e trabalhar | 171 ms |
+| 5 segunda sessão e `board` | 142 ms |
+| 5b T4 | 51 ms |
+| 6 passagem de bastão | 217 ms |
+| 7 fechar | 150 ms |
+| `sweep` (com a órfã) | 242 ms |
+| `doctor` | 168 ms |
+| `takeover` (recusa, confirmado, `whoami`, `board`) | 199 ms |
+| `close` e `sweep --reparar` | 152 ms |
+| cada `claude -p` com uma recusa | 5 a 10 s |
+
+Os comandos somam menos de 2 s; o tempo da demonstração é o de digitar e explicar. Um pedido ao agente real leva de 5 a 10 s por recusa.
 
 ### Varredura de termos
 
