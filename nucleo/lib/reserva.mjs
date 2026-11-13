@@ -2,7 +2,7 @@
 // Todas as funções com rede recebem `o = {cwd, env}` como as de github.mjs.
 // Marcador (decisão 6 da fatia 2): última linha do comentário,
 //   <!-- ah:<tipo> id=<id> nome=<nome> ramo=<ramo> estado=<ativa|passada|livre> login=<login> ... v=1 -->
-// O último marcador de uma frente diz o estado dela no ticket; na corrida vence o menor número de comentário.
+// O último marcador de uma frente diz o estado dela no ticket; na corrida vence a menor chave (abertaEm, id, sessão).
 import { comentar, criarRotulo, editarTicket, gh } from './github.mjs';
 import { ENVIADO, NA_FILA, PERDIDO, comentarOuEnfileirar, editarOuEnfileirar } from './pendentes.mjs';
 import { idCurto } from './sessao.mjs';
@@ -53,6 +53,7 @@ const numeroDoComentario = url => {
 
 // Uma chamada: `comments` do gh issue view traz todos os comentários (o gh pagina sozinho) com o `url`.
 // Marcador de terceiro (autor diferente do `login` que o marcador declara) não vale: nem reserva nem libera.
+// Marcador sem `login` só vale se for o `ah:frente` antigo (fatia 1); `fechamento` e os demais sem login, não.
 export function lerTicket(numero, o = {}) {
   const r = gh(['issue', 'view', String(numero), '--json', 'state,assignees,labels,comments'], o);
   if (r.codigo !== 0) return { ok: false, motivo: motivoCurto(r) };
@@ -66,7 +67,9 @@ export function lerTicket(numero, o = {}) {
   (j.comments ?? []).forEach((c, i) => {
     const autor = c?.author?.login ?? null;
     for (const m of lerMarcadores(c?.body)) {
-      if (!autor || (m.campos.login !== undefined && m.campos.login !== autor)) continue;
+      // Sem `login` só vale o `ah:frente` no formato da fatia 1 (sem `v`), com o login do autor.
+      const antigo = m.campos.login === undefined && m.tipo === 'frente' && m.campos.v === undefined;
+      if (!autor || (m.campos.login === undefined ? !antigo : m.campos.login !== autor)) continue;
       marcadores.push({ ...m, autor, ordem: numeroDoComentario(c?.url) ?? i });
     }
   });
@@ -83,7 +86,8 @@ export function lerTicket(numero, o = {}) {
 }
 
 // Frentes com reserva no ticket: pelo último marcador de cada uma. `desde` é o número do comentário do primeiro
-// marcador do trecho ativo atual (depois do último `livre`): é por ele que se decide quem chegou antes.
+// marcador do trecho ativo atual (depois do último `livre`). `chave` decide a corrida e é a mesma para qualquer
+// leitor em qualquer ticket: vem do próprio marcador (abertaEm, id, sessão), igual em todos os tickets da reserva.
 function frentesAtivas(ticket) {
   const porId = new Map();
   ticket.marcadores.forEach((m, i) => {
@@ -91,10 +95,25 @@ function frentesAtivas(ticket) {
     if (!id) return;
     const estado = m.campos.estado ?? ESTADO_DO_TIPO[m.tipo] ?? 'ativa';
     const atual = porId.get(id);
-    const desde = !atual || atual.estado === 'livre' ? (m.ordem ?? i) : atual.desde;
-    porId.set(id, { id, nome: m.campos.nome ?? null, login: m.campos.login ?? m.autor ?? 'desconhecido', estado, desde });
+    const novoTrecho = !atual || atual.estado === 'livre';
+    const desde = novoTrecho ? (m.ordem ?? i) : atual.desde;
+    const abertaEm = (novoTrecho ? null : atual.abertaEm) ?? m.campos.abertaEm ?? null;
+    const sessao = (novoTrecho ? null : atual.sessao) ?? m.campos.sessao ?? null;
+    porId.set(id, { id, nome: m.campos.nome ?? null, login: m.campos.login ?? m.autor ?? 'desconhecido', estado, desde, abertaEm, sessao });
   });
   return [...porId.values()].filter(f => f.estado !== 'livre').sort((a, b) => a.desde - b.desde || a.id.localeCompare(b.id));
+}
+
+// Ordem da corrida: quem tem `abertaEm` vem antes de quem não tem (marcador antigo); depois a hora, o id e a sessão.
+export function compararChaves(a, b) {
+  const ms = f => {
+    const t = Date.parse(f.abertaEm ?? '');
+    return Number.isNaN(t) ? null : t;
+  };
+  const [ta, tb] = [ms(a), ms(b)];
+  if ((ta === null) !== (tb === null)) return ta === null ? 1 : -1;
+  if (ta !== null && ta !== tb) return ta - tb;
+  return String(a.id).localeCompare(String(b.id)) || String(a.sessao ?? '').localeCompare(String(b.sessao ?? ''));
 }
 
 // `login` é quem abre: estar de responsável no ticket não o recusa no próprio ticket.
@@ -127,17 +146,23 @@ function contar(situacoes) {
   return { naFila: situacoes.filter(s => s === NA_FILA).length, perdidos: situacoes.filter(s => s === PERDIDO).length };
 }
 
-// Desfaz a reserva desta frente nos tickets: comenta `desistencia` (livre) e tira o login de responsável
-// (salvo se o vencedor tem o mesmo login) e o rótulo onde nenhuma outra frente ficou. Pela fila quando há
-// `dirEstado`. Devolve quantas operações ficaram na fila e quantas se perderam.
-function desistir({ tickets, frente, login, sessao, rotulo, dirEstado, motivo, vencedor = null, lidos = new Map() }, o) {
+// Desfaz a reserva desta frente nos tickets: comenta `desistencia` (livre) e tira só o que nenhuma outra frente
+// ativa segura: o login de responsável (se nenhuma outra frente ativa do ticket é do mesmo login) e o rótulo (se
+// nenhuma outra frente ficou ativa). O ticket que não está em `lidos` é relido antes; sem leitura, tira os dois.
+// Pela fila quando há `dirEstado`. Devolve quantas operações ficaram na fila e quantas se perderam.
+function desistir({ tickets, frente, login, sessao, rotulo, dirEstado, motivo, lidos = new Map() }, o) {
   const situacoes = [];
   for (const n of tickets) {
     const texto = `Frente ${frente.id} (${frente.nome}) desistiu da reserva: ${motivo}.`;
     const corpo = `${texto}\n\n${montarMarcador('desistencia', camposDaFrente(frente, 'livre', login, sessao))}\n`;
-    const outras = lidos.has(n) ? frentesAtivas(lidos.get(n)).filter(f => f.id !== frente.id) : [];
+    let lido = lidos.get(n);
+    if (!lido) {
+      const r = lerTicket(n, o);
+      lido = r.ok ? r.ticket : null;
+    }
+    const outras = lido ? frentesAtivas(lido).filter(f => f.id !== frente.id) : [];
     const args = [];
-    if (!vencedor || vencedor.login !== login) args.push('--remove-assignee', login);
+    if (!outras.some(f => f.login === login)) args.push('--remove-assignee', login);
     if (!outras.length) args.push('--remove-label', rotulo);
     if (dirEstado) {
       situacoes.push(comentarOuEnfileirar(dirEstado, n, corpo, { ...o, evento: { sessao, frente: frente.nome } }));
@@ -197,6 +222,7 @@ export function reservar({ tickets, frente, login, sessao, rotulo, dirEstado = n
   const tocados = [];
   const relidos = new Map();
   const desfazer = (motivoDoTicket, motivoDaRecusa, saida = SAIDA_SEM_REDE) => {
+    // Só os relidos depois das escritas valem aqui (os lidos antes não mostram quem chegou no meio).
     const r = desistir({ tickets: tocados, frente, login, sessao, rotulo, dirEstado, motivo: motivoDoTicket, lidos: relidos }, o);
     return { ok: false, motivo: `${motivoDaRecusa}; ${comoDesfez(r)}`, saida };
   };
@@ -226,20 +252,16 @@ export function reservar({ tickets, frente, login, sessao, rotulo, dirEstado = n
     relidos.set(n, t);
   }
 
-  // Corrida: ordem única do servidor. Nos tickets em disputa, cada frente vale pelo menor número de comentário
-  // do seu trecho ativo; empate pelo id. Exatamente uma fica; as outras, ao fazer a mesma conta, desistem.
-  const chaves = new Map();
+  // Corrida: fica só a frente de menor chave (compararChaves) entre todas as ativas que aparecem nos tickets desta
+  // reserva. A chave vem do marcador e é a mesma para todo leitor; quem não tem a menor desiste (pode acontecer de
+  // desistir diante de outra que também desiste: tenta de novo), mas duas nunca ficam com o mesmo ticket.
+  const todas = new Map();
   for (const t of relidos.values()) {
-    const ativas = frentesAtivas(t);
-    if (!ativas.some(f => f.id !== frente.id)) continue;
-    for (const f of ativas) {
-      const atual = chaves.get(f.id);
-      if (!atual || f.desde < atual.desde) chaves.set(f.id, f);
-    }
+    for (const f of frentesAtivas(t)) if (!todas.has(f.id)) todas.set(f.id, f);
   }
-  const vencedor = [...chaves.values()].sort((a, b) => a.desde - b.desde || a.id.localeCompare(b.id))[0];
+  const vencedor = [...todas.values()].sort(compararChaves)[0];
   if (vencedor && vencedor.id !== frente.id) {
-    const r = desistir({ tickets: abertos, frente, login, sessao, rotulo, dirEstado, motivo: `a frente ${vencedor.id} reservou antes`, vencedor, lidos: relidos }, o);
+    const r = desistir({ tickets: abertos, frente, login, sessao, rotulo, dirEstado, motivo: `a frente ${vencedor.id} reservou antes`, lidos: relidos }, o);
     return {
       ok: false, desistiu: true, id: vencedor.id, login: vencedor.login,
       motivo: `a frente ${vencedor.id}${vencedor.nome ? ` (${vencedor.nome})` : ''}, de @${vencedor.login}, reservou #${abertos.join(', #')} antes desta; desisti da reserva (${comoDesfez(r)})`,
@@ -297,4 +319,18 @@ export function liberarTickets({ frente, resumo, login, rotulo, dirEstado, sessa
 // Desfaz uma reserva já feita (o open que reservou e depois não criou o worktree). Devolve o texto do que fez.
 export function desfazerReserva({ frente, login, sessao, rotulo, dirEstado, motivo }, o = {}) {
   return comoDesfez(desistir({ tickets: frente.reserva?.tickets ?? [], frente, login, sessao, rotulo, dirEstado, motivo }, o));
+}
+
+// `ah close` de um registro `abrindo` (open que parou no meio): desiste só nos tickets cujo marcador ativo é desta
+// frente. Devolve o texto do que fez e os tickets que não consegui ler (para conferir à mão).
+export function desfazerAbertura({ frente, login, sessao, rotulo, dirEstado }, o = {}) {
+  const lidos = new Map();
+  const naoLidos = [];
+  for (const n of frente.reserva?.tickets ?? []) {
+    const r = lerTicket(n, o);
+    if (!r.ok) naoLidos.push(n);
+    else if (frentesAtivas(r.ticket).some(f => f.id === frente.id)) lidos.set(n, r.ticket);
+  }
+  const r = desistir({ tickets: [...lidos.keys()], frente, login, sessao, rotulo, dirEstado, motivo: 'a abertura foi desfeita', lidos }, o);
+  return { texto: lidos.size ? comoDesfez(r) : null, tickets: [...lidos.keys()], naoLidos };
 }

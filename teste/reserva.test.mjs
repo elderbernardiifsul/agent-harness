@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { criarProjeto, dirDoTeste } from './apoio/repo.mjs';
+import { processoVivo } from './apoio/processo.mjs';
+import { idCurto } from '../nucleo/lib/sessao.mjs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { lerMarcadores, lerTicket, liberarTickets, marcarTickets, montarMarcador, reservar, situacaoDoTicket } from '../nucleo/lib/reserva.mjs';
@@ -105,7 +107,7 @@ test('open recusa ticket com responsável posto à mão', () => {
 
 test('corrida: quem reservou depois desiste, sai de responsável e não cria worktree', () => {
   const p = criarProjeto();
-  const corrida = { ticket: 1, autor: 'carla-dias', body: montarMarcador('frente', { id: 'cd-1', nome: 'frete', ramo: 'feat/frete', estado: 'ativa', login: 'carla-dias' }) };
+  const corrida = { ticket: 1, autor: 'carla-dias', body: montarMarcador('frente', { id: 'cd-1', nome: 'frete', ramo: 'feat/frete', estado: 'ativa', login: 'carla-dias', abertaEm: '2020-01-01T00:00:00-03:00' }) };
   const r = p.ah(['open', 'carrinho', '--tickets', '1'], { env: { GH_FALSO_CORRIDA: JSON.stringify(corrida) } });
   assert.equal(r.codigo, 1);
   assert.match(r.erro, /cd-1/);
@@ -122,7 +124,7 @@ test('corrida: quem reservou depois desiste, sai de responsável e não cria wor
 
 test('corrida em um de dois tickets: desiste nos dois e tira o rótulo onde ficou sozinha', () => {
   const p = criarProjeto();
-  const corrida = { ticket: 2, autor: 'carla-dias', body: montarMarcador('frente', { id: 'cd-1', nome: 'frete', ramo: 'feat/frete', estado: 'ativa', login: 'carla-dias' }) };
+  const corrida = { ticket: 2, autor: 'carla-dias', body: montarMarcador('frente', { id: 'cd-1', nome: 'frete', ramo: 'feat/frete', estado: 'ativa', login: 'carla-dias', abertaEm: '2020-01-01T00:00:00-03:00' }) };
   const r = p.ah(['open', 'carrinho', '--tickets', '1,2'], { env: { GH_FALSO_CORRIDA: JSON.stringify(corrida) } });
   assert.equal(r.codigo, 1);
   const t1 = p.ghTicket(1);
@@ -371,7 +373,7 @@ test('reserva fora da trava: durante ela outra sessão responde, abre outra fren
     assert.match(b.saida, /Frente as-2 frete aberta/);
     const c = p.ah(['open', 'carrinho'], { env: { AH_SESSAO: 'sessao-c-0003' } });
     assert.equal(c.codigo, 1);
-    assert.match(c.erro, /está abrindo a frente carrinho/);
+    assert.match(c.erro, /abertura da frente carrinho em curso/);
   } finally {
     fs.writeFileSync(`${pausa}.solta`, '');
   }
@@ -382,13 +384,13 @@ test('reserva fora da trava: durante ela outra sessão responde, abre outra fren
 });
 
 // Registro `abrindo` de um open que parou no meio.
-function gravarAbrindo(p, { id = 'as-1', nome = 'carrinho', dona = 'sessao-c-0003', tickets = [] } = {}) {
+function gravarAbrindo(p, { id = 'as-1', nome = 'carrinho', dona = 'sessao-c-0003', tickets = [], processo = null } = {}) {
   const dir = path.join(dirDoTeste(p), 'frentes');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, `${nome}.json`), JSON.stringify({
     esquema: 2, id, nome, ramo: `feat/${nome}`, worktree: path.join(p.env.AH_WORKTREES, nome), tickets, plano: null, caminhos: [],
     dona, abertaPor: 'ana-souza', abertaEm: '2026-11-13T10:00:00-03:00', estado: 'abrindo', notas: [],
-    reserva: tickets.length ? { logins: ['ana-souza'], tickets } : null,
+    reserva: tickets.length ? { logins: ['ana-souza'], tickets } : null, ...(processo ? { processo } : {}),
   }));
 }
 
@@ -414,4 +416,162 @@ test('frente em abertura conta para a regra do executor', t => {
   const r = p.ah(['open', 'carrinho']);
   assert.equal(r.codigo, 1);
   assert.match(r.erro, /Esta sessão já tem a frente frete/);
+});
+
+// ---- Consertos da revisão da tarefa 5, rodada 2 ----
+
+const marcadorCompleto = (f, login, sessao) => montarMarcador('frente', { id: f.id, nome: f.nome, ramo: f.ramo, estado: 'ativa', login, sessao: idCurto(sessao), abertaEm: f.abertaEm });
+async function pidMorto() {
+  const pr = processoVivo();
+  const pid = pr.pid;
+  await pr.matar();
+  return pid;
+}
+
+test('três frentes: A quer #1, B quer #1 e #2, C quer #2; no máximo uma fica em cada ticket', t => {
+  // Servidor: B#1=1001, A#1=1002, C#2=1003, B#2=1004. Pela ordem dos comentários, B (1001) e C (só lê o #2, onde
+  // B vale 1004) ficariam as duas com o #2. Pela chave do marcador (abertaEm, id, sessão), que todo leitor vê igual, não.
+  const ordens = [
+    { A: '2026-11-13T10:00:02-03:00', B: '2026-11-13T10:00:01-03:00', C: '2026-11-13T10:00:03-03:00', fica: ['B'] },
+    { A: '2026-11-13T10:00:03-03:00', B: '2026-11-13T10:00:02-03:00', C: '2026-11-13T10:00:01-03:00', fica: ['C'] },
+    { A: '2026-11-13T10:00:01-03:00', B: '2026-11-13T10:00:02-03:00', C: '2026-11-13T10:00:03-03:00', fica: ['A'] },
+  ];
+  for (const ordem of ordens) {
+    const A = { id: 'as-1', nome: 'carrinho', ramo: 'feat/carrinho', tickets: [1], abertaEm: ordem.A };
+    const B = { id: 'cd-1', nome: 'frete', ramo: 'feat/frete', tickets: [1, 2], abertaEm: ordem.B };
+    const C = { id: 'as-2', nome: 'cupom', ramo: 'feat/cupom', tickets: [2], abertaEm: ordem.C };
+    const mA = marcadorCompleto(A, 'ana-souza', 'sessao-teste-0001');
+    const mB = marcadorCompleto(B, 'carla-dias', 'sessao-b-0002');
+    const mC = marcadorCompleto(C, 'ana-souza', 'sessao-c-0003');
+    const rodar = (frente, login, sessao, corrida) => {
+      const p = projeto(t);
+      const env = { ...p.env, GH_FALSO_LOGIN: login, GH_FALSO_CORRIDA: JSON.stringify(corrida) };
+      const r = reservar({ tickets: frente.tickets, frente, login, sessao, rotulo: 'em-andamento', dirEstado: dirDoTeste(p) }, { cwd: p.raiz, env });
+      const numeros = [1, 2].map(n => p.ghTicket(n).comments.filter(c => /ah:frente/.test(c.body)).map(c => c.numero));
+      return { ok: r.ok, numeros };
+    };
+    const b = rodar(B, 'carla-dias', 'sessao-b-0002', [
+      { ticket: 1, autor: 'ana-souza', body: mA, depoisDe: 1 }, { ticket: 2, autor: 'ana-souza', body: mC, depoisDe: 1 }]);
+    const a = rodar(A, 'ana-souza', 'sessao-teste-0001', [
+      { ticket: 1, autor: 'carla-dias', body: mB, antesDe: 1 }, { ticket: 2, autor: 'ana-souza', body: mC, depoisDe: 1 },
+      { ticket: 2, autor: 'carla-dias', body: mB, depoisDe: 1 }]);
+    const c = rodar(C, 'ana-souza', 'sessao-c-0003', [
+      { ticket: 1, autor: 'carla-dias', body: mB, antesDe: 2 }, { ticket: 1, autor: 'ana-souza', body: mA, antesDe: 2 },
+      { ticket: 2, autor: 'carla-dias', body: mB, depoisDe: 2 }]);
+    // os três viram o servidor na mesma ordem
+    for (const x of [a, b, c]) assert.deepEqual(x.numeros, [[1001, 1002], [1003, 1004]]);
+    const ficaram = Object.entries({ A: a.ok, B: b.ok, C: c.ok }).filter(([, ok]) => ok).map(([k]) => k);
+    assert.deepEqual(ficaram, ordem.fica);
+    assert.ok(!(a.ok && b.ok) && !(b.ok && c.ok), 'duas frentes ficaram com o mesmo ticket');
+  }
+});
+
+test('marcador sem login só vale como ah:frente antigo: fechamento de terceiro não libera', t => {
+  const p = projeto(t);
+  const o = { cwd: p.raiz, env: p.env };
+  p.ghSemear(1, { assignees: ['ana-souza'], comments: [
+    { author: 'ana-souza', body: marcadorDe('as-1', 'carrinho', 'ana-souza') },
+    { author: 'carla-dias', body: '<!-- ah:fechamento id=as-1 nome=carrinho -->' },
+    { author: 'carla-dias', body: '<!-- ah:desistencia id=as-1 nome=carrinho estado=livre v=1 -->' },
+    { author: 'carla-dias', body: '<!-- ah:frente id=cd-9 nome=fantasma estado=ativa v=1 -->' },
+  ] });
+  const tk = lerTicket(1, o).ticket;
+  assert.deepEqual(tk.marcadores.map(m => [m.tipo, m.campos.id]), [['frente', 'as-1']]);
+  const s = situacaoDoTicket(tk, { rotulo: 'em-andamento', frenteId: 'as-2', login: 'carla-dias' });
+  assert.deepEqual([s.livre, s.id], [false, 'as-1']);
+  // o formato antigo da fatia 1 (ah:frente sem login e sem v) continua valendo, com o login do autor
+  p.ghSemear(2, { comments: [{ author: 'carla-dias', body: '<!-- ah:frente id=cd-2 nome=frete ramo=feat/frete -->' }] });
+  assert.equal(situacaoDoTicket(lerTicket(2, o).ticket, { rotulo: 'em-andamento', frenteId: 'as-2', login: 'ana-souza' }).login, 'carla-dias');
+});
+
+// gh que falha (sem entregar) o comentário num ticket.
+function ghQueFalhaComentarNo(p, ticket) {
+  const arq = path.join(path.dirname(p.raiz), `gh-falha-no-${ticket}.mjs`);
+  fs.writeFileSync(arq, `import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+if (args[0] === 'issue' && args[1] === 'comment' && args[2] === ${JSON.stringify(String(ticket))}) { process.stderr.write('sem rede\\n'); process.exit(1); }
+let entrada = ''; try { entrada = readFileSync(0, 'utf8'); } catch {}
+const r = spawnSync(process.execPath, [${JSON.stringify(path.join(RAIZ_HARNESS, 'teste', 'apoio', 'gh-falso.mjs'))}, ...args], { input: entrada, encoding: 'utf8', env: process.env });
+process.stdout.write(r.stdout ?? ''); process.stderr.write(r.stderr ?? '');
+process.exit(r.status ?? 1);
+`);
+  return arq;
+}
+
+test('desfazer no meio da reserva não tira rótulo nem responsável que outra frente segura', t => {
+  const p = projeto(t);
+  const outra = { id: 'cd-1', nome: 'frete', ramo: 'feat/frete', abertaEm: '2020-01-01T00:00:00-03:00' };
+  const corrida = { ticket: 1, autor: 'carla-dias', body: marcadorCompleto(outra, 'carla-dias', 'sessao-b-0002') };
+  const r = p.ah(['open', 'carrinho', '--tickets', '1,2'], { env: { AH_GH: ghQueFalhaComentarNo(p, 2), GH_FALSO_CORRIDA: JSON.stringify(corrida) } });
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /falhou no meio/);
+  const t1 = p.ghTicket(1);
+  assert.match(t1.comments.at(-1).body, /ah:desistencia id=as-1 /);
+  assert.deepEqual([t1.assignees, t1.labels], [['carla-dias'], ['em-andamento']]);
+});
+
+test('dois open do mesmo nome: o segundo é recusado enquanto o primeiro vive, e o primeiro termina com a reserva', async t => {
+  const p = projeto(t);
+  const pausa = path.join(path.dirname(p.raiz), 'pausa-a');
+  const a = ahAssinc(p, ['open', 'carrinho', '--tickets', '1'], { GH_FALSO_PAUSA: pausa });
+  try {
+    await esperarArquivo(`${pausa}.chegou`);
+    const b = p.ah(['open', 'carrinho', '--tickets', '1']); // mesma sessão
+    assert.equal(b.codigo, 1);
+    assert.match(b.erro, /abertura da frente carrinho em curso/);
+  } finally {
+    fs.writeFileSync(`${pausa}.solta`, '');
+  }
+  const r = await a;
+  assert.equal(r.codigo, 0, r.erro);
+  const f = lerFrenteDoTeste(p, 'carrinho');
+  assert.deepEqual([f.id, f.estado, f.processo], ['as-1', 'ativa', undefined]);
+  const tk = p.ghTicket(1);
+  assert.deepEqual([tk.assignees, tk.labels], [['ana-souza'], ['em-andamento']]);
+  assert.doesNotMatch(tk.comments.map(c => c.body).join('\n'), /desistencia/);
+});
+
+test('open morto na fase 2 com a sessão viva: quadro e doctor acusam pelo processo, e a sessão é orientada', async t => {
+  const p = projeto(t);
+  assert.equal(p.ah(['whoami']).codigo, 0); // a sessão dona existe e está viva
+  gravarAbrindo(p, { dona: 'sessao-teste-0001', processo: { pid: await pidMorto(), inicio: null } });
+  assert.match(p.ah(['board']).saida, /carrinho.*abrindo \(parada\)/);
+  const f = JSON.parse(p.ah(['board', '--json']).saida).frentes[0];
+  assert.deepEqual([f.estado, f.donaViva, f.aberturaParada], ['abrindo', true, true]);
+  const d = p.ah(['doctor']);
+  assert.match(d.saida + d.erro, /carrinho em abertura parada.*processo \d+ morto.*ah open carrinho/);
+  const o = p.ah(['open', 'frete']);
+  assert.equal(o.codigo, 1);
+  assert.match(o.erro, /Faça: .*ah open carrinho para retomar a abertura parada, ou ah close carrinho para desistir/);
+  // com o processo vivo, não está parada
+  const vivo = processoVivo();
+  t.after(() => vivo.matar());
+  gravarAbrindo(p, { nome: 'cupom', id: 'as-2', dona: 'sessao-teste-0001', processo: { pid: vivo.pid, inicio: null } });
+  assert.match(p.ah(['board']).saida, /cupom +\S+ +abrindo(?! \()/);
+  const c = p.ah(['close', 'cupom']);
+  assert.equal(c.codigo, 1);
+  assert.match(c.erro, /está sendo aberta agora/);
+  assert.doesNotMatch(c.erro, /órfã/);
+});
+
+test('close de abertura parada: desfaz só onde o marcador ativo é dela, sem histórico nem commit', async t => {
+  const p = projeto(t);
+  gravarAbrindo(p, { id: 'as-7', tickets: [1, 2], processo: { pid: await pidMorto(), inicio: null } });
+  p.ghSemear(1, { assignees: ['ana-souza'], labels: ['em-andamento'], comments: [{ author: 'ana-souza', body: marcadorDe('as-7', 'carrinho', 'ana-souza') }] });
+  p.ghSemear(2, { assignees: ['carla-dias', 'ana-souza'], labels: ['em-andamento'], comments: [{ author: 'carla-dias', body: marcadorDe('cd-4', 'frete', 'carla-dias') }] });
+  const antes = p.git(['rev-list', '--count', 'HEAD']).saida.trim();
+  const r = p.ah(['close', 'carrinho']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Abertura de as-7 carrinho desfeita/);
+  assert.doesNotMatch(r.saida, /fechada/);
+  const t1 = p.ghTicket(1);
+  assert.match(t1.comments.at(-1).body, /ah:desistencia id=as-7 /);
+  assert.deepEqual([t1.assignees, t1.labels], [[], []]);
+  const t2 = p.ghTicket(2);
+  assert.deepEqual([t2.comments.length, t2.assignees, t2.labels], [1, ['carla-dias', 'ana-souza'], ['em-andamento']]);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho'), null);
+  assert.equal(p.git(['rev-list', '--count', 'HEAD']).saida.trim(), antes);
+  const hist = path.join(p.raiz, 'docs', 'agents', 'historico-das-frentes.md');
+  assert.ok(!fs.existsSync(hist) || !fs.readFileSync(hist, 'utf8').includes('as-7'));
 });

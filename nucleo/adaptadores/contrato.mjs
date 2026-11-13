@@ -23,7 +23,7 @@ import { registrarSessao, tocarSinal, encerrarSessao, lerSessao, gravarSessao, i
 import { listarFrentesTolerante } from '../lib/frente.mjs';
 import { continuarSessao } from '../lib/heranca.mjs';
 import {
-  pidDoAgente, processoExiste, inicioDoProcesso as inicioPadrao, descartarPidMorto, vidaDaSessao,
+  aberturaParada, pidDoAgente, processoExiste, inicioDoProcesso as inicioPadrao, descartarPidMorto, vidaDaSessao,
 } from '../lib/vida.mjs';
 import { montarResumo } from '../lib/resumo.mjs';
 import { topoDe, ramoAtual, limpo } from '../lib/git.mjs';
@@ -72,7 +72,7 @@ const inicioDe = amb => amb.inicioDoProcesso ?? inicioPadrao;
 const pidDe = amb => (amb.pid !== undefined ? amb.pid : pidDoAgente(amb.env, process.ppid));
 
 // Saída de cada frente sem dona viva: passada -> `ah open`; ativa de dona que não está viva -> `ah takeover`;
-// em abertura de dona que não está viva (open que parou no meio) -> `ah open`, que toma o registro.
+// em abertura parada (processo do open morto) -> `ah open`, que toma o registro.
 function frentesSemDona(frentes, minha, amb) {
   const vidas = new Map();
   const viva = dona => {
@@ -89,7 +89,7 @@ function frentesSemDona(frentes, minha, amb) {
   for (const f of frentes) {
     if (f.nome === minha) continue;
     if (f.estado === 'passada') lista.push({ id: f.id, nome: f.nome, saida: `ah open ${f.nome}` });
-    else if (f.estado === 'abrindo' && (f.dona == null || !viva(f.dona))) lista.push({ id: f.id, nome: f.nome, saida: `ah open ${f.nome}` });
+    else if (f.estado === 'abrindo' && aberturaParada(f, f.dona != null && viva(f.dona), { existe: existeDe(amb), inicio: inicioDe(amb) })) lista.push({ id: f.id, nome: f.nome, saida: `ah open ${f.nome}` });
     else if (f.estado === 'ativa' && (f.dona == null || !viva(f.dona))) lista.push({ id: f.id, nome: f.nome, saida: `ah takeover ${f.nome}` });
   }
   return lista;

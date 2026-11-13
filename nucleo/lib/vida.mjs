@@ -94,3 +94,20 @@ export function vidaDaSessao(dirEstado, id, { config, agora = Date.now(), existe
   if (inicio) opcoes.inicio = inicio;
   return { ...estadoDaSessao(sessao, opcoes), idadeDoSinalMs: idade };
 }
+
+// O processo do `ah open` que gravou o registro `abrindo` ({pid, inicio}) ainda está de pé?
+// true/false; null quando o registro não guarda o processo. Sem hora de início gravada, vale só o pid;
+// com ela, hora diferente é pid reaproveitado (morto); hora que não se lê agora não desmente o pid.
+export function aberturaEmCurso(processo, { existe = processoExiste, inicio = inicioDoProcesso } = {}) {
+  if (!processo || !pidValido(processo.pid)) return null;
+  if (!existe(processo.pid)) return false;
+  if (processo.inicio == null) return true;
+  const atual = inicio(processo.pid);
+  return atual == null || atual === processo.inicio;
+}
+
+// Registro `abrindo` parado: o processo do open morreu; registro sem processo: a dona não está viva.
+export function aberturaParada(frente, donaViva, opcoes) {
+  const emCurso = aberturaEmCurso(frente?.processo, opcoes);
+  return emCurso === null ? !donaViva : !emCurso;
+}

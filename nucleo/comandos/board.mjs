@@ -2,7 +2,7 @@ import { ErroDeUso } from '../lib/caminhos.mjs';
 import { listarFrentes } from '../lib/frente.mjs';
 import { arquivosDaFrente, contaNaSobreposicao, sobreposicoes as calcularSobreposicoes } from '../lib/sobreposicao.mjs';
 import { idCurto, listarSessoes } from '../lib/sessao.mjs';
-import { vidaDaSessao } from '../lib/vida.mjs';
+import { aberturaParada, vidaDaSessao } from '../lib/vida.mjs';
 
 export const descricao = 'mostra as frentes abertas e as sessões vivas';
 export const uso = 'ah board [--json]';
@@ -21,10 +21,11 @@ function linhaUnica(texto, limite) {
 }
 
 // Ativa sem dona viva (dona morta, ilegível ou nenhuma) é órfã: alguém pode tomá-la.
-// Em abertura sem dona viva é um open que parou no meio: outro `ah open <nome>` o toma.
+// Em abertura com o processo do open morto (ou, sem processo no registro, sem dona viva) é um open que parou
+// no meio: outro `ah open <nome>` o toma.
 function estadoNoQuadro(f, donaViva) {
   if (f.estado === 'ativa' && !donaViva) return 'órfã';
-  if (f.estado === 'abrindo') return donaViva ? 'abrindo' : 'abrindo (parada)';
+  if (f.estado === 'abrindo') return aberturaParada(f, donaViva) ? 'abrindo (parada)' : 'abrindo';
   return f.estado ?? '—';
 }
 
@@ -69,7 +70,10 @@ export async function executar(args, amb) {
   const sobreposicoes = calcularSobreposicoes(porFrente);
   const sobrepoe = f => [...new Set(sobreposicoes.filter(s => s.frentes.includes(f.id)).flatMap(s => s.frentes))].filter(id => id !== f.id).sort();
   if (json) {
-    const lista = frentes.map(f => ({ ...f, donaViva: donaViva(f), donaIlegivel: donaIlegivel(f), sobrepoe: sobrepoe(f) }));
+    const lista = frentes.map(f => ({
+      ...f, donaViva: donaViva(f), donaIlegivel: donaIlegivel(f), sobrepoe: sobrepoe(f),
+      ...(f.estado === 'abrindo' ? { aberturaParada: aberturaParada(f, donaViva(f)) } : {}),
+    }));
     amb.escrever(`${JSON.stringify({ frentes: lista, sessoes, sessoesIlegiveis, sobreposicoes })}\n`);
     return 0;
   }

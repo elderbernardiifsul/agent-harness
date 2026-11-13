@@ -6,9 +6,9 @@ import { frentesDa, gravarFrente, lerFrente, linhaDoHistorico, listarFrentesTole
 import { existeRamo, ramoAtual, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
 import { reenviarComAviso } from '../lib/pendentes.mjs';
-import { liberarTickets } from '../lib/reserva.mjs';
+import { desfazerAbertura, liberarTickets } from '../lib/reserva.mjs';
 import { gravarSessao, idCurto, lerSessao, tocarSinal } from '../lib/sessao.mjs';
-import { prazoMs, vidaDaSessao } from '../lib/vida.mjs';
+import { aberturaParada, prazoMs, vidaDaSessao } from '../lib/vida.mjs';
 
 export const descricao = 'fecha a frente da sessão sem perder trabalho';
 export const uso = 'ah close [<nome>] [--resumo "<texto>"] [--descartar-ignorados]';
@@ -98,6 +98,35 @@ export async function executar(args, amb) {
       if (wt) sobras.unshift(`git worktree remove ${wt}`);
       if (sobras.length) amb.avisar(`Sobrou coisa com esse nome. Para limpar à mão (confira antes se há trabalho a guardar):\n${sobras.map(s => `  ${s}`).join('\n')}\n`);
       amb.escrever(`Sessão ${idCurto(amb.sessaoId)} sem frente.\n`);
+      return 0;
+    }
+    // Registro `abrindo`: com o ah open ainda rodando, recusa; parado, só desfaz a abertura (sem histórico,
+    // sem commit, sem "fechada" nos tickets) e só nos tickets cujo marcador ativo é desta frente.
+    if (frente.estado === 'abrindo') {
+      let vivaOutra = false;
+      if (frente.dona && frente.dona !== amb.sessaoId) {
+        try { vivaOutra = vidaDaSessao(dirEstado, frente.dona, { config: cfg }).estado === 'viva'; } catch { vivaOutra = false; }
+      }
+      if (!aberturaParada(frente, vivaOutra)) {
+        throw recusa(`A frente ${frente.id} ${frente.nome} está sendo aberta agora (sessão ${frente.dona ?? 'sem dona'}${frente.processo ? `, processo ${frente.processo.pid}` : ''}).`,
+          `espere esse ah open terminar (ah board mostra quando ela fica ativa) e, se ainda quiser, rode ah close ${frente.nome}`);
+      }
+      const oGh = { cwd: raiz, env, avisar: amb.avisar };
+      const login = loginAtual(oGh) ?? frente.abertaPor ?? 'local';
+      const r = desfazerAbertura({ frente, login, sessao: amb.sessaoId, rotulo: cfg.github.rotuloDeReserva, dirEstado }, oGh);
+      if (r.naoLidos.length) {
+        amb.avisar(`Aviso: não consegui ler ${r.naoLidos.map(n => `#${n}`).join(', ')}; confira à mão se a frente ${frente.id} ainda está de responsável e com o rótulo lá.\n`);
+      }
+      removerFrente(dirEstado, frente.nome);
+      for (const s of [sessao, frente.dona && frente.dona !== amb.sessaoId ? lerSessao(dirEstado, frente.dona) : null]) {
+        if (s && (s.frente?.nome ?? s.frente) === frente.nome) gravarSessao(dirEstado, { ...s, frente: null });
+      }
+      registrarEvento(dirEstado, { tipo: 'abertura-desfeita', sessao: amb.sessaoId, id: frente.id, nome: frente.nome, tickets: r.tickets });
+      const sobras = [];
+      if (existeRamo(raiz, frente.ramo, { env })) sobras.push(`git branch -D ${frente.ramo}`);
+      if (typeof frente.worktree === 'string' && fs.existsSync(frente.worktree)) sobras.unshift(`git worktree remove ${frente.worktree}`);
+      if (sobras.length) amb.avisar(`Sobrou coisa com esse nome. Para limpar à mão (confira antes se há trabalho a guardar):\n${sobras.map(x => `  ${x}`).join('\n')}\n`);
+      amb.escrever(`Abertura de ${frente.id} ${frente.nome} desfeita.${r.texto ? ` Reserva: ${r.texto}.` : ''}\n`);
       return 0;
     }
     // Frente de outra sessão: se a dona não está viva (encerrada, morta, sem registro) ou a frente

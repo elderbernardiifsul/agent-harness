@@ -10,7 +10,7 @@ import { reenviarComAviso } from '../lib/pendentes.mjs';
 import { desfazerReserva, reservar } from '../lib/reserva.mjs';
 import { arquivosDaFrente, caminhosEmComum, tocaOsCaminhos } from '../lib/sobreposicao.mjs';
 import { gravarSessao, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
-import { inicioDoProcesso, pidDeComando, vidaDaSessao } from '../lib/vida.mjs';
+import { aberturaEmCurso, inicioDoProcesso, pidDeComando, vidaDaSessao } from '../lib/vida.mjs';
 
 export const descricao = 'abre uma frente de trabalho: ramo, worktree, registro e reserva dos tickets';
 export const uso = 'ah open <nome> [--tickets 1,2] [--plano <arquivo>] [--caminhos <globs>]';
@@ -132,6 +132,11 @@ export async function executar(args, amb) {
     if (f.codigo !== 0) amb.avisar(`Aviso: não consegui atualizar ${remoto}/${cfg.git.base}; sigo com o que há aqui. (${f.erro.trim().split('\n')[0]})\n`);
   }
 
+  // O registro `abrindo` é deste open enquanto guarda este processo (mesma sessão pode rodar dois open).
+  const processoDesteOpen = { pid: process.pid, inicio: inicioDoProcesso(process.pid) };
+  const eDesteOpen = f => Boolean(f) && f.estado === 'abrindo' && f.processo?.pid === processoDesteOpen.pid
+    && (f.processo?.inicio ?? null) === processoDesteOpen.inicio;
+
   // Fase 1, sob a trava: recusas locais, id e o registro `abrindo` (guarda id e nome contra outro open).
   const { frente, partida } = await comTrava(dirEstado, 'frentes', async () => {
     let sessao = lerSessao(dirEstado, amb.sessaoId);
@@ -142,14 +147,17 @@ export async function executar(args, amb) {
     } else {
       tocarSinal(dirEstado, amb.sessaoId);
     }
-    // Registro `abrindo` de um open que parou no meio (dona que não está viva, ou esta mesma sessão): este open
-    // o toma, com o mesmo id (os marcadores nos tickets são desse id). Com a dona viva, ela ainda está abrindo.
+    // Registro `abrindo` de um open que parou no meio: só se toma quando o processo daquele open morreu (seja qual
+    // for a sessão); este open o toma com o mesmo id (os marcadores nos tickets são desse id). Com o processo vivo
+    // há uma abertura em curso. Registro sem processo (anterior a este campo): vale a vida da sessão dona.
     const existente = lerFrente(dirEstado, o.nome);
     let tomado = null;
     if (existente?.estado === 'abrindo') {
-      if (existente.dona !== amb.sessaoId && existente.dona && donaViva(dirEstado, existente.dona, cfg)) {
-        throw recusa(`A sessão ${existente.dona} está abrindo a frente ${o.nome} agora.`,
-          `espere ela terminar (ah board mostra a frente) ou escolha outro nome; se ela parou, rode ah open ${o.nome} de novo quando o sinal de vida dela vencer`);
+      const vivaDona = existente.dona === amb.sessaoId || (Boolean(existente.dona) && donaViva(dirEstado, existente.dona, cfg));
+      const emCurso = aberturaEmCurso(existente.processo);
+      if (emCurso ?? (existente.dona !== amb.sessaoId && vivaDona)) {
+        throw recusa(`Há uma abertura da frente ${o.nome} em curso (sessão ${existente.dona ?? 'sem dona'}${existente.processo ? `, processo ${existente.processo.pid}` : ''}).`,
+          `espere esse ah open terminar (ah board mostra a frente) ou escolha outro nome; se ele parou, rode ah open ${o.nome} de novo`);
       }
       tomado = existente;
     }
@@ -158,8 +166,11 @@ export async function executar(args, amb) {
       const minhas = frentesDa(listarFrentes(dirEstado), amb.sessaoId, { comAbrindo: true }).filter(f => f.nome !== tomado?.nome);
       if (minhas.length) {
         const nomes = minhas.map(f => f.nome);
+        const saidas = minhas.map(f => (f.estado === 'abrindo'
+          ? `ah open ${f.nome} para retomar a abertura parada, ou ah close ${f.nome} para desistir dela`
+          : `ah close ${f.nome}`));
         throw recusa(`Esta sessão já tem a frente ${nomes.join(', ').slice(0, 60)}.`,
-          `continue nela ou, antes de abrir outra, encerre com ${nomes.map(n => `ah close ${n}`).join('; ')} (o orquestrador abre várias: ah papel orquestrador)`);
+          `continue nela ou, antes de abrir outra, encerre com ${saidas.join('; ')} (o orquestrador abre várias: ah papel orquestrador)`);
       }
     }
     const repetido = existente && !tomado ? 'frente'
@@ -184,6 +195,7 @@ export async function executar(args, amb) {
     const dirWt = dirWorktrees(cfg, amb.env, process.platform, os.homedir());
     const nova = novaFrente({ id, nome: o.nome, config: cfg, dirWorktrees: dirWt, tickets, plano, caminhos, dona: amb.sessaoId, login, agora: new Date() });
     nova.estado = 'abrindo';
+    nova.processo = processoDesteOpen;
     // Provisória: se o open morrer no meio, quem fechar o registro sabe que tickets liberar.
     nova.reserva = tickets.length ? { logins: [login], tickets: [...tickets] } : null;
     gravarFrente(dirEstado, nova);
@@ -195,7 +207,7 @@ export async function executar(args, amb) {
   // Some com o registro `abrindo` (se ainda é deste open).
   const soltarRegistro = () => comTrava(dirEstado, 'frentes', async () => {
     const f = lerFrente(dirEstado, frente.nome);
-    if (f && f.estado === 'abrindo' && f.dona === amb.sessaoId && f.id === id) removerFrente(dirEstado, frente.nome);
+    if (eDesteOpen(f) && f.id === id) removerFrente(dirEstado, frente.nome);
   });
 
   // Fase 2, fora da trava: a reserva dos tickets no servidor.
@@ -225,9 +237,12 @@ export async function executar(args, amb) {
   // Fase 3, sob a trava: worktree e a frente vira ativa.
   await comTrava(dirEstado, 'frentes', async () => {
     const atual = lerFrente(dirEstado, frente.nome);
-    if (!atual || atual.estado !== 'abrindo' || atual.dona !== amb.sessaoId || atual.id !== id) {
-      const como = desfazer('outra sessão tomou o registro da frente');
-      throw recusa(`Outra sessão tomou o registro da frente ${frente.nome} enquanto esta reservava os tickets${como}.`, 'rode ah board para ver quem está com ela e, se for o caso, abra com outro nome');
+    if (!eDesteOpen(atual) || atual.id !== id) {
+      // Outro open tomou o registro com este mesmo id: a reserva desse id agora é dele, não se desfaz.
+      const tomadoPorOutro = atual?.id === id;
+      const como = tomadoPorOutro ? '' : desfazer('o registro da frente sumiu durante a reserva');
+      throw recusa(`O registro da frente ${frente.nome} não é mais deste ah open (${tomadoPorOutro ? 'outro ah open o tomou' : 'sumiu'}) enquanto ele reservava os tickets${como}.`,
+        'rode ah board para ver quem está com ela e, se for o caso, abra com outro nome');
     }
     const g = git(['worktree', 'add', '-b', frente.ramo, frente.worktree, partida.ponto], { cwd: amb.raiz, env: amb.env });
     if (g.codigo !== 0) {
@@ -238,6 +253,7 @@ export async function executar(args, amb) {
     }
 
     frente.estado = 'ativa';
+    delete frente.processo;
     gravarFrente(dirEstado, frente);
     const sessao = lerSessao(dirEstado, amb.sessaoId);
     if (sessao) {
