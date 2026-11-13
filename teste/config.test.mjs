@@ -89,3 +89,28 @@ test('o modelo de configuração traz pesado com classes vazias e um exemplo que
   assert.ok(Object.keys(modelo.pesado._exemplo).length >= 2);
   assert.equal(validarConfig({ ...modelo, projeto: 'loja', pesado: { classes: modelo.pesado._exemplo } }).ok, true);
 });
+
+test('fuso: só o que o Intl reconhece; o motivo diz o valor e dá um exemplo', () => {
+  assert.equal(validarConfig({ projeto: 'loja', fuso: 'America/Sao_Paulo' }).ok, true);
+  assert.equal(validarConfig({ projeto: 'loja', fuso: 'UTC' }).ok, true);
+  const v = validarConfig({ projeto: 'loja', fuso: 'Lua/Base_Alfa' });
+  assert.deepEqual(v.erros.map(e => e.campo), ['fuso']);
+  assert.match(v.erros[0].motivo, /Lua\/Base_Alfa/);
+  assert.match(v.erros[0].motivo, /America\/Sao_Paulo/);
+  assert.equal(validarConfig({ projeto: 'loja', fuso: 3 }).ok, false);
+});
+
+test('fuso inválido: deps e board --numeros recusam pela configuração, não com "Erro inesperado"', async t => {
+  const { criarProjeto, gravar } = await import('./apoio/repo.mjs');
+  const p = criarProjeto();
+  t.after(() => p.limpar());
+  const cfg = JSON.parse(fs.readFileSync(path.join(p.raiz, '.harness', 'config.json'), 'utf8'));
+  gravar(p, '.harness/config.json', JSON.stringify({ ...cfg, fuso: 'Lua/Base_Alfa' }));
+  for (const args of [['deps'], ['board', '--numeros']]) {
+    const r = p.ah(args);
+    assert.equal(r.codigo, 1, args.join(' '));
+    assert.doesNotMatch(r.erro, /Erro inesperado/);
+    assert.match(r.erro, /fuso \(/);
+    assert.match(r.erro, /Faça: corrija \.harness\/config\.json/);
+  }
+});

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { criarRepo } from './apoio/repo.mjs';
-import { arquivosDaCopia, citar, eClone, lerManifesto, listaInstalada, versaoDoClone } from '../nucleo/lib/copia.mjs';
+import { arquivosDaCopia, citar, eClone, lerManifesto, listaInstalada, sha256, sha256DoNucleo, versaoDoClone } from '../nucleo/lib/copia.mjs';
 import { VERSAO } from '../nucleo/versao.mjs';
 
 const RAIZ = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -45,4 +45,13 @@ test('citar põe aspas simples só no caminho que precisa', () => {
   assert.equal(citar('/tmp/agent-harness'), '/tmp/agent-harness');
   assert.equal(citar('/tmp/meu clone'), "'/tmp/meu clone'");
   assert.equal(citar("/tmp/d'ana"), "'/tmp/d'\\''ana'");
+});
+
+test('sha256DoNucleo: texto com CRLF conta como LF; só LF dá o sha256 de antes; binário (com byte nulo) é exato', () => {
+  assert.equal(sha256DoNucleo(Buffer.from('a\r\nb\r\n')), sha256(Buffer.from('a\nb\n')));
+  assert.equal(sha256DoNucleo(Buffer.from('a\nb\n')), sha256(Buffer.from('a\nb\n')));
+  assert.equal(sha256DoNucleo(Buffer.from('a\rb\n')), sha256(Buffer.from('a\rb\n'))); // CR solto não é fim de linha
+  const binario = Buffer.from([0x00, 0x0d, 0x0a, 0xff]);
+  assert.equal(sha256DoNucleo(binario), sha256(binario));
+  assert.notEqual(sha256DoNucleo(Buffer.from('a\nb\n')), sha256DoNucleo(Buffer.from('a\nc\n')));
 });

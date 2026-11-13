@@ -226,6 +226,12 @@ export async function executar(args, amb) {
   const cfg = montarConfig(fs.readFileSync(path.join(dirModelos, 'config.json'), 'utf8'), o, raiz);
 
   const configLida = configExiste ? lerJson(path.join(raiz, '.harness', 'config.json'), {}) : null;
+  // A configuração existente nunca é reescrita: um --teste diferente do que ela tem seria ignorado em silêncio
+  // (a CI sairia com o comando antigo). Recusa antes de gravar qualquer coisa e diz onde mudar.
+  if (configExiste && o.teste !== undefined && o.teste !== (configLida?.ci?.comandoDeTeste ?? null)) {
+    const atual = configLida?.ci?.comandoDeTeste;
+    throw new ErroDeUso(`a configuração já existe e o init não a reescreve: --teste ${JSON.stringify(o.teste.slice(0, 80))} não seria aplicado (ci.comandoDeTeste atual: ${typeof atual === 'string' ? JSON.stringify(atual.slice(0, 80)) : 'nenhum'})\nPróximo passo: ponha o comando em ci.comandoDeTeste no .harness/config.json e rode ah init de novo; o init reescreve a CI com ele`);
+  }
   const configFinal = configExiste
     ? { git: { ...PADROES.git, ...(configLida?.git ?? {}) }, github: { ...PADROES.github, ...(configLida?.github ?? {}) }, ci: { ...PADROES.ci, ...(configLida?.ci ?? {}) } }
     : cfg;

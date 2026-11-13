@@ -6,6 +6,8 @@ import { lerSessao, tocarSinal } from '../lib/sessao.mjs';
 export const descricao = 'acrescenta uma nota à frente da sessão';
 export const uso = 'ah nota <texto>';
 export const requisitos = { config: true, sessao: true };
+// O texto é livre: `ah nota corrigir o -h do parser` grava a nota; só `ah nota -h` (ou `--help`) sozinho pede a ajuda.
+export const ajudaSoComoUnicoArgumento = true;
 
 export async function executar(args, amb) {
   // `--` antes do texto separa: `ah nota -- --help` grava "--help".

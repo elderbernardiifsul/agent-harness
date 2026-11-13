@@ -433,3 +433,26 @@ test('AGENTS.md que é link simbólico: o init não o troca (nem com --sobrescre
   assert.equal(ler(p, 'regras.md'), '# Regras\n');
   assert.match(r.erro, /AGENTS\.md é um link simbólico; não mexi nele[\s\S]*Faça: .*agents-trecho\.md/);
 });
+
+test('--teste com a configuração já existente: recusa antes de gravar e diz como mudar o comando; igual ao atual, passa', () => {
+  const p = criarProjeto();
+  try {
+    const cfgAntes = ler(p, '.harness/config.json');
+    const ciAntes = ler(p, '.github/workflows/ah-ci.yml');
+    const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao', '--teste', 'npm test']);
+    assert.equal(r.codigo, 1, r.saida);
+    assert.match(r.erro, /Recusado: .*--teste/);
+    assert.match(r.erro, /Faça: .*ci\.comandoDeTeste.*\.harness\/config\.json/);
+    assert.equal(ler(p, '.harness/config.json'), cfgAntes);
+    assert.equal(ler(p, '.github/workflows/ah-ci.yml'), ciAntes);
+    // Com o comando posto na configuração, o mesmo --teste passa e a CI sai com ele.
+    const cfg = JSON.parse(cfgAntes);
+    cfg.ci.comandoDeTeste = 'npm test';
+    gravar(p, '.harness/config.json', `${JSON.stringify(cfg, null, 2)}\n`);
+    const s = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao', '--teste', 'npm test']);
+    assert.equal(s.codigo, 0, s.erro);
+    assert.match(ler(p, '.github/workflows/ah-ci.yml'), /'npm test'/);
+  } finally {
+    p.limpar();
+  }
+});

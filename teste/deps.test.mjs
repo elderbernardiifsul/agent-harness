@@ -110,7 +110,7 @@ test('sem rede, usa o cache e diz de quando ele é; sem cache, recusa', t => {
   p.ah(['deps']);
   const r = p.ah(['deps'], FORA);
   assert.equal(r.codigo, 0, r.erro);
-  assert.match(r.saida, /^Bloqueios de exemplo\/loja \(leitura guardada de \d{4}-\d{2}-\d{2} \d{2}:\d{2}; sem acesso ao GitHub agora\)$/m);
+  assert.match(r.saida, /^Bloqueios de exemplo\/loja \(leitura guardada de \d{4}-\d{2}-\d{2} \d{2}:\d{2} America\/Sao_Paulo; sem acesso ao GitHub agora\)$/m);
   assert.match(r.saida, /^Livres para começar: #16 Revisão do layout; #15 Página de ajuda; #12 Carrinho persistente$/m);
   const j = JSON.parse(p.ah(['deps', '13', '--json'], FORA).saida);
   assert.equal(j.deCache, true);
@@ -136,7 +136,7 @@ test('open avisa (sem recusar) quando o ticket está bloqueado por outro aberto,
   const antes = fs.readFileSync(p.env.GH_FALSO_LOG, 'utf8').split('\n').length;
   r = p.ah(['open', 'frete', '--tickets', '14,15'], { env: { AH_SESSAO: 'sessao-teste-0002' } });
   assert.equal(r.codigo, 0, r.erro);
-  assert.match(r.erro, /^Aviso: o ticket #14 está bloqueado por #13 \(aberta\); a frente abre assim mesmo \(leitura de ah deps de \d{4}-\d{2}-\d{2} \d{2}:\d{2}\)\.$/m);
+  assert.match(r.erro, /^Aviso: o ticket #14 está bloqueado por #13 \(aberta\); a frente abre assim mesmo \(leitura de ah deps de \d{4}-\d{2}-\d{2} \d{2}:\d{2} America\/Sao_Paulo\)\.$/m);
   assert.doesNotMatch(r.erro, /#15 está bloqueado/);
   // o aviso não chama a API de dependências
   const depois = fs.readFileSync(p.env.GH_FALSO_LOG, 'utf8').split('\n').slice(antes - 1).join('\n');

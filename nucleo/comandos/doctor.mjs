@@ -189,6 +189,18 @@ export const VERIFICACOES = [
   verificacao('Shell POSIX', () => (process.platform !== 'win32'
     ? ok('Shell POSIX') : aviso('Shell POSIX', 'no Windows nativo as travas de comando não valem; use o WSL2'))),
 
+  // Link simbólico em .harness traria configuração e núcleo de fora do projeto; o gancho recusa (regra de quebra).
+  verificacao('.harness é uma pasta do projeto', amb => {
+    const nome = '.harness é uma pasta do projeto';
+    if (!amb.raiz) return null;
+    let st;
+    try { st = fs.lstatSync(path.join(amb.raiz, '.harness')); } catch { return null; } // sem .harness: o item da configuração acusa
+    if (!st.isSymbolicLink()) return ok(nome);
+    let destino = '';
+    try { destino = fs.readlinkSync(path.join(amb.raiz, '.harness')); } catch { /* sem destino legível */ }
+    return falha(nome, `.harness é um link simbólico${destino ? ` para ${destino}` : ''} e o gancho recusa tudo enquanto for; troque o link pela pasta (rm .harness, copie para .harness o conteúdo do destino) e rode tools/ah doctor de novo`);
+  }),
+
   verificacao('.harness/config.json válido', amb => {
     const nome = '.harness/config.json válido';
     if (!amb.raiz) return falha(nome, 'entre na pasta do projeto: aqui não é um repositório git');

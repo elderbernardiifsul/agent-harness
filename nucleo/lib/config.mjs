@@ -70,6 +70,18 @@ function errosDasExtensoes(v) {
   return null;
 }
 
+// `fuso`: o nome IANA que o Intl aceita; conferir aqui evita que `deps`, `board --numeros` e o nome da
+// frente caiam em "Erro inesperado" na primeira data formatada.
+function errosDoFuso(v) {
+  if (!eTexto(v)) return 'deve ser um fuso como America/Sao_Paulo';
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: v });
+    return null;
+  } catch {
+    return `fuso desconhecido: ${v.slice(0, 60)} (use um nome IANA como America/Sao_Paulo ou UTC)`;
+  }
+}
+
 // Esquema: campo -> verificador (devolve motivo ou null) ou sub-esquema.
 const ESQUEMA = {
   versaoDoEsquema: v => (v === 1 ? null : 'deve ser 1'),
@@ -89,7 +101,7 @@ const ESQUEMA = {
   ci: { comandoDeTeste: v => (eTextoOuNulo(v) ? null : 'deve ser texto ou nulo') },
   agentes: v => (eListaDeTextos(v) ? null : 'deve ser uma lista de nomes'),
   extensoes: errosDasExtensoes,
-  fuso: v => (eTexto(v) ? null : 'deve ser um fuso como America/Sao_Paulo'),
+  fuso: errosDoFuso,
   pesado: () => null, // conferido à parte (errosDoPesado)
   sessoes: {
     prazoDoSinalMin: v => (Number.isInteger(v) && v >= 1 && v <= 10080 ? null : 'deve ser um número inteiro de minutos, de 1 a 10080'),
