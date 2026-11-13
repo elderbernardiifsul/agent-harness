@@ -238,6 +238,10 @@ export async function executar(args, amb) {
       amb.escrever(`Abertura de ${frente.id} ${frente.nome} desfeita.${r.texto ? ` Reserva: ${r.texto}.` : ''}\n`);
       return { fim: 0 };
     }
+    // Outras frentes com arquivo ilegível não param este close (a do nome dado, sim: lerFrente recusa acima).
+    for (const n of listarFrentesTolerante(dirEstado).ilegiveis) {
+      amb.avisar(`Aviso: arquivo de frente ilegível: ${path.join(dirEstado, 'frentes', `${n}.json`)} (rode ah doctor)\n`);
+    }
     // Outro close desta frente no meio (entre as fases, com a rede): espera ele terminar.
     if (fechamentoEmCurso(frente)) {
       throw recusa(`A frente ${frente.id} ${frente.nome} está sendo fechada agora (processo ${frente.fechando.pid}).`,
