@@ -246,6 +246,10 @@ export async function executar(args, amb) {
       throw recusa(`Já existe ramo local com o nome ${o.nome}.`,
         `escolha outro nome para a frente; se é sobra de um ah open interrompido (sem trabalho a guardar), limpe com git worktree remove ${wt} (se a pasta existir) e git branch -d ${ramo}, e rode ah open de novo`);
     }
+    if (repetido === 'ramo remoto') {
+      throw recusa(`Já existe ramo remoto com o nome ${o.nome} (${remoto}/${ramo}), sem frente aberta nem passagem nos tickets.`,
+        `escolha outro nome para a frente; se o ramo é de uma frente já fechada, confira que git log ${cfg.git.base}..${remoto}/${ramo} vem vazio e apague-o com git push ${remoto} --delete ${ramo}, e rode ah open de novo`);
+    }
     if (repetido) throw recusa(`Já existe ${repetido} com o nome ${o.nome}.`, 'escolha outro nome para a frente');
 
     const partida = pontoDePartida(amb, cfg.git.base, remoto);
@@ -532,7 +536,7 @@ function procurarPassagem({ amb, nome, ramo, remoto, tickets, rotulo, oGh, login
   }
   if (!a.passagem) {
     throw recusa(`Já existe ramo remoto com o nome ${nome}, sem passagem de bastão achada.`,
-      `se é uma frente passada, rode ah open ${nome} --tickets <n> com o ticket dela; senão escolha outro nome`);
+      `se é uma frente passada, rode ah open ${nome} --tickets <n> com o ticket dela; se é o ramo de uma frente já fechada, confira que git log ${amb.config.git.base}..${remoto}/${ramo} vem vazio, apague-o com git push ${remoto} --delete ${ramo} e rode ah open ${nome} de novo; senão escolha outro nome`);
   }
   return a.passagem;
 }

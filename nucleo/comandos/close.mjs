@@ -16,6 +16,8 @@ export const requisitos = { config: true, sessao: true, repositorio: true };
 
 const ARQUIVO_DO_HISTORICO = 'docs/agents/historico-das-frentes.md';
 const MAX_LISTA = 20;
+// Prazo do push que apaga o ramo remoto da frente: rede travada não segura o close.
+const PRAZO_DO_PUSH_MS = 20000;
 
 function lerOpcoes(args) {
   const o = { nome: null, resumo: undefined, descartarIgnorados: false };
@@ -308,6 +310,18 @@ export async function executar(args, amb) {
     } else if (temRamo) {
       const r = g(['branch', soNoRemoto ? '-D' : '-d', '--', frente.ramo]);
       if (r.codigo !== 0) amb.avisar(`Aviso: não apaguei o ramo ${frente.ramo} (${r.erro.trim().split('\n')[0]}). Apague à mão: git branch -D ${frente.ramo}\n`);
+    }
+
+    // O ramo remoto da frente integrada (o handoff o empurra) sai também, senão o nome fica preso no open. Só quando
+    // ele está contido na base e não avançou no remoto (lease no topo conhecido); falha vira aviso, nunca recusa.
+    if (temRamoRemoto && !soLocal && g(['merge-base', '--is-ancestor', refRemoto, `refs/heads/${base}`]).codigo === 0) {
+      const topo = g(['rev-parse', '--verify', '-q', refRemoto]).saida.trim();
+      const r = git(['push', `--force-with-lease=refs/heads/${frente.ramo}:${topo}`, remoto, '--delete', frente.ramo], { cwd: raiz, env, timeoutMs: PRAZO_DO_PUSH_MS });
+      if (r.codigo !== 0) {
+        const porque = (r.erro || r.saida || `código ${r.codigo}`).trim().split('\n')[0].slice(0, 200);
+        amb.avisar(`Aviso: não apaguei o ramo remoto ${frente.ramo} (${porque}); enquanto ele existir, o nome ${frente.nome} não abre de novo.\n`
+          + `Faça: git fetch ${remoto}, confira que git log ${base}..${remoto}/${frente.ramo} vem vazio (nada fora da ${base}) e apague: git push ${remoto} --delete ${frente.ramo}\n`);
+      }
     }
 
     // 5. Histórico (não no fechamento só local: a frente continua em outra máquina).

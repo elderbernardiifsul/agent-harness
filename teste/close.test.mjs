@@ -512,3 +512,41 @@ test('arquivo novo que aparece antes do worktree remove: close recusa e não apa
     assert.match(r.erro, /Faça: .*git -C .* status/);
     assert.equal(fs.readFileSync(path.join(wt, 'novo.txt'), 'utf8'), 'novo\n');
   });
+
+// ---- Segunda onda: o ramo remoto da frente integrada sai no close
+const temRamoNoRemoto = (p, ramo) => p.git(['--git-dir', p.remoto, 'show-ref', '--verify', '--quiet', `refs/heads/${ramo}`]).codigo === 0;
+
+test('close de frente integrada apaga o ramo remoto dela, e o nome volta a valer no open', t => {
+  const { p, wt } = comFrente();
+  t.after(() => p.limpar());
+  assert.equal(p.git(['push', '-u', 'origin', 'feat/carrinho'], { cwd: wt }).codigo, 0);
+  mescla(p);
+  const r = p.ah(['close']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.equal(temRamoNoRemoto(p, 'feat/carrinho'), false);
+  assert.equal(p.git(['show-ref', '--verify', '--quiet', 'refs/remotes/origin/feat/carrinho']).codigo, 1);
+  const o = p.ah(['open', 'carrinho']);
+  assert.equal(o.codigo, 0, o.erro);
+});
+
+test('close não apaga o ramo remoto que não está na base, nem o que avançou no remoto', t => {
+  // Só empurrado (não integrado): o close aceita, mas o ramo remoto fica.
+  const { p, wt } = comFrente();
+  t.after(() => p.limpar());
+  assert.equal(p.git(['push', '-u', 'origin', 'feat/carrinho'], { cwd: wt }).codigo, 0);
+  assert.equal(p.ah(['close']).codigo, 0);
+  assert.equal(temRamoNoRemoto(p, 'feat/carrinho'), true);
+
+  // Integrado aqui, mas alguém empurrou outra coisa no remoto depois: o lease segura, e o close avisa com o que fazer.
+  const q = comFrente('frete');
+  t.after(() => q.p.limpar());
+  assert.equal(q.p.git(['push', '-u', 'origin', 'feat/frete'], { cwd: q.wt }).codigo, 0);
+  mescla(q.p, 'frete');
+  assert.equal(q.p.git(['push', 'origin', 'main']).codigo, 0);
+  const outro = q.p.git(['rev-parse', 'main']).saida.trim();
+  assert.equal(q.p.git(['--git-dir', q.p.remoto, 'update-ref', 'refs/heads/feat/frete', outro]).codigo, 0);
+  const r = q.p.ah(['close']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.erro, /Aviso: não apaguei o ramo remoto feat\/frete .*\nFaça: .*git push origin --delete feat\/frete/);
+  assert.equal(temRamoNoRemoto(q.p, 'feat/frete'), true);
+});

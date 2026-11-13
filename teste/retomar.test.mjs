@@ -83,7 +83,7 @@ test('ramo remoto sem passagem recusa sem criar worktree', t => {
   const r = q.ah(['open', 'solto']);
   assert.equal(r.codigo, 1);
   assert.match(r.erro, /Já existe ramo remoto com o nome solto, sem passagem de bastão achada\./);
-  assert.match(r.erro, /Faça: .*ah open solto --tickets <n>/);
+  assert.match(r.erro, /Faça: .*ah open solto --tickets <n>.*git push origin --delete feat\/solto/);
   assert.equal(temFrente(q, 'solto'), false);
   assert.equal(fs.existsSync(path.join(q.env.AH_WORKTREES, 'solto')), false);
   assert.equal(q.git(['branch', '--list', 'feat/solto']).saida.trim(), '');
