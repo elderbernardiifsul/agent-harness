@@ -631,3 +631,71 @@ test('close de abertura parada diz qual responsável ficou quando outra frente d
   assert.match(r.erro, /@ana-souza continua de responsável no ticket #1 \(outra frente do mesmo login segura o ticket\)/);
   assert.deepEqual([p.ghTicket(1).assignees, p.ghTicket(1).labels], [['ana-souza'], ['em-andamento']]);
 });
+
+// ---- Consertos da revisão da tarefa 5, rodada 4 ----
+
+// gh que falha os comentários de desistência (e, opcionalmente, todo comentário num ticket) e, a partir da
+// chamada `falharViewDesde` de `issue view`, as leituras.
+function ghComFalhas(p, { ticketSemComentario = null, falharViewDesde = null } = {}) {
+  const arq = path.join(path.dirname(p.raiz), `gh-com-falhas-${ticketSemComentario}-${falharViewDesde}.mjs`);
+  const contador = `${arq}.views`;
+  fs.writeFileSync(arq, `import { spawnSync } from 'node:child_process';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+const args = process.argv.slice(2);
+let entrada = ''; try { entrada = readFileSync(0, 'utf8'); } catch {}
+const falha = () => { process.stderr.write('sem rede\\n'); process.exit(1); };
+if (args[0] === 'issue' && args[1] === 'comment') {
+  if (/ah:desistencia/.test(entrada)) falha();
+  if (${JSON.stringify(ticketSemComentario === null ? null : String(ticketSemComentario))} === args[2]) falha();
+}
+if (args[0] === 'issue' && args[1] === 'view' && ${JSON.stringify(falharViewDesde)} !== null) {
+  const n = (existsSync(${JSON.stringify(contador)}) ? Number(readFileSync(${JSON.stringify(contador)}, 'utf8')) : 0) + 1;
+  writeFileSync(${JSON.stringify(contador)}, String(n));
+  if (n >= ${JSON.stringify(falharViewDesde)}) falha();
+}
+const r = spawnSync(process.execPath, [${JSON.stringify(path.join(RAIZ_HARNESS, 'teste', 'apoio', 'gh-falso.mjs'))}, ...args], { input: entrada, encoding: 'utf8', env: process.env });
+process.stdout.write(r.stdout ?? ''); process.stderr.write(r.stderr ?? '');
+process.exit(r.status ?? 1);
+`);
+  return arq;
+}
+
+test('ticket com operação desta máquina na fila não é reservado: a desistência velha não libera a reserva nova', t => {
+  const p = projeto(t);
+  const gh = ghComFalhas(p, { ticketSemComentario: 2 });
+  // (a) o comentário no #2 falha; a desistência do #1 também falha e vai para a fila
+  const a = p.ah(['open', 'frete', '--tickets', '1,2'], { env: { AH_GH: gh } });
+  assert.equal(a.codigo, 1);
+  assert.ok(fs.readFileSync(path.join(dirDoTeste(p), 'pendentes.jsonl'), 'utf8').includes('ah:desistencia id=as-1'));
+  // (b) de novo, com o reenvio ainda falhando: recusa sem mudar nada
+  const antes = p.ghTicket(1).comments.length;
+  const b = p.ah(['open', 'frete', '--tickets', '1'], { env: { AH_GH: gh } });
+  assert.equal(b.codigo, 1);
+  assert.match(b.erro, /há comentário pendente para o ticket #1/);
+  assert.match(b.erro, /Faça: rode de novo quando o GitHub responder; ah doctor mostra a fila/);
+  assert.equal(lerFrenteDoTeste(p, 'frete'), null);
+  assert.equal(p.ghTicket(1).comments.length, antes);
+  // o doctor mostra a fila
+  const d = p.ah(['doctor']);
+  assert.match(d.saida + d.erro, /Fila de pendentes: \d+ operaç(ão|ões) \(#1/);
+  // com rede, a fila sai antes e o open reserva de novo, agora sobre o ticket já livre
+  const c = p.ah(['open', 'frete', '--tickets', '1']);
+  assert.equal(c.codigo, 0, c.erro);
+  assert.match(p.ghTicket(1).comments.at(-1).body, /ah:frente id=as-1 /);
+});
+
+test('desistência que não consegue reler o ticket não tira rótulo nem responsável e diz como tirar à mão', t => {
+  const p = projeto(t);
+  const alvo = path.join(p.env.AH_WORKTREES, 'carrinho');
+  fs.mkdirSync(alvo, { recursive: true });
+  fs.writeFileSync(path.join(alvo, 'ocupado.txt'), 'x');
+  // leituras: 1ª (antes de escrever) e 2ª (releitura) passam; a 3ª (a da desistência) falha
+  const r = p.ah(['open', 'carrinho', '--tickets', '1'], { env: { AH_GH: ghComFalhas(p, { falharViewDesde: 3 }) } });
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /O git não criou o worktree/);
+  assert.match(r.erro, /gh issue edit 1 --remove-assignee ana-souza --remove-label em-andamento/);
+  const tk = p.ghTicket(1);
+  assert.deepEqual([tk.assignees, tk.labels], [['ana-souza'], ['em-andamento']]);
+  assert.ok(fs.readFileSync(path.join(dirDoTeste(p), 'pendentes.jsonl'), 'utf8').includes('ah:desistencia id=as-1'));
+  assert.ok(!fs.readFileSync(path.join(dirDoTeste(p), 'pendentes.jsonl'), 'utf8').includes('--remove-label'));
+});

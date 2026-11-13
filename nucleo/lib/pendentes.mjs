@@ -53,6 +53,13 @@ export function contarPendentes(dirEstado) {
 }
 
 // Operações da fila para o ticket, em ordem (linhas ilegíveis ficam de fora).
+// Todas as operações da fila, em ordem (linha ilegível fica de fora; o reenvio a descarta).
+export function listarPendentes(dirEstado) {
+  return lerLinhas(dirEstado).flatMap(l => {
+    try { return [JSON.parse(l)]; } catch { return []; }
+  });
+}
+
 export function pendentesDoTicket(dirEstado, ticket) {
   return lerLinhas(dirEstado).flatMap(l => {
     try {

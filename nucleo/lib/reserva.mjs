@@ -147,11 +147,12 @@ function contar(situacoes) {
 // Desfaz a reserva desta frente nos tickets: comenta `desistencia` (livre, com o `login` de quem comenta) e tira
 // só o que nenhuma outra frente segura: cada login de `logins` (padrão: o próprio) de responsável, salvo se outra
 // frente do ticket é do mesmo login, e o rótulo, se nenhuma outra frente ficou. O ticket que não está em `lidos`
-// é relido antes; sem leitura, tira tudo. Pela fila quando há `dirEstado`. Devolve quantas operações ficaram na
+// é relido antes; sem leitura, não tira nada e devolve em `semLeitura` o comando para tirar à mão. Pela fila quando há `dirEstado`. Devolve quantas operações ficaram na
 // fila e quantas se perderam, e em `ficaram` os responsáveis que não saíram (ticket, login, motivo).
 function desistir({ tickets, frente, login, logins = [login], sessao, rotulo, dirEstado, motivo, lidos = new Map() }, o) {
   const situacoes = [];
   const ficaram = [];
+  const semLeitura = [];
   for (const n of tickets) {
     const texto = `Frente ${frente.id} (${frente.nome}) desistiu da reserva: ${motivo}.`;
     const corpo = `${texto}\n\n${montarMarcador('desistencia', camposDaFrente(frente, 'livre', login, sessao))}\n`;
@@ -160,14 +161,19 @@ function desistir({ tickets, frente, login, logins = [login], sessao, rotulo, di
       const r = lerTicket(n, o);
       lido = r.ok ? r.ticket : null;
     }
-    const outras = lido ? frentesAtivas(lido).filter(f => f.id !== frente.id) : [];
     const args = [];
     const tirados = [];
-    for (const l of new Set(logins)) {
-      if (outras.some(f => f.login === l)) ficaram.push({ ticket: n, login: l, motivo: 'outra frente do mesmo login segura o ticket' });
-      else { args.push('--remove-assignee', l); tirados.push(l); }
+    if (lido) {
+      const outras = frentesAtivas(lido).filter(f => f.id !== frente.id);
+      for (const l of new Set(logins)) {
+        if (outras.some(f => f.login === l)) ficaram.push({ ticket: n, login: l, motivo: 'outra frente do mesmo login segura o ticket' });
+        else { args.push('--remove-assignee', l); tirados.push(l); }
+      }
+      if (!outras.length) args.push('--remove-label', rotulo);
+    } else {
+      // Sem reler, não se sabe se outra frente segura o ticket: não tira nada às cegas; diz como tirar à mão.
+      semLeitura.push({ ticket: n, comando: `gh issue edit ${n} ${[...new Set(logins)].map(l => `--remove-assignee ${l}`).join(' ')} --remove-label ${rotulo}` });
     }
-    if (!outras.length) args.push('--remove-label', rotulo);
     let edicao = null;
     if (dirEstado) {
       situacoes.push(comentarOuEnfileirar(dirEstado, n, corpo, { ...o, evento: { sessao, frente: frente.nome } }));
@@ -179,14 +185,17 @@ function desistir({ tickets, frente, login, logins = [login], sessao, rotulo, di
     if (edicao === NA_FILA) for (const l of tirados) ficaram.push({ ticket: n, login: l, motivo: 'a edição que o tira ficou na fila' });
     if (edicao === PERDIDO) for (const l of tirados) ficaram.push({ ticket: n, login: l, motivo: 'a edição que o tira não foi feita' });
   }
-  return { ...contar(situacoes), ficaram };
+  return { ...contar(situacoes), ficaram, semLeitura };
 }
 
 // O que a desistência conseguiu, para a mensagem de recusa.
-function comoDesfez({ naFila, perdidos }) {
-  if (perdidos) return 'não consegui desfazer tudo: confira os tickets e tire à mão o responsável e o rótulo desta frente';
-  if (naFila) return 'deixei na fila o que desfaz a reserva; sai no próximo comando com rede';
-  return 'desfiz o que tinha feito';
+function comoDesfez({ naFila, perdidos, semLeitura = [] }) {
+  const base = perdidos ? 'não consegui desfazer tudo: confira os tickets e tire à mão o responsável e o rótulo desta frente'
+    : naFila ? 'deixei na fila o que desfaz a reserva; sai no próximo comando com rede'
+      : 'desfiz o que tinha feito';
+  if (!semLeitura.length) return base;
+  const cegos = semLeitura.map(x => `#${x.ticket} (se ninguém mais o segura: ${x.comando})`).join('; ');
+  return `${base}, menos o responsável e o rótulo de ${cegos}, que não consegui reler para saber se outra frente os segura`;
 }
 
 export function reservar({ tickets, frente, login, sessao, rotulo, dirEstado = null, esperaMs = ESPERA_DA_RELEITURA_MS }, o = {}) {

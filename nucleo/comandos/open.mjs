@@ -109,6 +109,14 @@ export async function executar(args, amb) {
     throw recusa(`Nome de frente inválido: ${String(o.nome ?? '').slice(0, 40) || '(vazio)'}`, 'use de 2 a 49 caracteres: minúsculas, números e hífen, começando por letra ou número (ex.: ah open carrinho)');
   }
   const tickets = lerTickets(o.tickets);
+  // Operação desta máquina ainda na fila para um ticket pedido (o reenvio acima não a tirou, ou outro comando está
+  // reenviando): o GitHub ainda não mostra o que esta máquina fez nele, e reservar agora decidiria às cegas (uma
+  // desistência velha do mesmo id, reenviada depois, liberaria a reserva nova). Recusa sem mudar nada.
+  const presos = tickets.filter(n => temDoTicket(amb.dirEstado, n));
+  if (presos.length) {
+    throw recusa(`Não reservei: há comentário pendente para o ticket ${presos.map(n => `#${n}`).join(', ')} nesta máquina, que o GitHub ainda não recebeu.`,
+      'rode de novo quando o GitHub responder; ah doctor mostra a fila');
+  }
   const plano = conferirPlano(o.plano, amb.raiz);
   const caminhos = lerCaminhos(o.caminhos);
   const cfg = amb.config;

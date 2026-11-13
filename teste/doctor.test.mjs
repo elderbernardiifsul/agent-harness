@@ -206,10 +206,10 @@ test('sem ramos protegidos a proteção no servidor é aviso', () => {
   assert.match(p.ah(['doctor']).saida, /^aviso\s+Proteção no servidor: .*protegido/m);
 });
 
-test('C1: o doctor tem 15 itens, com "Harness no ramo base" antes de "Gancho responde"', async () => {
+test('C1: o doctor tem 16 itens, com "Harness no ramo base" antes de "Gancho responde"', async () => {
   const { VERIFICACOES } = await import('../nucleo/comandos/doctor.mjs');
   const nomes = VERIFICACOES.map(v => v.item);
-  assert.equal(nomes.length, 15);
+  assert.equal(nomes.length, 16); // + Fila de pendentes (tarefa 5, rodada 4)
   assert.equal(nomes.indexOf('Harness no ramo base'), nomes.indexOf('Ganchos do Claude Code instalados') + 1);
   assert.equal(nomes.indexOf('Gancho responde'), nomes.indexOf('Harness no ramo base') + 1);
 });

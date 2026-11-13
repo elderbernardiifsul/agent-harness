@@ -9,6 +9,7 @@ import { arquivoDaMaquina, dirEstado as caminhoDoEstado } from '../lib/caminhos.
 import { ErroDeConfig, carregarConfig, configAusente } from '../lib/config.mjs';
 import { ErroDeEstado, lerJson } from '../lib/estado.mjs';
 import { idsNoHistorico, lerFrente, listarFrentes, siglaValida } from '../lib/frente.mjs';
+import { listarPendentes } from '../lib/pendentes.mjs';
 import { lerSessao } from '../lib/sessao.mjs';
 import { aberturaParada, vidaDaSessao } from '../lib/vida.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
@@ -254,6 +255,19 @@ export const VERIFICACOES = [
     const c = amb.config.ci.comandoDeTeste;
     return typeof c === 'string' && c ? ok('CI com comando de teste')
       : aviso('CI com comando de teste', 'defina ci.comandoDeTeste em .harness/config.json e rode ah init');
+  }),
+
+  verificacao('Fila de pendentes', amb => {
+    if (!amb.dirEstado) return null;
+    let ops;
+    try { ops = listarPendentes(amb.dirEstado); } catch (e) {
+      if (e instanceof ErroDeEstado) return aviso('Fila de pendentes', `não consegui ler a fila (${e.message.split('\n')[0]})`);
+      throw e;
+    }
+    if (!ops.length) return ok('Fila de pendentes');
+    const tickets = [...new Set(ops.map(op => op.ticket))].map(n => `#${n}`).join(', ');
+    return aviso(`Fila de pendentes: ${ops.length} ${ops.length === 1 ? 'operação' : 'operações'} (${tickets})`,
+      'saem sozinhas no próximo ah open ou ah close com rede; enquanto um ticket tem operação na fila, o ah open não o reserva');
   }),
 
   verificacao('Frentes com worktree', amb => {
