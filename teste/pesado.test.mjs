@@ -62,6 +62,9 @@ test('pesado roda o comando, repassa a saída e o código; cria a configuração
   assert.match(r.erro, /^e$/m);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(p.fila, 'config.json'), 'utf8')), { versao: 1, vagas: 2, memoriaLivreMinimaMb: 4096 });
   assert.deepEqual(estadoDaFila(p.fila).entradas, []);
+  const ev = lerEventos(dirDoTeste(p)).filter(e => e.tipo === 'pesado');
+  assert.deepEqual(ev.map(e => [e.senha, e.classe, e.codigo]), [[1, 'exclusivo', 3]]);
+  assert.ok(ev[0].esperaMs >= 0 && ev[0].duracaoMs >= 0);
 });
 
 test('pesado com um argumento só passa pelo shell', { skip: POSIX }, t => {

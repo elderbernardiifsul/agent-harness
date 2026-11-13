@@ -9,6 +9,7 @@ import {
   memoriaLivreMb, vagasEfetivas, textoDoArgv,
 } from '../lib/fila.mjs';
 import { inicioDoProcesso } from '../lib/vida.mjs';
+import { registrarEvento } from '../lib/estado.mjs';
 
 export const descricao = 'roda um comando pela fila de trabalho pesado da máquina';
 export const uso = `ah pesado -- <comando>        espera a vez, roda e devolve a saída e o código do comando
@@ -123,6 +124,7 @@ export async function executar(args, amb) {
       }
       await dormir(pausaMs);
     }
+    const esperaMs = Date.now() - desde;
     if (ultimoMotivo !== null) amb.avisar(`ah pesado: na vez depois de ${Math.round((Date.now() - desde) / 1000)} s (senha ${senha})\n`);
     const vagas = vagasEfetivas(classe.vagas, maquina.vagas);
     if (ultimoMotivo !== null || amb.env.AH_PESADO_VERBOSO) amb.avisar(`ah pesado: rodando (classe ${classe.nome}, ${vagas} de ${maquina.vagas} vaga(s))\n`);
@@ -130,6 +132,10 @@ export async function executar(args, amb) {
     const fim = await esperarFim(filho);
     if (saindo) return new Promise(() => {});
     if (fim.erro) throw new ErroDeUso(`Não consegui rodar o comando: ${fim.erro.message}\nPróximo passo: confira o nome do programa e o PATH`);
+    // Para medir (12.5): quanto esperou, quanto rodou. Falhar aqui não muda o resultado do comando.
+    try {
+      registrarEvento(amb.dirEstado, { tipo: 'pesado', sessao: amb.sessaoId ?? null, senha, classe: classe.nome, esperaMs, duracaoMs: Date.now() - desde - esperaMs, codigo: fim.codigo });
+    } catch { /* sem registro */ }
     return fim.codigo;
   } finally {
     if (!saindo) {
