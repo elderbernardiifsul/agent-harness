@@ -203,3 +203,107 @@ test('decisão 20: a trava vista vencida e tomada sem troca é apagada e a chama
   assert.equal(chamadas, 1);
   assert.deepEqual(fs.readdirSync(path.join(d, 'travas')), []);
 });
+
+// Achado da revisão: três participantes. V vencida (dono morto); B a vê vencida; A a toma e entra; B tira do
+// lugar o que está lá (agora a de A) e C, nessa hora, tenta entrar. A trava viva de A nunca pode sair do lugar.
+test('revisão: a tomada nunca tira do lugar uma trava viva (três participantes)', async t => {
+  const d = temp(t);
+  const travas = path.join(d, 'travas');
+  const pasta = path.join(travas, 'x');
+  const eu = identidadeDaMaquina();
+  const travar = dono => {
+    fs.rmSync(pasta, { recursive: true, force: true });
+    fs.mkdirSync(pasta, { recursive: true });
+    fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ em: new Date().toISOString(), ...eu, ...dono }));
+  };
+  travar({ pid: 999999, marca: 'V' });
+  let n = 0;
+  ganchosDeTeste.antesDeTomar = () => { if (n++ === 0) travar({ pid: process.pid, marca: 'A' }); };
+  // Logo depois do primeiro rename de B que mexe na trava, C tenta entrar como entraria: mkdir.
+  const original = fs.renameSync;
+  let cEntrou = null;
+  fs.renameSync = (de, para) => {
+    original(de, para);
+    if (cEntrou === null && (de === pasta || de.startsWith(pasta + path.sep))) {
+      try {
+        fs.mkdirSync(pasta);
+        fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ pid: process.pid, em: new Date().toISOString(), marca: 'C', ...eu }));
+        cEntrou = true;
+      } catch { cEntrou = false; }
+    }
+  };
+  t.after(() => { fs.renameSync = original; ganchosDeTeste.antesDeTomar = null; });
+  await assert.rejects(comTrava(d, 'x', () => 'B entrou', { venceMs: 60000, esperaMs: 100 }), e => e.travaPresa === true);
+  fs.renameSync = original;
+  assert.equal(cEntrou, false, 'C entrou com A dentro');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(pasta, 'dono.json'), 'utf8')).marca, 'A');
+  assert.deepEqual(fs.readdirSync(travas), ['x']);
+});
+
+// Achado da revisão: a liberação lê o dono e apaga a pasta; se, entre as duas, outro processo tomou a trava
+// (vencida pelo prazo do dono) e entrou, a liberação não pode apagar a dele.
+test('revisão: a liberação não apaga a trava que outro processo pegou no meio dela', async t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  const sinal = path.join(d, 'sinal');
+  const filho = path.join(d, 'filho.mjs');
+  const estado = new URL('../nucleo/lib/estado.mjs', import.meta.url).href;
+  fs.writeFileSync(filho, `import fs from 'node:fs';
+import { comTrava } from ${JSON.stringify(estado)};
+await comTrava(${JSON.stringify(d)}, 'x', async () => {
+  const marca = JSON.parse(fs.readFileSync(${JSON.stringify(path.join(pasta, 'dono.json'))}, 'utf8')).marca;
+  fs.writeFileSync(${JSON.stringify(sinal)}, marca);
+  await new Promise(r => setTimeout(r, 1500));
+}, { venceMs: 50, esperaMs: 5000 });
+`);
+  const { spawn } = await import('node:child_process');
+  let proc = null;
+  t.after(() => proc?.kill());
+  const pausa = new Int32Array(new SharedArrayBuffer(4));
+  // Na primeira remoção que a liberação faz na pasta da trava, o outro processo tenta entrar; espera-se até
+  // ele entrar (ou 1,5 s) e só então a remoção segue.
+  const originais = { rmSync: fs.rmSync, rmdirSync: fs.rmdirSync };
+  let disparou = false;
+  const antes = alvo => {
+    if (disparou || alvo !== pasta) return;
+    disparou = true;
+    proc = spawn(process.execPath, [filho], { stdio: 'ignore' });
+    const limite = Date.now() + 1500;
+    while (!fs.existsSync(sinal) && Date.now() < limite) Atomics.wait(pausa, 0, 0, 10);
+  };
+  fs.rmSync = (alvo, ...resto) => { antes(alvo); return originais.rmSync(alvo, ...resto); };
+  fs.rmdirSync = (alvo, ...resto) => { antes(alvo); return originais.rmdirSync(alvo, ...resto); };
+  t.after(() => Object.assign(fs, originais));
+  await comTrava(d, 'x', () => espera(120), { venceMs: 50 });
+  Object.assign(fs, originais);
+  assert.equal(disparou, true);
+  // O outro processo está dentro (ou entra logo): a trava dele tem de estar no lugar enquanto ele está.
+  const limite = Date.now() + 3000;
+  while (!fs.existsSync(sinal) && Date.now() < limite) await espera(10);
+  const marcaDoFilho = fs.readFileSync(sinal, 'utf8');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(pasta, 'dono.json'), 'utf8')).marca, marcaDoFilho);
+});
+
+// Achado 9 da revisão: o vencimento vale pelo prazo de quem segura a trava, gravado no dono.json, e não pelo
+// de quem quer tomá-la.
+test('revisão: a trava vence pelo prazo do dono (venceMs no dono.json); sem ele, pelo de quem toma', async t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  await comTrava(d, 'x', () => {
+    assert.equal(JSON.parse(fs.readFileSync(path.join(pasta, 'dono.json'), 'utf8')).venceMs, 120000);
+  }, { venceMs: 120000 });
+  const travar = extra => {
+    fs.mkdirSync(pasta, { recursive: true });
+    fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ pid: process.pid, em: new Date(Date.now() - 60000).toISOString(), marca: 'longa', ...identidadeDaMaquina(), ...extra }));
+  };
+  // dono vivo há 60 s com prazo de 120 s: quem toma com 30 s não toma
+  travar({ venceMs: 120000 });
+  await assert.rejects(comTrava(d, 'x', () => 1, { venceMs: 30000, esperaMs: 80 }), e => e.travaPresa === true);
+  fs.rmSync(pasta, { recursive: true, force: true });
+  // dono vivo há 60 s com prazo de 30 s: quem toma com 120 s toma
+  travar({ venceMs: 30000 });
+  assert.equal(await comTrava(d, 'x', () => 'entrou', { venceMs: 120000, esperaMs: 500 }), 'entrou');
+  // sem venceMs no dono, vale o de quem toma
+  travar({});
+  assert.equal(await comTrava(d, 'x', () => 'entrou', { venceMs: 30000, esperaMs: 500 }), 'entrou');
+});

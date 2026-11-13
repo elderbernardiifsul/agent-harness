@@ -255,7 +255,8 @@ test('comandos de extensão: despacho, ajuda, recusa e erro', t => {
 
 test('ciclo: depoisDeAbrir, coluna no quadro, antesDeFechar recusa sem mexer em nada, depoisDeFechar', t => {
   const p = projetoComEco(t);
-  assert.equal(p.ah(['open', 'carrinho']).codigo, 0);
+  // Com ticket: a recusa tem de vir antes do comentário de fechamento e da edição do ticket.
+  assert.equal(p.ah(['open', 'carrinho', '--tickets', '1']).codigo, 0);
   assert.equal(log(p), 'depoisDeAbrir carrinho\n');
   assert.deepEqual(frenteDoTeste(p, 'carrinho').extensoes, { eco: { aberta: true } });
   assert.match(p.ah(['eco', 'x']).saida, /\(frente carrinho\)/);
@@ -269,12 +270,18 @@ test('ciclo: depoisDeAbrir, coluna no quadro, antesDeFechar recusa sem mexer em 
   assert.deepEqual(json.frentes[0].colunas, { eco: { ECO: 'presa' } });
 
   const wt = frenteDoTeste(p, 'carrinho').worktree;
+  const antes = p.ghChamadas().length;
+  const ticketAntes = p.ghTicket(1);
   const recusa = p.ah(['close']);
   assert.equal(recusa.codigo, 1);
   assert.match(recusa.erro, /^Recusado: a extensão eco não deixa fechar a frente as-1 carrinho: a frente está presa pelo eco\nFaça: rode ah eco-marcar carrinho solta\n$/);
   assert.ok(fs.existsSync(wt));
   assert.equal(frenteDoTeste(p, 'carrinho').estado, 'ativa');
+  assert.equal(frenteDoTeste(p, 'carrinho').fechamentoComentado, undefined);
   assert.ok(!lerEventos(dirDoTeste(p)).some(e => e.tipo === 'fechamento'));
+  const noTicket = p.ghChamadas().slice(antes).filter(c => c.argv[0] === 'issue' && ['comment', 'edit'].includes(c.argv[1]));
+  assert.deepEqual(noTicket, [], 'a recusa veio depois de mexer no ticket');
+  assert.deepEqual(p.ghTicket(1), ticketAntes);
 
   assert.equal(p.ah(['eco-marcar', 'carrinho', 'solta']).codigo, 0);
   const c = p.ah(['close']);
@@ -341,8 +348,11 @@ test('gancho: trava de extensão recusa e registra; extensão quebrada não desl
   assert.match(r.erro, /^Recusado \(eco\/proibido\): a ação usa banana\nFaça: faça sem isso/);
   const ev = lerEventos(dirDoTeste(p)).at(-1);
   assert.deepEqual([ev.tipo, ev.trava, ev.extensao], ['recusa', 'eco/proibido', 'eco']);
+  const nAntes = lerEventos(dirDoTeste(p)).length;
   assert.equal(ganchoPre(p, { command: 'AH_GUARD=off echo banana' }).codigo, 0);
-  assert.equal(lerEventos(dirDoTeste(p)).at(-1).trava, 'eco/proibido');
+  // O evento da liberação, e não a recusa de antes: tipo, trava e extensão.
+  const lib = lerEventos(dirDoTeste(p)).slice(nAntes).filter(e => e.tipo === 'liberacao');
+  assert.deepEqual(lib.map(e => [e.tipo, e.trava, e.extensao]), [['liberacao', 'eco/proibido', 'eco']]);
   const q = ganchoPre(p, { command: 'echo quebra-trava' });
   assert.equal(q.codigo, 2);
   assert.match(q.erro, /Recusado \(eco\/quebrada\): a trava falhou: falha de propósito/);

@@ -63,7 +63,7 @@ export function calcularNumeros(eventos, { desde = null, ate = null, fuso, ilegi
     passagens: 0,
     tomadas: 0,
     retomadas: 0,
-    sessoes: { iniciadas: 0, porModelo: {} },
+    sessoes: { iniciadas: 0, continuacoes: 0, porModelo: {} },
     recusas: { porTrava: {}, liberacoesPorTrava: {}, deComando: {} },
     pesado: { execucoes: 0, esperaMediaMs: null, esperaMaximaMs: null, duracaoMediaMs: null },
     linhasIlegiveis: ilegiveis,
@@ -71,6 +71,7 @@ export function calcularNumeros(eventos, { desde = null, ate = null, fuso, ilegi
   const tempos = [];
   const esperas = [];
   const duracoes = [];
+  const sessoes = new Map(); // id → modelo, das sessões com início 'novo' no período
   for (const e of eventos) {
     if (!noPeriodo(e)) continue;
     switch (e.tipo) {
@@ -87,10 +88,15 @@ export function calcularNumeros(eventos, { desde = null, ate = null, fuso, ilegi
       case 'passagem': n.passagens++; break;
       case 'tomada': n.tomadas++; break;
       case 'retomada': n.retomadas++; break;
-      case 'sessao-inicio':
-        n.sessoes.iniciadas++;
-        contar(n.sessoes.porModelo, typeof e.modelo === 'string' && e.modelo.trim() ? e.modelo : 'não informado');
+      case 'sessao-inicio': {
+        // O começo registra também as continuações (clear, resume, compact; `origem`), que contam à parte. Sessão
+        // é o id distinto com origem 'novo' (ou sem origem, de registro antigo); o início repetido conta uma vez.
+        if (e.origem != null && e.origem !== 'novo') { n.sessoes.continuacoes++; break; }
+        const id = typeof e.sessao === 'string' ? e.sessao : Symbol('sem id');
+        const modelo = typeof e.modelo === 'string' && e.modelo.trim() ? e.modelo : null;
+        if (!sessoes.has(id) || (sessoes.get(id) == null && modelo)) sessoes.set(id, modelo);
         break;
+      }
       case 'recusa': contar(n.recusas.porTrava, rotulo(e.trava)); break;
       case 'liberacao': contar(n.recusas.liberacoesPorTrava, rotulo(e.trava)); break;
       case 'recusa-de-comando': contar(n.recusas.deComando, rotulo(e.comando)); break;
@@ -103,6 +109,8 @@ export function calcularNumeros(eventos, { desde = null, ate = null, fuso, ilegi
       default: break;
     }
   }
+  n.sessoes.iniciadas = sessoes.size;
+  for (const modelo of sessoes.values()) contar(n.sessoes.porModelo, modelo ?? 'não informado');
   Object.assign(n.frentes, { comTempo: tempos.length, tempoMedioMs: media(tempos), tempoMedianoMs: mediana(tempos) });
   Object.assign(n.pesado, { esperaMediaMs: media(esperas), esperaMaximaMs: esperas.length ? Math.max(...esperas) : null, duracaoMediaMs: media(duracoes) });
   return n;
@@ -129,7 +137,7 @@ export function textoDosNumeros(n) {
       ? `Tempo por frente fechada: médio ${duracao(f.tempoMedioMs)}, mediano ${duracao(f.tempoMedianoMs)} (${f.comTempo} frente${f.comTempo > 1 ? 's' : ''})`
       : 'Tempo por frente fechada: sem frente fechada no período',
     `Passagens de bastão: ${n.passagens}; tomadas: ${n.tomadas}; retomadas: ${n.retomadas}`,
-    `Sessões iniciadas: ${n.sessoes.iniciadas}${n.sessoes.iniciadas ? ` (${lista(n.sessoes.porModelo)})` : ''}`,
+    `Sessões iniciadas: ${n.sessoes.iniciadas}${n.sessoes.iniciadas ? ` (${lista(n.sessoes.porModelo)})` : ''}; continuações: ${n.sessoes.continuacoes}`,
     `Recusas por trava: ${lista(n.recusas.porTrava) || 'nenhuma'}`,
     `Liberações por trava: ${lista(n.recusas.liberacoesPorTrava) || 'nenhuma'}`,
     `Recusas de comando: ${lista(n.recusas.deComando) || 'nenhuma'}`,

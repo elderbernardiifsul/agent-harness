@@ -43,9 +43,10 @@ export async function carregarParaTeste(arquivo, config = {}) {
 // Um ctx sem disco, com a mesma forma do que o núcleo entrega. `frente` e `frentes` são o estado de partida;
 // o ctx devolvido guarda em `saida` e `avisos` o que a extensão escreveu, em `gravados` cada gravarCampos
 // ({frente, secao}) e em `chamadas` cada git/gh (que respondem código 0 e saída vazia, salvo `git`/`gh` dados).
+// `vivas`: as sessões que `donaViva` dá como vivas (padrão: só a do ctx).
 export function ctxFalso({
   extensao = 'teste', config = {}, configDoProjeto = null, frente = null, frentes = [], sessaoId = SESSAO,
-  raiz = path.join(os.tmpdir(), 'loja'), dirEstado = null, git = null, gh = null, ...extra
+  raiz = path.join(os.tmpdir(), 'loja'), dirEstado = null, git = null, gh = null, vivas = [sessaoId], ...extra
 } = {}) {
   const estado = new Map();
   for (const f of [...frentes, ...(frente ? [frente] : [])]) estado.set(f.nome, structuredClone(f));
@@ -70,6 +71,7 @@ export function ctxFalso({
     avisar: t => { avisos.push(t); },
     frente: copia(frente),
     frentes: () => [...estado.values()].map(copia),
+    donaViva: f => Boolean(f?.dona) && vivas.includes(f.dona),
     async gravarCampos(nome, campos) {
       const f = estado.get(nome);
       if (!f) throw new ErroDeUso(`Não achei a frente ${nome} no estado.\nPróximo passo: rode ah board para ver as frentes abertas`);
