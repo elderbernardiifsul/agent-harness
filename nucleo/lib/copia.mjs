@@ -14,6 +14,14 @@ const MODELOS_COPIADOS = ['agents-trecho.md', 'claude-code/ganchos.json'];
 export const MANIFESTO = 'MANIFEST.json';
 
 export const sha256 = conteudo => createHash('sha256').update(conteudo).digest('hex');
+// O sha256 de um arquivo do núcleo: no de texto (sem byte nulo, a regra do git), CRLF conta como LF, para que
+// um checkout com core.autocrlf=true não pareça alteração à mão; no binário, o sha256 exato. Para o arquivo só
+// com LF, dá o mesmo que sha256, e os manifestos gravados antes continuam valendo.
+export function sha256DoNucleo(conteudo) {
+  const b = Buffer.isBuffer(conteudo) ? conteudo : Buffer.from(conteudo);
+  if (b.includes(0) || !b.includes(0x0d)) return sha256(b);
+  return sha256(Buffer.from(b.toString('latin1').replaceAll('\r\n', '\n'), 'latin1'));
+}
 const eObjeto = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 // Lista os arquivos de uma pasta. Links simbólicos nunca são seguidos (ficam em `ignorados`),
@@ -50,7 +58,7 @@ export function arquivosDaCopia(raizDoClone) {
   const unicos = new Map();
   for (const a of lista) if (a.rel !== MANIFESTO) unicos.set(a.rel, a);
   return {
-    arquivos: [...unicos.values()].sort((a, b) => (a.rel < b.rel ? -1 : 1)).map(a => ({ ...a, sha256: sha256(fs.readFileSync(a.origem)) })),
+    arquivos: [...unicos.values()].sort((a, b) => (a.rel < b.rel ? -1 : 1)).map(a => ({ ...a, sha256: sha256DoNucleo(fs.readFileSync(a.origem)) })),
     ignorados,
   };
 }
@@ -66,7 +74,7 @@ export function listaInstalada(dirNucleo) {
       const relativo = rel ? `${rel}/${e.name}` : e.name;
       if (e.isSymbolicLink()) links.push(relativo);
       else if (e.isDirectory()) percorrer(path.join(atual, e.name), relativo);
-      else if (e.isFile() && relativo !== MANIFESTO) lista[relativo] = sha256(fs.readFileSync(path.join(atual, e.name)));
+      else if (e.isFile() && relativo !== MANIFESTO) lista[relativo] = sha256DoNucleo(fs.readFileSync(path.join(atual, e.name)));
     }
   };
   percorrer(dirNucleo, '');
@@ -196,7 +204,7 @@ export function listaDoCommit(raiz, commit, env) {
     const fim = saida.indexOf(0x0a, pos);
     const tamanho = Number(saida.subarray(pos, fim).toString('utf8').split(' ')[2]);
     if (fim < 0 || !Number.isInteger(tamanho)) return null;
-    lista[e.rel] = sha256(saida.subarray(fim + 1, fim + 1 + tamanho));
+    lista[e.rel] = sha256DoNucleo(saida.subarray(fim + 1, fim + 1 + tamanho));
     pos = fim + 1 + tamanho + 1;
   }
   return lista;

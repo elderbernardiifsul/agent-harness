@@ -332,3 +332,43 @@ test('dois atualizar ao mesmo tempo: o segundo espera a trava "atualizar" do est
   assert.ok(r.fim >= soltouEm);
   assert.notEqual(fs.readFileSync(whoami, 'utf8'), antes);
 });
+
+// Checkout do núcleo com core.autocrlf=true: o git reescreve os arquivos de texto com CRLF no disco.
+function checkoutComCrlf(p) {
+  p.git(['config', 'core.autocrlf', 'true']);
+  fs.rmSync(nucleo(p), { recursive: true, force: true });
+  const r = p.git(['checkout', '--', '.harness/nucleo']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(ler(p, '.harness/nucleo/comandos/whoami.mjs'), /\r\n/);
+}
+
+test('CRLF: com core.autocrlf=true o atualizar não acusa alteração à mão que não houve', t => {
+  const { p, clone } = cenario(t);
+  checkoutComCrlf(p);
+  const r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.doesNotMatch(r.erro, /alterado/);
+  assert.match(ler(p, '.harness/nucleo/comandos/whoami.mjs'), /\/\/ versão nova/);
+});
+
+test('CRLF: mudança à mão de verdade num checkout com CRLF continua acusada', t => {
+  const { p, clone } = cenario(t);
+  checkoutComCrlf(p);
+  fs.appendFileSync(path.join(nucleo(p), 'comandos', 'board.mjs'), '// mexi aqui\r\n');
+  const r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /comandos\/board\.mjs \(mudou\)/);
+  assert.match(r.erro, /Recusado: 1 arquivo\(s\) de \.harness\/nucleo\/ alterado\(s\) à mão/);
+});
+
+test('CRLF: arquivo binário do núcleo conta o sha256 exato (trocar CRLF por LF nele é mudança)', t => {
+  const { p, clone } = cenario(t);
+  const binario = Buffer.from([0x89, 0x50, 0x00, 0x0d, 0x0a, 0x41, 0x0d, 0x0a, 0x00]);
+  clone.gravar('nucleo/lib/figura.bin', binario);
+  assert.equal(clone.ah(p, ['atualizar']).codigo, 0);
+  fs.writeFileSync(path.join(nucleo(p), 'lib', 'figura.bin'), Buffer.from([0x89, 0x50, 0x00, 0x0a, 0x41, 0x0a, 0x00]));
+  clone.gravar('nucleo/lib/novidade.mjs', 'export const nova = 2;\n');
+  const r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /lib\/figura\.bin \(mudou\)/);
+});
