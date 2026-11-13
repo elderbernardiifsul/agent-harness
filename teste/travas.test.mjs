@@ -464,3 +464,10 @@ test('T6 passa: pela fila, liberada, aninhada, sem classes, comando que não cas
   assert.ok(avaliar({ tipo: 'comando', comando: 'npm run build', cwd: '/w' }, ctx).permite);
   assert.ok(av6('npm test && npm run lint && echo npm run build').permite);
 });
+
+// ---- pendência 10: cd que pode falhar no meio
+test('M6. cd x && a; b: a avaliado só em x, b também na pasta de antes', () => {
+  assert.ok(av('cd /w && git add -A; git status').permite);
+  for (const c of ['cd /w && git status; git add -A', 'cd /w && git log && git status; git add -A', 'cd /w && true; git commit -a -m x'])
+    assert.equal(av(c).trava, 'T2', c);
+});

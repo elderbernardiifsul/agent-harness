@@ -483,3 +483,15 @@ test('literais: $ e crase entre aspas simples ou escapados; o que expande fica d
   assert.deepEqual(lit(`git add 'a$b' a$b 'c$d'`), ['c$d']);
   assert.deepEqual(lit(`git -C /w add 'a$b'`), ['a$b']);
 });
+
+// ---- pendência 10: cd que pode falhar no meio de uma lista && seguida de ;
+test('cd x && a; b: a só roda em x; b roda em x ou na pasta de antes', () => {
+  const cs = comandosSimples('cd /w && a; b', '/r');
+  assert.deepEqual(cs.map(c => [c.argv[0], c.cwd, c.cwdsAlternativos]), [['cd', '/r', undefined], ['a', '/w', undefined], ['b', '/w', ['/r']]]);
+  const [, , , d] = comandosSimples('cd /w && a && b; d', '/r');
+  assert.deepEqual([d.cwd, d.cwdsAlternativos], ['/w', ['/r']]);
+  const [, , e] = comandosSimples('cd /w || exit 1; e', '/r');
+  assert.deepEqual([e.cwd, e.cwdsAlternativos], ['/w', undefined]);
+  // Com o cwd de entrada já incerto, o cd relativo deixa o de depois desconhecido.
+  assert.equal(comandosSimples('cd /w && x || y && cd sub; z', '/r').at(-1).cwd, null);
+});

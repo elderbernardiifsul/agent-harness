@@ -560,10 +560,8 @@ const PREFIXOS = new Set(['!', 'if', 'then', 'elif', 'else', 'while', 'until', '
 const SEPARADORES = new Set([';', '&', '\n']);
 const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'ash']);
 const nunca = () => false;
-// Simulação do cwd numa lista && / ||: nenhum estado, ou mais de um cwd possível.
-const NENHUM = Symbol('nenhum');
-const VARIOS = Symbol('vários');
-const juntar = (a, b) => (a === NENHUM ? b : b === NENHUM ? a : a === b ? a : VARIOS);
+// Simulação do cwd numa lista && / ||: os cwds possíveis em cada status (null = desconhecido).
+const juntar = (...conjuntos) => new Set(conjuntos.flatMap(c => [...c]));
 const ehOp = (t, ...valores) => t?.tipo === 'op' && valores.includes(t.valor);
 
 // O que certamente deu certo: índices (na saída) de comandos cujo status foi 0. Nós compartilhados,
@@ -646,6 +644,7 @@ class Leitor {
     this.orcamentoDeTexto = LIMITE_TEXTO_RELIDO_MINIMO;
     this.orcamentoDeSaida = { resta: LIMITE_TEXTO_RELIDO_MINIMO };
     this.terminadores = 0; // exit, return, logout e exec já lidos (ver lerLista)
+    this.mudancasDeCwd = 0; // cd, pushd e popd já lidos (ver lerAndOr)
   }
 
   entrar(pos) {
@@ -719,14 +718,15 @@ class Leitor {
   }
 
   // a && b || c. O cwd de cada operando sai de uma simulação: para o status
-  // "deu certo" e para o "falhou" guarda-se o cwd possível (ou VARIOS). O
-  // operando roda nos estados que o operador deixa passar (&& no certo, || no
-  // falhou); se ali houver mais de um cwd possível, o cwd dele é null. Um cd
-  // que dá certo muda o cwd, e falhando não muda; outro operando que mudou o
-  // cwd (eval, chaves) e o negado com `!` deixam os dois status em aberto.
+  // "deu certo" e para o "falhou" guardam-se os cwds possíveis. O operando
+  // roda nos estados que o operador deixa passar (&& no certo, || no falhou);
+  // se ali houver mais de um cwd possível, o cwd dele é null. Um cd que dá
+  // certo muda o cwd, e falhando não muda; outro operando que mudou o cwd
+  // (eval, chaves) e o negado com `!` deixam os dois status em aberto.
   //
   // Depois da lista vale o cwd sequencial (o do último cd), ou null se algum cd
-  // depois do primeiro operando mudou o cwd; com `&` no fim, nada vaza.
+  // depois do primeiro operando mudou o cwd; os outros cwds possíveis no fim
+  // (cd x && a; b com o cd falhando) viram alternativos. Com `&` no fim, nada vaza.
   //
   // Enquanto só há `&&`, cada operando roda sabendo que os anteriores deram certo: os comandos
   // emitidos levam `aposSucesso` (ver deuCerto). Depois de um `||`, só vale o que vinha de fora.
@@ -738,27 +738,30 @@ class Leitor {
     let soE = true;
     let sequencial = ctx.cwd;
     let condicional = false;
-    let certo = ctx.cwd;
-    let falhou = NENHUM;
+    let certo = new Set([ctx.cwd]);
+    let falhou = new Set();
     let operador = '&&';
     for (let n = 0; ; n++) {
       const roda = operador === '&&' ? certo : falhou;
-      ctx.cwd = roda === VARIOS || roda === NENHUM ? null : roda;
+      ctx.cwd = roda.size === 1 ? [...roda][0] : null;
       ctx.garantidos = soE ? garantidos : garantidosDeFora;
       const antes = ctx.cwd;
+      const mudancas = this.mudancasDeCwd;
       const info = this.lerPipeline(cur, ctx) ?? {};
       garantidos = unir(garantidos, info.sucesso);
       const depois = ctx.cwd;
-      let rCerto = antes;
-      let rFalhou = antes;
-      if (depois !== antes) {
+      // Com o cwd de entrada desconhecido, um cd relativo deixa null em null: o contador diz que mudou.
+      const mudou = depois !== antes || (antes === null && this.mudancasDeCwd !== mudancas);
+      let rCerto = roda;
+      let rFalhou = roda;
+      if (mudou) {
         sequencial = depois;
         if (n > 0) condicional = true;
-        if (info.ehCd && !info.negado) rCerto = depois;
-        else rCerto = rFalhou = juntar(antes, depois);
+        if (info.ehCd && !info.negado) rCerto = new Set([depois]);
+        else rCerto = rFalhou = juntar(roda, [depois]);
       }
       if (info.negado) rCerto = rFalhou = juntar(rCerto, rFalhou);
-      if (info.termina) rCerto = rFalhou = NENHUM; // exit/return: nada roda depois dele
+      if (info.termina) rCerto = rFalhou = new Set(); // exit/return: nada roda depois dele
       if (operador === '&&') { certo = rCerto; falhou = juntar(falhou, rFalhou); }
       else { falhou = rFalhou; certo = juntar(certo, rCerto); }
       if (!ehOp(cur.tokens[cur.i], '&&', '||')) break;
@@ -772,9 +775,9 @@ class Leitor {
     if (ehOp(cur.tokens[cur.i], '&')) this.desfazer(ctx, m);
     else {
       ctx.cwd = condicional ? null : sequencial;
-      // A lista pode ter falhado num cwd diferente (cd que não achou a pasta): esse cwd
-      // vira alternativo para o que vem depois do `;`.
-      if (!condicional && typeof falhou === 'string') acrescentarAlternativos(ctx, [falhou]);
+      // A lista pode ter terminado num cwd diferente (cd que não achou a pasta, antes ou no
+      // meio de `cd x && a`): esses cwds viram alternativos para o que vem depois do `;`.
+      if (!condicional) acrescentarAlternativos(ctx, [...juntar(certo, falhou)]);
     }
     return sucesso;
   }
@@ -1172,6 +1175,7 @@ class Leitor {
     const ehCd = nome === 'cd' || nome === 'pushd' || nome === 'popd';
     if (ehCd) {
       const alternativos = ctx.alternativos.map(a => novoCwd(nome, itens, a));
+      this.mudancasDeCwd++;
       ctx.cwd = novoCwd(nome, itens, ctx.cwd);
       acrescentarAlternativos(ctx, alternativos);
     }
