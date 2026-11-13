@@ -6,9 +6,10 @@ import { idCurto, listarSessoes } from '../lib/sessao.mjs';
 import { aberturaParada, frenteOrfa, vidaDaDona } from '../lib/vida.mjs';
 import { dirDaFila, duracaoCurta, retratoDaFila } from '../lib/fila.mjs';
 import { ativasOuNada, colunasDasExtensoes } from '../lib/extensoes.mjs';
+import { executarNumeros, USO_NUMEROS } from '../lib/numeros.mjs';
 
 export const descricao = 'mostra as frentes abertas e as sessões vivas';
-export const uso = 'ah board [--json]';
+export const uso = `ah board [--json] | ${USO_NUMEROS}`;
 export const requisitos = { config: true, sessao: false };
 
 const LIMITE_PLANO = 30;
@@ -50,9 +51,11 @@ function linhasDaFila(fila, amb) {
 }
 
 export async function executar(args, amb) {
+  if (args.includes('--numeros')) return executarNumeros(args, amb);
   let json = false;
   for (const arg of args) {
     if (arg === '--json') json = true;
+    else if (arg === '--desde' || arg === '--ate') throw new ErroDeUso(`--desde e --ate só valem com --numeros\nPróximo passo: use ${USO_NUMEROS}`);
     else if (arg.startsWith('--')) throw new ErroDeUso(`Opção desconhecida: ${arg.slice(0, 40)}\nPróximo passo: use ${uso}`);
     else throw new ErroDeUso(`Argumento a mais: ${arg.slice(0, 40)}\nPróximo passo: use ${uso}`);
   }
