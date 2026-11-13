@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { lerJson, gravarJson, comTrava, registrarEvento, lerEventos, identidadeDaMaquina } from '../nucleo/lib/estado.mjs';
+import { lerJson, gravarJson, comTrava, registrarEvento, lerEventos, identidadeDaMaquina, ganchosDeTeste } from '../nucleo/lib/estado.mjs';
 
 function temp(t) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'ah-est-'));
@@ -164,4 +164,42 @@ test('dono morto só vence na hora quando é desta máquina; sem identidade ou d
     assert.equal(dono.maquina, eu.maquina);
     assert.equal(dono.boot ?? null, eu.boot ?? null);
   });
+});
+
+test('decisão 20: a tomada confere a marca; trava trocada entre a leitura e o rename volta ao lugar', async t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  const eu = identidadeDaMaquina();
+  const travar = dono => {
+    fs.rmSync(pasta, { recursive: true, force: true });
+    fs.mkdirSync(pasta, { recursive: true });
+    fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ em: new Date().toISOString(), ...eu, ...dono }));
+  };
+  // a vista vencida: dono morto desta máquina
+  travar({ pid: 999999, marca: 'velha' });
+  // Entre a leitura e o rename, outro processo tomou a velha e pôs a dele (também de dono morto, mas não foi a
+  // vista). Na segunda volta, essa já passou a ser de um dono vivo.
+  const trocas = [];
+  ganchosDeTeste.antesDeTomar = () => {
+    trocas.push(trocas.length);
+    if (trocas.length === 1) travar({ pid: 999999, marca: 'nova' });
+    else if (trocas.length === 2) travar({ pid: process.pid, marca: 'viva' });
+  };
+  t.after(() => { ganchosDeTeste.antesDeTomar = null; });
+  await assert.rejects(comTrava(d, 'x', () => 'entrou', { venceMs: 60000, esperaMs: 80 }), e => e.travaPresa === true);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(pasta, 'dono.json'), 'utf8')).marca, 'viva');
+  assert.equal(trocas.length >= 2, true);
+});
+
+test('decisão 20: a trava vista vencida e tomada sem troca é apagada e a chamada entra', async t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  fs.mkdirSync(pasta, { recursive: true });
+  fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ pid: 999999, em: new Date().toISOString(), marca: 'velha', ...identidadeDaMaquina() }));
+  let chamadas = 0;
+  ganchosDeTeste.antesDeTomar = () => { chamadas++; };
+  t.after(() => { ganchosDeTeste.antesDeTomar = null; });
+  assert.equal(await comTrava(d, 'x', () => 'entrou', { venceMs: 60000, esperaMs: 500 }), 'entrou');
+  assert.equal(chamadas, 1);
+  assert.deepEqual(fs.readdirSync(path.join(d, 'travas')), []);
 });

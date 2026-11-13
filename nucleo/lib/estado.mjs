@@ -77,13 +77,16 @@ function donoMorto(pid) {
 
 // Vencida: o dono, desta máquina, morreu (vence na hora), ou passou de `venceMs` desde o `em` do dono (ou da
 // data da pasta). Dono sem identidade (gravado antes dela) ou de outra máquina: só o prazo.
-function travaVencida(pasta, venceMs) {
+function lerDono(pasta) {
+  try { return JSON.parse(fs.readFileSync(path.join(pasta, 'dono.json'), 'utf8')); } catch { return null; }
+}
+
+function travaVencida(pasta, venceMs, dono = lerDono(pasta)) {
   let em = null;
-  try {
-    const dono = JSON.parse(fs.readFileSync(path.join(pasta, 'dono.json'), 'utf8'));
-    if (eDestaMaquina(dono) && donoMorto(dono?.pid)) return true;
+  if (dono) {
+    if (eDestaMaquina(dono) && donoMorto(dono.pid)) return true;
     em = Date.parse(dono.em);
-  } catch { /* sem dono legível: vale a data da pasta */ }
+  } // sem dono legível: vale a data da pasta
   if (!Number.isFinite(em)) {
     try { em = fs.statSync(pasta).mtimeMs; } catch { return false; }
   }
@@ -100,8 +103,10 @@ export function validarNomeSeguro(nome, rotulo) {
   return nome;
 }
 
-// `venceMs` precisa ser maior que o pior caso de `fn`: passado esse prazo outra chamada pode tomar a trava
-// (a liberação só apaga a trava se ainda for desta chamada, mas a exclusão já terá sido perdida).
+// Ponto de troca para os testes: chamado entre a leitura da trava vencida e o rename, onde outro processo
+// pode trocá-la. Fora dos testes, fica null.
+export const ganchosDeTeste = { antesDeTomar: null };
+
 // Uma tentativa de pegar a trava: true se pegou; false se outro a tem e ela não venceu.
 function tentarPegar(pasta, venceMs, marca) {
   for (;;) {
@@ -111,7 +116,9 @@ function tentarPegar(pasta, venceMs, marca) {
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
     }
-    if (!travaVencida(pasta, venceMs)) return false;
+    const vista = lerDono(pasta);
+    if (!travaVencida(pasta, venceMs, vista)) return false;
+    ganchosDeTeste.antesDeTomar?.(pasta);
     // Só um rename vence; quem perde (ENOENT) tenta de novo.
     const tomada = `${pasta}.vencida.${process.pid}.${Date.now()}.${marca.slice(0, 8)}`;
     try {
@@ -120,11 +127,14 @@ function tentarPegar(pasta, venceMs, marca) {
       if (e.code === 'ENOENT') continue;
       throw e;
     }
-    if (travaVencida(tomada, venceMs)) {
+    // O rename pegou o que estava no lugar, que pode não ser a trava vista: só apaga se a marca for a mesma
+    // (e ainda vencida). Senão, era a trava de outro processo, e ela volta para ser julgada de novo.
+    const tomadaDono = lerDono(tomada);
+    if (tomadaDono?.marca === vista?.marca && travaVencida(tomada, venceMs, tomadaDono)) {
       fs.rmSync(tomada, { recursive: true, force: true });
     } else {
-      // Era uma trava recém-tomada por outro: devolve ao lugar. Se o lugar já tem outra trava, a devolvida
-      // não é apagada (é de alguém); fica com o nome `.vencida.*` e vira lixo inofensivo.
+      // Devolve ao lugar. Se o lugar já tem outra trava, a devolvida não é apagada (é de alguém); fica com o
+      // nome `.vencida.*` e vira lixo inofensivo.
       try { fs.renameSync(tomada, pasta); } catch { /* o lugar já tem dono: não apaga a trava alheia */ }
     }
   }
