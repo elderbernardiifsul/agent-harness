@@ -25,14 +25,9 @@ function lerOpcoes(args) {
   return o;
 }
 
-// Vida da sessão dona; registro ilegível conta como não viva.
-function vidaDa(dirEstado, id, config) {
-  try {
-    return vidaDaSessao(dirEstado, id, { config });
-  } catch {
-    return { estado: 'desconhecida', motivo: 'registro ilegível', idadeDoSinalMs: null };
-  }
-}
+// Vida da sessão dona. Só o registro que não existe conta como sem dona viva; o que não se lê (JSON quebrado,
+// esquema de um harness mais novo) sobe como erro de estado e recusa: a dona pode estar viva.
+const vidaDa = (dirEstado, id, config) => vidaDaSessao(dirEstado, id, { config });
 
 // Recusas locais, sob a trava `frentes`, sem mudar nada. Devolve a vida da dona (null na frente sem dona).
 function conferir({ f, nome, amb, sessao }) {
@@ -117,8 +112,7 @@ export async function executar(args, amb) {
     }
     const sessoesDaqui = sessoesDaquiDaFrente(dirEstado, frente, [frente.dona]);
     const q = quemTemAFrente({ frente, login, sessao: amb.sessaoId, rotulo, sessoesDaqui }, oGh);
-    const velho = `confira os tickets (${tickets.map(n => `#${n}`).join(', ')}); se o registro desta máquina ficou velho, encerre-o com ah close ${nome}`;
-    switch (q.situacao) {
+        switch (q.situacao) {
       case 'daqui':
       case 'propria':
         break;
@@ -129,10 +123,15 @@ export async function executar(args, amb) {
         throw recusa(`Não assumi ${nome}: a frente ${q.id} está ativa com @${q.login} em outra máquina.`, `combine com @${q.login}, que está com a frente ${q.id}`);
       case 'nao-achei':
         throw recusa(`Não assumi ${nome}: não achei o ticket #${q.ticket} da frente ${frente.id}.`, `confira o ticket #${q.ticket}; se ele foi apagado, encerre com ah close ${nome}`);
-      case 'passada':
-        throw recusa(`Não assumi ${nome}: nos tickets a frente ${frente.id} está passada, não ativa com esta máquina.`, velho);
+      case 'passada': {
+        // Outra máquina passou a frente (a passagem é dela): fechar aqui apagaria a passagem alheia.
+        const quem = q.passagem?.login ?? 'desconhecido';
+        throw recusa(`Não assumi ${nome}: nos tickets a frente ${frente.id} foi passada por @${quem} em outra máquina; não está ativa com esta.`,
+          `combine com @${quem}: a frente pode ser retomada pela passagem dele (ah open ${nome} na máquina que tiver o registro passado ou numa sem registro dela)`);
+      }
       default:
-        throw recusa(`Não assumi ${nome}: nos tickets a frente ${frente.id} não está ativa (foi fechada, ou o marcador não está lá).`, velho);
+        throw recusa(`Não assumi ${nome}: nos tickets a frente ${frente.id} não está ativa (foi fechada, ou o marcador não está lá).`,
+          `confira os tickets (${tickets.map(n => `#${n}`).join(', ')}); se a frente foi fechada em outra máquina, encerre o registro daqui com ah close ${nome}`);
     }
   }
 

@@ -205,3 +205,62 @@ test('sessão antiga retomada depois do takeover: o T4 protege a nova dona', { t
   const e = await tratar({ tipo: 'antes', sessao: A, cwd: p.raiz, acao: { tipo: 'edicao', arquivo: path.join(wt, 'a.txt') } }, { ...amb(p), pid: novo.pid });
   assert.equal(e.decisao, 'recusa');
 });
+
+// ---- Consertos da revisão, rodada 1
+
+test('registro da dona que não se lê recusa em vez de contar como sem dona', t => {
+  const { p } = frenteDeOutra(t);
+  const arq = path.join(dirDoTeste(p), 'sessoes', `${A}.json`);
+  fs.writeFileSync(arq, JSON.stringify({ ...JSON.parse(fs.readFileSync(arq, 'utf8')), esquema: 3 }));
+  for (const extra of [[], ['--confirmado']]) {
+    const r = p.ah(['takeover', 'carrinho', ...extra], B);
+    recusou(r, /esquema 3[\s\S]*Faça: atualize o harness/);
+  }
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').dona, A);
+});
+
+test('GitHub com a passagem de outra máquina: recusa nomeando quem passou, sem mandar fechar', async t => {
+  const { p, proc } = frenteDeOutra(t);
+  await proc.matar();
+  const f = lerFrenteDoTeste(p, 'carrinho');
+  const marcador = montarMarcador('passagem', { id: f.id, nome: f.nome, ramo: f.ramo, estado: 'passada', login: 'carla-dias', sessao: 'sessao-c', tickets: '1' });
+  p.ghSemear(1, { comments: [...p.ghTicket(1).comments, { author: 'carla-dias', body: `Passagem.\n\n${marcador}\n`, numero: 5000 }] });
+  const r = p.ah(['takeover', 'carrinho', '--confirmado']);
+  recusou(r, /passada por @carla-dias/);
+  assert.match(r.erro, /Faça: .*@carla-dias.*ah open carrinho/);
+  assert.doesNotMatch(r.erro, /ah close/);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').dona, A);
+});
+
+test('aviso da tomada sai uma vez só para a sessão antiga', async t => {
+  const { p, novo } = await retomadaDaAntiga(t);
+  const r = await tratar({ tipo: 'inicio', sessao: A, agente: 'claude-code', cwd: p.raiz, origem: 'continuacao' }, { ...amb(p), pid: novo.pid });
+  assert.doesNotMatch(r.contexto, /está com a sessão/);
+});
+
+test('handoff e retomada pelo open limpam tomadaDe e tomadaEm; a sessão antiga não é avisada', async t => {
+  const { p, proc } = frenteDeOutra(t);
+  await proc.matar();
+  assert.equal(p.ah(['takeover', 'carrinho', '--confirmado']).codigo, 0);
+  const h = p.ah(['handoff']);
+  assert.equal(h.codigo, 0, h.erro);
+  let f = lerFrenteDoTeste(p, 'carrinho');
+  assert.deepEqual([f.tomadaDe, f.tomadaEm], [undefined, undefined]);
+  const o = p.ah(['open', 'carrinho'], B);
+  assert.equal(o.codigo, 0, o.erro);
+  f = lerFrenteDoTeste(p, 'carrinho');
+  assert.deepEqual([f.dona, f.tomadaDe, f.tomadaEm], ['sessao-b-0002', undefined, undefined]);
+  const novo = processoVivo();
+  t.after(() => novo.matar());
+  const r = await tratar({ tipo: 'inicio', sessao: A, agente: 'claude-code', cwd: p.raiz, origem: 'continuacao' }, { ...amb(p), pid: novo.pid });
+  assert.doesNotMatch(r.contexto, /está com a sessão/);
+});
+
+test('retomada pelo open de frente passada com tomadaDe velho (registro antigo) limpa os campos', async t => {
+  const { p, proc } = frenteDeOutra(t, { tickets: '' });
+  await proc.matar();
+  gravarFrenteDoTeste(p, { ...lerFrenteDoTeste(p, 'carrinho'), estado: 'passada', dona: null, tomadaDe: A, tomadaEm: '2026-01-01T00:00:00Z' });
+  assert.equal(p.ah(['open', 'carrinho'], B).codigo, 0);
+  const f = lerFrenteDoTeste(p, 'carrinho');
+  assert.deepEqual([f.tomadaDe, f.tomadaEm], [undefined, undefined]);
+});

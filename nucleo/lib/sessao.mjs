@@ -74,6 +74,8 @@ export function registrarSessao(dirEstado, { id, agente, pid = null, pidInicio =
     inicio: antiga?.inicio ?? new Date().toISOString(),
     fim: null,
     motivoFim: null,
+    // Tomadas (ah takeover) desta sessão já avisadas no resumo: o aviso sai uma vez só.
+    ...(Array.isArray(antiga?.tomadasAvisadas) ? { tomadasAvisadas: antiga.tomadasAvisadas } : {}),
   };
   gravarSessao(dirEstado, sessao);
   tocarSinal(dirEstado, id);

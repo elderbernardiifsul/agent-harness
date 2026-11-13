@@ -158,11 +158,20 @@ async function inicio(evento, amb) {
     });
     avisos.push(`Sua frente ${foco.id} ${foco.nome} está com a sessão ${idCurto(foco.dona)}.`);
   }
-  // Frente que outra sessão assumiu desta (ah takeover, que já tirou o foco daqui): o resumo diz quem a tem.
-  for (const f of frentes) {
-    if (f !== foco && f.estado === 'ativa' && f.tomadaDe === id && f.dona != null && f.dona !== id) {
-      avisos.push(`Sua frente ${f.id} ${f.nome} está com a sessão ${idCurto(f.dona)} (ah takeover).`);
-    }
+  // Frente que outra sessão assumiu desta (ah takeover, que já tirou o foco daqui): o resumo diz quem a tem, uma
+  // vez só; o registro da sessão guarda as tomadas já avisadas (`<id da frente>@<tomadaEm>`).
+  const marca = f => `${f.id}@${f.tomadaEm ?? ''}`;
+  const tomadas = frentes.filter(f => f !== foco && f.estado === 'ativa' && f.tomadaDe === id && f.dona != null && f.dona !== id
+    && !(Array.isArray(sessao.tomadasAvisadas) && sessao.tomadasAvisadas.includes(marca(f))));
+  if (tomadas.length) {
+    for (const f of tomadas) avisos.push(`Sua frente ${f.id} ${f.nome} está com a sessão ${idCurto(f.dona)} (ah takeover).`);
+    sessao = await comTrava(amb.dirEstado, 'frentes', async () => {
+      const atual = lerSessao(amb.dirEstado, id);
+      const ja = Array.isArray(atual.tomadasAvisadas) ? atual.tomadasAvisadas : [];
+      const nova = { ...atual, tomadasAvisadas: [...new Set([...ja, ...tomadas.map(marca)])] };
+      gravarSessao(amb.dirEstado, nova);
+      return nova;
+    });
   }
   const minha = typeof sessao.frente === 'string' ? frentes.find(f => f.nome === sessao.frente && f.dona === id) : null;
   const situacao = { semDona: frentesSemDona(frentes, sessao.frente, amb), sobreposicoes: sobreposicoesDaSessao(minha, frentes, amb), avisos };

@@ -376,6 +376,8 @@ function retomarSobTrava(f, { amb, cfg, login, plano, caminhos, remoto, dona = a
   }
   const de = f.passadaPor ?? null;
   const retomada = { ...f, worktree: wt, dona, estado: 'ativa', retomadaEm: new Date().toISOString() };
+  delete retomada.tomadaDe;
+  delete retomada.tomadaEm;
   if (destino) retomada.atribuidaPor = amb.sessaoId;
   else delete retomada.atribuidaPor;
   if (plano !== null) retomada.plano = plano;

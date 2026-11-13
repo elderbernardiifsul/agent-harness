@@ -149,6 +149,9 @@ export async function executar(args, amb) {
     f.dona = null;
     f.passadaEm = agora;
     f.passadaPor = amb.sessaoId;
+    // A tomada (ah takeover) não acompanha a frente passada: quem a retomar não a herdou de ninguém.
+    delete f.tomadaDe;
+    delete f.tomadaEm;
     if (o.nota !== undefined) f.notas = [...(f.notas ?? []), { em: agora, sessao: amb.sessaoId, texto: o.nota }];
     gravarFrente(dirEstado, f);
     const sessao = lerSessao(dirEstado, amb.sessaoId);
