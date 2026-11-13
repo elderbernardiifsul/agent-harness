@@ -5,9 +5,11 @@ import { arquivosDaFrenteOuNulo, contaNaSobreposicao, sobreposicoes as calcularS
 import { idCurto, listarSessoes } from '../lib/sessao.mjs';
 import { aberturaParada, frenteOrfa, vidaDaDona } from '../lib/vida.mjs';
 import { dirDaFila, duracaoCurta, retratoDaFila } from '../lib/fila.mjs';
+import { ativasOuNada, colunasDasExtensoes } from '../lib/extensoes.mjs';
+import { executarNumeros, USO_NUMEROS } from '../lib/numeros.mjs';
 
 export const descricao = 'mostra as frentes abertas e as sessões vivas';
-export const uso = 'ah board [--json]';
+export const uso = `ah board [--json] | ${USO_NUMEROS}`;
 export const requisitos = { config: true, sessao: false };
 
 const LIMITE_PLANO = 30;
@@ -49,9 +51,11 @@ function linhasDaFila(fila, amb) {
 }
 
 export async function executar(args, amb) {
+  if (args.includes('--numeros')) return executarNumeros(args, amb);
   let json = false;
   for (const arg of args) {
     if (arg === '--json') json = true;
+    else if (arg === '--desde' || arg === '--ate') throw new ErroDeUso(`--desde e --ate só valem com --numeros\nPróximo passo: use ${USO_NUMEROS}`);
     else if (arg.startsWith('--')) throw new ErroDeUso(`Opção desconhecida: ${arg.slice(0, 40)}\nPróximo passo: use ${uso}`);
     else throw new ErroDeUso(`Argumento a mais: ${arg.slice(0, 40)}\nPróximo passo: use ${uso}`);
   }
@@ -115,10 +119,20 @@ export async function executar(args, amb) {
   const sobreposicoes = calcularSobreposicoes(porFrente);
   const sobrepoe = f => [...new Set(sobreposicoes.filter(s => s.frentes.includes(f.id)).flatMap(s => s.frentes))].filter(id => id !== f.id).sort();
   const conferida = f => !naoConferidas.has(f.id);
+  // Colunas das extensões ligadas: valor por frente, já cortado ('!' quando a extensão falha).
+  const colunas = colunasDasExtensoes(await ativasOuNada(amb, { avisar: amb.avisar }), amb);
+  const valoresDe = new Map();
+  for (const f of frentes) valoresDe.set(f, await Promise.all(colunas.map(c => c.valor(f))));
   if (json) {
+    const porExtensao = f => {
+      const o = {};
+      colunas.forEach((c, i) => { (o[c.extensao] ??= {})[c.titulo] = valoresDe.get(f)[i]; });
+      return o;
+    };
     const lista = frentes.map(f => ({
       ...f, donaViva: donaViva(f), donaIlegivel: donaIlegivel(f), sobrepoe: sobrepoe(f), sobreposicaoConferida: conferida(f),
       ...(f.estado === 'abrindo' ? { aberturaParada: aberturaParada(f, donaViva(f)) } : {}),
+      ...(colunas.length ? { colunas: porExtensao(f) } : {}),
     }));
     amb.escrever(`${JSON.stringify({ frentes: lista, sessoes, sessoesIlegiveis, sobreposicoes, sobreposicaoIncompleta, fila })}\n`);
     return 0;
@@ -141,7 +155,7 @@ export async function executar(args, amb) {
     linhaDasSessoes();
     return 0;
   }
-  const linhas = [['ID', 'NOME', 'DONA', 'ESTADO', 'TICKETS', 'SOBREPÕE', 'PLANO', 'ÚLTIMA NOTA']];
+  const linhas = [['ID', 'NOME', 'DONA', 'ESTADO', 'TICKETS', 'SOBREPÕE', 'PLANO', 'ÚLTIMA NOTA', ...colunas.map(c => c.titulo)]];
   for (const f of frentes) {
     const ultima = (f.notas ?? []).at(-1)?.texto;
     linhas.push([
@@ -153,6 +167,7 @@ export async function executar(args, amb) {
       !conferida(f) ? '?' : (ids => (ids.length ? linhaUnica(ids.join(','), 40) : '—'))(sobrepoe(f)),
       f.plano ? linhaUnica(f.plano, LIMITE_PLANO) : '—',
       ultima ? linhaUnica(ultima, LIMITE_NOTA) : '—',
+      ...valoresDe.get(f),
     ]);
   }
   const larguras = linhas[0].map((_, i) => Math.max(...linhas.map(l => [...l[i]].length)));

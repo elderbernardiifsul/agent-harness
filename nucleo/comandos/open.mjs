@@ -3,11 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { ErroDeUso, arquivoDaMaquina, dirWorktrees } from '../lib/caminhos.mjs';
 import { comTrava, lerJson, registrarEvento } from '../lib/estado.mjs';
+import { reagir } from '../lib/extensoes.mjs';
 import { frentesDa, gravarFrente, lerFrente, listarFrentes, listarFrentesTolerante, nomeValido, novaFrente, proximoId, removerFrente, siglaValida } from '../lib/frente.mjs';
 import { existeRamo, git, recusaDoWorktree } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
 import { reenviarComAviso, reenviarPendentes, temDoTicket } from '../lib/pendentes.mjs';
 import { acharPassagem, ativaDaSessao, avisarDaMarcacao, confirmarRetomada, desfazerReserva, marcarTickets, paraQuem, quemTemAFrente, reservar, sessoesDaquiDaFrente } from '../lib/reserva.mjs';
+import { avisosDeBloqueio } from '../lib/deps.mjs';
 import { arquivosDaFrente, caminhosEmComum, tocaOsCaminhos } from '../lib/sobreposicao.mjs';
 import { ESQUEMA_DO_ESTADO, gravarSessao, idCurto, lerSessao, listarSessoes, registrarSessao, resolverSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
 import { aberturaEmCurso, inicioDoProcesso, pidDeComando, vidaDaSessao } from '../lib/vida.mjs';
@@ -345,7 +347,16 @@ export async function executar(args, amb) {
 
   // Fora da trava (o git das outras frentes pode demorar): avisos sobre quem já mexe no mesmo lugar. Nunca recusa.
   avisarDasOutrasSemFalhar(frente, caminhos, amb);
+  await reagirDepoisDeAbrir(frente, amb, false);
+  avisarDeBloqueios(frente, amb);
   return 0;
+}
+
+// Reação das extensões à frente aberta (ou retomada): erro vira aviso, e a frente fica aberta.
+async function reagirDepoisDeAbrir(frente, amb, retomada) {
+  let atual = frente;
+  try { atual = lerFrente(amb.dirEstado, frente.nome) ?? frente; } catch { /* vale a que temos */ }
+  await reagir('depoisDeAbrir', amb, { frente: atual, retomada });
 }
 
 // Retomada de frente passada, sob a trava `frentes` (a sessão já foi registrada e a regra do executor conferida):
@@ -445,6 +456,8 @@ async function terminarRetomada(frente, { amb, login, oGh, rotulo, remota = null
   if (destino) registrarEvento(amb.dirEstado, { tipo: 'atribuicao', sessao: amb.sessaoId, para: destino, frente: frente.nome, id: frente.id });
   amb.escrever(`Frente ${frente.id} ${frente.nome} retomada.\n${destino ? `Dona: sessão ${idCurto(destino)} (retomada por esta sessão).\n` : ''}Trabalhe em: ${frente.worktree}\n`);
   avisarDasOutrasSemFalhar(frente, Array.isArray(frente.caminhos) ? frente.caminhos.filter(c => typeof c === 'string') : [], amb);
+  await reagirDepoisDeAbrir(frente, amb, true);
+  avisarDeBloqueios(frente, amb);
   return 0;
 }
 
@@ -591,6 +604,13 @@ async function desfazerRetomada(frente, amb, anterior = null, dona = amb.sessaoI
 }
 
 // A frente já está ativa: qualquer erro aqui vira aviso, e o open sai com 0.
+// Ticket bloqueado por outro aberto, pela leitura guardada do `ah deps` (sem rede): avisa, não recusa (decisão 19).
+function avisarDeBloqueios(frente, amb) {
+  try {
+    for (const l of avisosDeBloqueio(amb.dirEstado, frente.tickets, amb.config.fuso)) amb.avisar(`${l}\n`);
+  } catch { /* o aviso é ajuda: falhar aqui não muda a abertura */ }
+}
+
 export function avisarDasOutrasSemFalhar(minha, caminhos, amb) {
   try {
     avisarDasOutras(minha, caminhos, amb);

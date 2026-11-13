@@ -117,6 +117,31 @@ test('reenvio com outro reenvio em andamento não espera nem envia', async () =>
   p.limpar();
 });
 
+test('o reenvio renova só o dono da própria trava: o de quem a tomou fica como está', async t => {
+  const { p, dir, o } = preparar();
+  enfileirar(dir, { tipo: 'comentario', ticket: 1, corpo: 'a' });
+  enfileirar(dir, { tipo: 'comentario', ticket: 1, corpo: 'b' });
+  const dono = path.join(dir, 'travas', 'pendentes-reenvio', 'dono.json');
+  const deOutro = JSON.stringify({ pid: process.pid, em: new Date(Date.now() - 50000).toISOString(), marca: 'outra', venceMs: 60000 });
+  // Depois do primeiro envio, outro toma a trava (como se esta tivesse vencido).
+  const original = fs.renameSync;
+  let trocou = false;
+  fs.renameSync = (de, para) => {
+    original(de, para);
+    if (!trocou && para === path.join(dir, 'pendentes.jsonl')) {
+      trocou = true;
+      fs.rmSync(dono);
+      fs.writeFileSync(dono, deOutro);
+    }
+  };
+  t.after(() => { fs.renameSync = original; });
+  assert.deepEqual(await reenviarPendentes(dir, o), { enviados: 2, restam: 0, descartados: 0 });
+  fs.renameSync = original;
+  assert.equal(trocou, true);
+  assert.equal(fs.readFileSync(dono, 'utf8'), deOutro);
+  p.limpar();
+});
+
 test('fila vazia: nada a reenviar', async () => {
   const { p, dir, o } = preparar();
   assert.equal(contarPendentes(dir), 0);

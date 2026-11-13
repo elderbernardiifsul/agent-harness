@@ -1,0 +1,28 @@
+{"tipo":"sessao-inicio","sessao":"sessao-ana-0001","agente":"claude-code","origem":"novo","modelo":"modelo-a","em":"2026-11-09T12:00:00.000Z"}
+{"tipo":"abertura","sessao":"sessao-ana-0001","frente":"carrinho","id":"as-1","tickets":[11],"em":"2026-11-09T12:01:00.000Z"}
+{"tipo":"recusa","sessao":"sessao-ana-0001","trava":"T2","comando":"git add -A","em":"2026-11-09T12:10:00.000Z"}
+{"tipo":"liberacao","sessao":"sessao-ana-0001","trava":"T5","comando":"AH_GUARD=off git push origin main","em":"2026-11-09T12:20:00.000Z"}
+{"tipo":"pesado","sessao":"sessao-ana-0001","senha":1,"classe":"testes","esperaMs":1000,"duracaoMs":60000,"codigo":0,"em":"2026-11-09T12:31:01.000Z"}
+{"tipo":"nota","sessao":"sessao-ana-0001","frente":"carrinho","em":"2026-11-09T13:00:00.000Z"}
+{"tipo":"sessao-inicio","sessao":"sessao-ana-0001","agente":"claude-code","origem":"continuacao","modelo":"modelo-a","em":"2026-11-09T13:30:00.000Z"}
+{"tipo":"fechamento","sessao":"sessao-ana-0001","id":"as-1","nome":"carrinho","frente":"carrinho","aberta":"2026-11-09T09:01:00-03:00","fechada":"2026-11-09T14:01:00.000Z","em":"2026-11-09T14:01:00.000Z"}
+{"tipo":"sessao-fim","sessao":"sessao-ana-0001","em":"2026-11-09T14:30:00.000Z"}
+{"tipo":"sessao-inicio","sessao":"sessao-ana-0002","agente":"codex","origem":"novo","modelo":null,"em":"2026-11-10T13:00:00.000Z"}
+{"tipo":"abertura","sessao":"sessao-ana-0002","frente":"cupom","id":"as-2","tickets":[12],"em":"2026-11-10T13:05:00.000Z"}
+{"tipo":"passagem","sessao":"sessao-ana-0002","frente":"cupom","id":"as-2","remoto":"origin","em":"2026-11-10T15:00:00.000Z"}
+{"tipo":"sessao-inicio","sessao":"sessao-carla-0001","agente":"claude-code","origem":"novo","modelo":"modelo-a","em":"2026-11-10T15:20:00.000Z"}
+{"tipo":"sessao-inicio","sessao":"sessao-carla-0001","agente":"claude-code","origem":"novo","modelo":"modelo-a","em":"2026-11-10T15:20:01.000Z"}
+{"tipo":"retomada","sessao":"sessao-carla-0001","frente":"cupom","id":"as-2","de":"sessao-ana-0002","login":"carla-dias","em":"2026-11-10T15:30:00.000Z"}
+{"tipo":"recusa","sessao":"sessao-carla-0001","trava":"T2","comando":"git add .","em":"2026-11-10T16:00:00.000Z"}
+{"tipo":"recusa","sessao":"sessao-carla-0001","trava":"revisao/gerados","comando":"npm run dev","em":"2026-11-10T16:10:00.000Z"}
+{"tipo":"recusa-de-comando","comando":"open","sessao":"sessao-carla-0001","motivo":"Recusado: a frente cupom já existe","em":"2026-11-10T16:20:00.000Z"}
+{"tipo":"pesado","sessao":"sessao-carla-0001","senha":2,"classe":"testes","esperaMs":3000,"duracaoMs":120000,"codigo":1,"em":"2026-11-10T16:32:03.000Z"}
+{"tipo":"abertura","sessao":
+{"tipo":"fechamento-local","sessao":"sessao-carla-0001","id":"as-2","nome":"cupom","frente":"cupom","aberta":"2026-11-10T10:05:00-03:00","fechada":"2026-11-10T19:05:00.000Z","em":"2026-11-10T19:05:00.000Z"}
+{"tipo":"abertura","sessao":"sessao-carla-0001","frente":"frete","id":"cd-1","tickets":[13],"em":"2026-11-11T13:00:00.000Z"}
+{"tipo":"tomada","sessao":"sessao-ana-0003","de":"sessao-carla-0001","frente":"frete","id":"cd-1","em":"2026-11-11T14:00:00.000Z"}
+{"tipo":"recusa-de-comando","comando":"close","sessao":"sessao-ana-0003","motivo":"Recusado: há commits fora da base","em":"2026-11-11T15:00:00.000Z"}
+{"tipo":"recusa-de-comando","comando":"open","sessao":"sessao-ana-0003","motivo":"Recusado: nome inválido","em":"2026-11-11T15:10:00.000Z"}
+{"tipo":"sessao-inicio","sessao":"sessao-ana-0004","agente":"opencode","origem":"novo","modelo":"modelo-b","em":"2026-11-12T01:30:00.000Z"}
+{"tipo":"fechamento","sessao":"sessao-ana-0003","id":"cd-1","nome":"frete","frente":"frete","aberta":"2026-11-11T10:00:00-03:00","fechada":"2026-11-12T02:00:00.000Z","em":"2026-11-12T02:00:00.000Z"}
+{"tipo":"sessao-inicio","sessao":"sessao-ana-0005","agente":"claude-code","origem":"continuacao","modelo":"modelo-b","em":"2026-11-12T02:30:00.000Z"}

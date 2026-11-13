@@ -59,6 +59,17 @@ function errosDoPesado(v) {
   return erros;
 }
 
+// `extensoes`: {nome: true | false | {configuração da extensão}}. A configuração de cada uma quem valida é a
+// própria extensão (validarConfig), na carga.
+function errosDasExtensoes(v) {
+  if (!eObjeto(v)) return 'deve ser um objeto {nome: true, false ou a configuração da extensão}';
+  for (const [nome, valor] of Object.entries(v)) {
+    if (!/^[a-z][a-z0-9-]*$/.test(nome)) return `nome de extensão inválido: ${nome.slice(0, 40)} (minúsculas, números e hífen, começando por letra)`;
+    if (!(valor === true || valor === false || eObjeto(valor))) return `${nome} deve ser true, false ou um objeto com a configuração da extensão`;
+  }
+  return null;
+}
+
 // Esquema: campo -> verificador (devolve motivo ou null) ou sub-esquema.
 const ESQUEMA = {
   versaoDoEsquema: v => (v === 1 ? null : 'deve ser 1'),
@@ -77,7 +88,7 @@ const ESQUEMA = {
   worktrees: { dir: v => (eTextoOuNulo(v) ? null : 'deve ser um caminho ou nulo') },
   ci: { comandoDeTeste: v => (eTextoOuNulo(v) ? null : 'deve ser texto ou nulo') },
   agentes: v => (eListaDeTextos(v) ? null : 'deve ser uma lista de nomes'),
-  extensoes: v => (eObjeto(v) ? null : 'deve ser um objeto'),
+  extensoes: errosDasExtensoes,
   fuso: v => (eTexto(v) ? null : 'deve ser um fuso como America/Sao_Paulo'),
   pesado: () => null, // conferido à parte (errosDoPesado)
   sessoes: {
