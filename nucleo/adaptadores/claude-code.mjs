@@ -6,6 +6,8 @@ import path from 'node:path';
 import { validarNomeSeguro } from '../lib/estado.mjs';
 
 export const AGENTE = 'claude-code';
+// Os quatro eventos do contrato chegam (registro.mjs, EVENTOS_DO_CONTRATO).
+export const EVENTOS_ENTREGUES = ['inicio', 'sinal', 'antes', 'fim'];
 
 const LIMITE_ID = 128;
 const EVENTOS = { SessionStart: 'inicio', UserPromptSubmit: 'sinal', Stop: 'sinal', PreToolUse: 'antes', SessionEnd: 'fim' };

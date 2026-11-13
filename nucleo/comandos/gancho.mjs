@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { carregarConfig } from '../lib/config.mjs';
 import { tratar, respostaNaQuebra } from '../adaptadores/contrato.mjs';
 import * as claudeCode from '../adaptadores/claude-code.mjs';
+import { ADAPTADORES } from '../adaptadores/registro.mjs';
 
 export const descricao = 'recebe um evento do agente (uso dos ganchos instalados pelo init)';
 export const uso = 'ah gancho claude-code  (o agente chama; o evento chega em JSON pela entrada padrão)';
@@ -17,7 +18,6 @@ export const uso = 'ah gancho claude-code  (o agente chama; o evento chega em JS
 // regra de quebra precisa valer justamente quando a configuração está ruim.
 export const requisitos = { config: false, sessao: false, repositorio: false };
 
-const ADAPTADORES = { 'claude-code': claudeCode };
 const LIMITE_ENTRADA = 16 * 1024 * 1024;
 
 // Lê a entrada padrão inteira, até o limite; o excesso é lido e descartado.

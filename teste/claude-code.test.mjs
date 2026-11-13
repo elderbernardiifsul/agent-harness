@@ -89,7 +89,7 @@ test('claude-code: entrada inválida lança dizendo o tipo provável do evento',
 });
 
 test('claude-code: os eventos gravados não têm caminho, id nem nome reais', () => {
-  for (const f of fs.readdirSync(DIR_GRAVADOS)) {
+  for (const f of fs.readdirSync(DIR_GRAVADOS).filter(n => n.endsWith('.json'))) {
     const texto = fs.readFileSync(path.join(DIR_GRAVADOS, f), 'utf8');
     const j = JSON.parse(texto);
     assert.equal(j.session_id, ID, f);
