@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { criarRepo, criarProjeto, escreverConfig, ganchoPre, dirDoTeste } from './apoio/repo.mjs';
-import { lerEventos } from '../nucleo/lib/estado.mjs';
+import { identidadeDaMaquina, lerEventos } from '../nucleo/lib/estado.mjs';
 import { SCRIPT_PAI_E_NETO } from './apoio/processo.mjs';
 import { processoExiste } from '../nucleo/lib/vida.mjs';
 
@@ -226,7 +226,7 @@ test('trava da fila com dono morto não derruba quem espera', async t => {
   const travar = () => {
     const trava = path.join(p.fila, 'travas', 'fila');
     fs.mkdirSync(trava, { recursive: true });
-    fs.writeFileSync(path.join(trava, 'dono.json'), JSON.stringify({ pid: 999999, em: new Date().toISOString(), marca: 'x' }));
+    fs.writeFileSync(path.join(trava, 'dono.json'), JSON.stringify({ pid: 999999, em: new Date().toISOString(), marca: 'x', ...identidadeDaMaquina() }));
   };
   travar();
   const inicio = Date.now();

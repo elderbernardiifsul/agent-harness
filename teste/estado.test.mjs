@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { lerJson, gravarJson, comTrava, registrarEvento, lerEventos } from '../nucleo/lib/estado.mjs';
+import { lerJson, gravarJson, comTrava, registrarEvento, lerEventos, identidadeDaMaquina } from '../nucleo/lib/estado.mjs';
 
 function temp(t) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'ah-est-'));
@@ -131,7 +131,7 @@ test('trava de dono morto vence na hora; de dono vivo, não', async t => {
   const d = temp(t);
   const pasta = path.join(d, 'travas', 'x');
   fs.mkdirSync(pasta, { recursive: true });
-  fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ pid: 999999, em: new Date().toISOString(), marca: 'morta' }));
+  fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ pid: 999999, em: new Date().toISOString(), marca: 'morta', ...identidadeDaMaquina() }));
   assert.equal(await comTrava(d, 'x', () => 'entrou', { venceMs: 60000, esperaMs: 500 }), 'entrou');
   fs.mkdirSync(pasta, { recursive: true });
   fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ pid: process.pid, em: new Date().toISOString(), marca: 'viva' }));
@@ -139,4 +139,29 @@ test('trava de dono morto vence na hora; de dono vivo, não', async t => {
   // sem dono legível, vale a data da pasta (como antes)
   fs.rmSync(path.join(pasta, 'dono.json'));
   await assert.rejects(comTrava(d, 'x', () => 1, { venceMs: 60000, esperaMs: 80 }), e => e.travaPresa === true);
+});
+
+test('dono morto só vence na hora quando é desta máquina; sem identidade ou de outra, vale o prazo', async t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  const eu = identidadeDaMaquina();
+  assert.equal(eu.maquina, os.hostname());
+  const travar = extra => {
+    fs.mkdirSync(pasta, { recursive: true });
+    fs.writeFileSync(path.join(pasta, 'dono.json'), JSON.stringify({ pid: 999999, em: new Date().toISOString(), marca: 'm', ...extra }));
+  };
+  const presa = () => assert.rejects(comTrava(d, 'x', () => 1, { venceMs: 60000, esperaMs: 80 }), e => e.travaPresa === true);
+  travar({});
+  await presa();
+  travar({ ...eu, maquina: `outra-${eu.maquina}` });
+  await presa();
+  if (eu.boot != null) { travar({ ...eu, boot: 'outro-boot' }); await presa(); }
+  travar(eu);
+  assert.equal(await comTrava(d, 'x', () => 'entrou', { venceMs: 60000, esperaMs: 500 }), 'entrou');
+  // e quem pega a trava grava a identidade no dono.json
+  await comTrava(d, 'y', () => {
+    const dono = JSON.parse(fs.readFileSync(path.join(d, 'travas', 'y', 'dono.json'), 'utf8'));
+    assert.equal(dono.maquina, eu.maquina);
+    assert.equal(dono.boot ?? null, eu.boot ?? null);
+  });
 });
