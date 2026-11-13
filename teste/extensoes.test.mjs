@@ -145,6 +145,10 @@ test('ctx: frente só de leitura e gravarCampos só nos campos da extensão', as
   assert.equal(f.nome, 'carrinho');
   await assert.rejects(ctx.gravarCampos('sumida', { a: 1 }), e => e instanceof ErroDeUso && /Próximo passo: /.test(e.saida));
   await assert.rejects(ctx.gravarCampos('carrinho', 'texto'), TypeError);
+  // Com função: recebe a seção atual e as frentes, sob a trava; se lança, nada muda.
+  assert.deepEqual(await ctx.gravarCampos('carrinho', (secao, { frentes }) => ({ n: frentes.length, antes: secao.fica })), { fica: true, n: 1, antes: true });
+  await assert.rejects(ctx.gravarCampos('carrinho', () => { throw new ErroDeUso('não\nPróximo passo: x'); }), ErroDeUso);
+  assert.deepEqual(lerFrente(pp.dirEstado, 'carrinho').extensoes.eco, { fica: true, n: 1, antes: true });
   assert.equal(ctx.ErroDeUso, ErroDeUso);
   assert.equal(typeof ctx.git, 'function');
   assert.equal(typeof ctx.gh, 'function');

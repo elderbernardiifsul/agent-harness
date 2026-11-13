@@ -62,7 +62,7 @@ export function descobrir(raiz, { dirNucleo = DIR_DO_NUCLEO } = {}) {
 }
 
 // Confere a forma do `export default`. Devolve o motivo da recusa, ou null.
-function errosDaForma(def) {
+export function errosDaForma(def) {
   if (!eObjeto(def)) return 'o arquivo não tem export default com um objeto';
   if (def.versaoDaInterface !== VERSAO_DA_INTERFACE) {
     return `versão ${umaLinha(def.versaoDaInterface ?? 'ausente', 20)} da interface; o núcleo espera a ${VERSAO_DA_INTERFACE}`;
@@ -237,15 +237,21 @@ export function montarCtx(ext, amb, extra = {}) {
     frente: copiaSoDeLeitura(frente),
     frentes: () => (dirEstado ? listarFrentesTolerante(dirEstado).frentes.map(copiaSoDeLeitura) : []),
     // Grava em frente.extensoes[<nome>] os campos dados (undefined apaga o campo) e devolve a seção como ficou.
+    // `campos` também pode ser uma função (seçãoAtual, {frentes}) -> campos, chamada sob a trava das frentes: o
+    // que ela confere não muda até a gravação; se ela lança, nada é gravado.
     async gravarCampos(nomeDaFrente, campos) {
-      if (!eObjeto(campos)) throw new TypeError('gravarCampos: campos deve ser um objeto {campo: valor}');
-      const novos = JSON.parse(JSON.stringify(campos));
-      const apagar = Object.keys(campos).filter(k => campos[k] === undefined);
+      if (!eObjeto(campos) && !eFuncao(campos)) throw new TypeError('gravarCampos: campos deve ser um objeto {campo: valor} ou uma função');
       const fazer = () => {
         const f = lerFrente(dirEstado, nomeDaFrente);
         if (!f) throw new ErroDeUso(`Não achei a frente ${umaLinha(nomeDaFrente, 49)} no estado.\nPróximo passo: rode ah board para ver as frentes abertas`);
-        const secao = { ...(eObjeto(f.extensoes?.[nome]) ? f.extensoes[nome] : {}), ...novos };
-        for (const k of apagar) delete secao[k];
+        const atual = eObjeto(f.extensoes?.[nome]) ? f.extensoes[nome] : {};
+        const dados = eFuncao(campos)
+          ? campos(structuredClone(atual), { frentes: listarFrentesTolerante(dirEstado).frentes.map(copiaSoDeLeitura) })
+          : campos;
+        if (!eObjeto(dados)) throw new TypeError('gravarCampos: a função deve devolver um objeto {campo: valor}');
+        const novos = JSON.parse(JSON.stringify(dados));
+        const secao = { ...atual, ...novos };
+        for (const k of Object.keys(dados)) if (dados[k] === undefined) delete secao[k];
         f.extensoes = { ...(eObjeto(f.extensoes) ? f.extensoes : {}), [nome]: secao };
         gravarFrente(dirEstado, f);
         return structuredClone(secao);
