@@ -10,7 +10,7 @@ const p = criarRepo();
 const o = () => ({ cwd: p.raiz, env: p.env });
 
 test('comentar chama o gh com o ticket e o corpo pela entrada padrão', () => {
-  assert.equal(comentar(3, 'oi', o()), true);
+  assert.match(comentar(3, 'oi', o()), /^https:\/\/github\.com\/exemplo\/loja\/issues\/3#issuecomment-\d+$/);
   const c = p.ghChamadas().at(-1);
   assert.deepEqual(c.argv.slice(0, 3), ['issue', 'comment', '3']);
   assert.equal(c.entrada, 'oi');

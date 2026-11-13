@@ -157,7 +157,7 @@ test('duas máquinas retomam a mesma passagem: a de retomada mais antiga fica, a
   assert.doesNotMatch(tk.comments.at(-1).body, /<!-- ah:/);
   // Quem procura agora vê a frente ativa com quem retomou primeiro.
   const a = acharPassagem({ nome: 'carrinho', rotulo: 'em-andamento' }, { cwd: q.raiz, env: q.env });
-  assert.deepEqual(a, { ok: true, passagem: null, ativa: { id: 'as-1', login: 'ana-souza' } });
+  assert.deepEqual([a.ok, a.passagem, a.ativa.id, a.ativa.login, a.ativa.sessao], [true, null, 'as-1', 'ana-souza', 'sessao-d']);
 });
 
 test('acharPassagem: último marcador com o nome decide; fechamento solta; logins dos marcadores ativos', t => {
@@ -182,13 +182,202 @@ test('acharPassagem: último marcador com o nome decide; fechamento solta; login
   p.ghSemear(4, { labels: ['em-andamento'], comments: [
     m('frente', 'ana-souza'), m('passagem', 'ana-souza'), m('retomada', 'carla-dias'), m('retomada', 'ana-souza'),
   ].map(c => ({ ...c, body: c.body.replace(/as-1/g, 'as-2').replace(/carrinho/g, 'frete') })) });
-  assert.deepEqual(acharPassagem({ nome: 'frete', tickets: [4], rotulo: 'em-andamento' }, o), { ok: true, passagem: null, ativa: { id: 'as-2', login: 'carla-dias' } });
+  const a = acharPassagem({ nome: 'frete', tickets: [4], rotulo: 'em-andamento' }, o);
+  assert.deepEqual([a.passagem, a.ativa.id, a.ativa.login, a.ativa.logins, a.ativa.frente.tickets], [null, 'as-2', 'carla-dias', ['ana-souza', 'carla-dias'], [4]]);
+  assert.equal(typeof a.ativa.numero, 'number');
   p.ghSemear(4, { comments: [...p.ghTicket(4).comments, { author: 'ana-souza', body: montarMarcador('tomada', { id: 'as-2', nome: 'frete', login: 'ana-souza' }) }] });
-  assert.deepEqual(acharPassagem({ nome: 'frete', tickets: [4], rotulo: 'em-andamento' }, o).ativa, { id: 'as-2', login: 'ana-souza' });
+  assert.equal(acharPassagem({ nome: 'frete', tickets: [4], rotulo: 'em-andamento' }, o).ativa.login, 'ana-souza');
   assert.deepEqual(acharPassagem({ nome: 'outra', rotulo: 'em-andamento' }, o), { ok: true, passagem: null });
   p.ghSemear(3, { comments: [...p.ghTicket(3).comments, m('fechamento', 'carla-dias')] });
   assert.deepEqual(acharPassagem({ nome: 'carrinho', tickets: [3], rotulo: 'em-andamento' }, o), { ok: true, passagem: null });
   r = acharPassagem({ nome: 'carrinho', rotulo: 'em-andamento' }, { ...o, env: { ...p.env, GH_FALSO_FORA: '1' } });
   assert.equal(r.ok, false);
   assert.ok(r.motivo);
+});
+
+// ---- Consertos da revisão da tarefa 8 ----
+
+const B = { env: { AH_SESSAO: 'sessao-b-0002' } };
+const tiposNoTicket = (p, n) => p.ghTicket(n).comments.map(c => c.body.match(/<!-- ah:([a-z]+)/)?.[1]).filter(Boolean);
+const commitar = (p, wt, arquivo) => {
+  fs.writeFileSync(path.join(wt, arquivo), arquivo);
+  p.git(['add', arquivo], { cwd: wt });
+  p.git(['commit', '-m', `feat: ${arquivo}`], { cwd: wt });
+};
+
+test('item 1: a máquina que passou não retoma o que a outra já retomou; o recado aponta ah close', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  assert.equal(q.ah(['open', 'carrinho']).codigo, 0);
+  const r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /Não retomei carrinho: a frente as-1 está ativa com @carla-dias em outra máquina/);
+  assert.match(r.erro, /Faça: .*combine com @carla-dias.*ah close carrinho/);
+  assert.deepEqual([lerFrenteDoTeste(p, 'carrinho').estado, lerFrenteDoTeste(p, 'carrinho').dona], ['passada', null]);
+  assert.equal(tiposNoTicket(p, 1).at(-1), 'retomada');
+  assert.deepEqual(p.ghTicket(1).assignees.sort(), ['ana-souza', 'carla-dias']);
+});
+
+test('item 1: depois que a outra máquina passa de volta, retoma aqui e o worktree avança até os commits dela', t => {
+  const { p, wt } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  assert.equal(q.ah(['open', 'carrinho']).codigo, 0);
+  commitar(q, lerFrenteDoTeste(q, 'carrinho').worktree, 'b.txt');
+  assert.equal(q.ah(['handoff']).codigo, 0);
+  const r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.erro, /avançou até origin\/feat\/carrinho/);
+  assert.ok(fs.existsSync(path.join(wt, 'b.txt')));
+  assert.deepEqual(tiposNoTicket(p, 1).slice(-1), ['retomada']);
+  // E a outra máquina, com o registro passado dela, agora ouve que a frente está com quem retomou.
+  const r2 = q.ah(['open', 'carrinho']);
+  assert.equal(r2.codigo, 1);
+  assert.match(r2.erro, /ativa com @ana-souza em outra máquina/);
+});
+
+test('item 1: ramos divergentes recusam a retomada sem mudar nada', t => {
+  const { p, wt } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  assert.equal(q.ah(['open', 'carrinho']).codigo, 0);
+  commitar(q, lerFrenteDoTeste(q, 'carrinho').worktree, 'b.txt');
+  assert.equal(q.ah(['handoff']).codigo, 0);
+  commitar(p, wt, 'c.txt');
+  const antes = p.ghTicket(1).comments.length;
+  const r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /divergiram[\s\S]*Faça: .*pull --rebase/);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'passada');
+  assert.equal(p.ghTicket(1).comments.length, antes);
+});
+
+test('item 1: sem rede, a retomada local de frente com tickets recusa; sem tickets, retoma', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const r = p.ah(['open', 'carrinho'], { env: { AH_SESSAO: 'sessao-b-0002', GH_FALSO_FORA: '1' } });
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /preciso do GitHub para confirmar que ninguém retomou carrinho/);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'passada');
+  const { p: s } = comFrente(t, { tickets: '' });
+  assert.equal(s.ah(['handoff']).codigo, 0);
+  assert.equal(s.ah(['open', 'carrinho'], { env: { AH_SESSAO: 'sessao-b-0002', GH_FALSO_FORA: '1' } }).codigo, 0);
+});
+
+test('item 1: retomada local que perde a corrida volta o registro a passada e mantém o worktree', t => {
+  const { p, wt } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const corrida = { ticket: 1, autor: 'carla-dias', body: `x\n\n${montarMarcador('retomada', { id: 'as-1', nome: 'carrinho', ramo: 'feat/carrinho', estado: 'ativa', login: 'carla-dias', sessao: 'sessao-c' })}\n` };
+  const r = p.ah(['open', 'carrinho'], { env: { AH_SESSAO: 'sessao-b-0002', GH_FALSO_CORRIDA: JSON.stringify(corrida) } });
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /retomada antes por @carla-dias/);
+  const f = lerFrenteDoTeste(p, 'carrinho');
+  assert.deepEqual([f.estado, f.dona], ['passada', null]);
+  assert.ok(fs.existsSync(path.join(wt, 'a.txt')));
+  assert.equal(JSON.parse(p.ah(['whoami', '--json'], B).saida).frente, null);
+});
+
+test('item 2: close da frente passada que outra máquina retomou fecha só o registro local', t => {
+  const { p, wt } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  assert.equal(q.ah(['open', 'carrinho']).codigo, 0);
+  const antes = p.ghTicket(1);
+  const r = p.ah(['close', 'carrinho'], B);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Registro local da frente as-1 carrinho fechado: a frente as-1 está ativa com @carla-dias em outra máquina\. Não comentei nem mexi nos tickets/);
+  assert.deepEqual(p.ghTicket(1), antes);
+  assert.equal(temFrente(p, 'carrinho'), false);
+  assert.equal(fs.existsSync(wt), false);
+  assert.doesNotMatch(p.git(['log', '-1', '--format=%s']).saida, /fecha as-1/);
+});
+
+test('item 2: close de frente passada com tickets, sem rede, recusa sem apagar nada', t => {
+  const { p, wt } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const r = p.ah(['close', 'carrinho'], { env: { AH_SESSAO: 'sessao-b-0002', GH_FALSO_FORA: '1' } });
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /preciso do GitHub para confirmar que ninguém retomou carrinho/);
+  assert.ok(temFrente(p, 'carrinho'));
+  assert.ok(fs.existsSync(wt));
+});
+
+test('item 3: falha no meio da retomada remota devolve a passagem; a próxima tentativa retoma', t => {
+  const { p } = comFrente(t, { tickets: '1,2' });
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  q.ghResponder([{ prefixo: ['issue', 'comment', '2'], codigo: 1, erro: 'falhou\n' }]);
+  let r = q.ah(['open', 'carrinho']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /não consegui comentar a retomada em #2/);
+  assert.equal(temFrente(q, 'carrinho'), false);
+  assert.deepEqual(tiposNoTicket(p, 1).slice(-2), ['retomada', 'passagem']);
+  assert.match(p.ghTicket(1).comments.at(-1).body, /desfeita[\s\S]*ah:passagem id=as-1 .*login=carla-dias/);
+  assert.ok(!tiposNoTicket(p, 2).includes('retomada'));
+  q.ghResponder([]);
+  r = q.ah(['open', 'carrinho']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.deepEqual(lerFrenteDoTeste(q, 'carrinho').tickets, [1, 2]);
+});
+
+test('item 3: retomada desta sessão que parou no meio (sem registro local) é reconhecida e continua', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  const meu = montarMarcador('retomada', { id: 'as-1', nome: 'carrinho', ramo: 'feat/carrinho', estado: 'ativa', login: 'carla-dias', sessao: 'sessao-c', tickets: '1', abertaPor: 'ana-souza' });
+  p.ghSemear(1, { comments: [...p.ghTicket(1).comments, { author: 'carla-dias', body: `x\n\n${meu}`, numero: 5000 }] });
+  const r = q.ah(['open', 'carrinho']);
+  assert.equal(r.codigo, 0, r.erro);
+  const f = lerFrenteDoTeste(q, 'carrinho');
+  assert.deepEqual([f.id, f.tickets, f.dona, f.abertaPor], ['as-1', [1], 'sessao-c-0003', 'ana-souza']);
+  assert.ok(p.ghTicket(1).assignees.includes('carla-dias'));
+});
+
+test('item 3: comentário que falha não entra na lista do que desfazer', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  q.ghResponder([{ prefixo: ['issue', 'comment', '1'], codigo: 1, erro: 'falhou\n' }]);
+  const r = q.ah(['open', 'carrinho']);
+  assert.equal(r.codigo, 1);
+  const fila = path.join(dirDoTeste(q), 'pendentes.jsonl');
+  const ops = fs.existsSync(fila) ? fs.readFileSync(fila, 'utf8').split('\n').filter(Boolean) : [];
+  assert.ok(!ops.some(l => /desfeita/.test(l)), ops.join('\n'));
+});
+
+test('item 4: o próprio comentário se reconhece pelo número, não por login e sessão curta', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  // Mesmo login e mesmo prefixo de sessão (outra sessão), retomando antes.
+  const corrida = { ticket: 1, autor: 'carla-dias', body: `x\n\n${montarMarcador('retomada', { id: 'as-1', nome: 'carrinho', ramo: 'feat/carrinho', estado: 'ativa', login: 'carla-dias', sessao: 'sessao-c' })}\n` };
+  const r = q.ah(['open', 'carrinho'], { env: { GH_FALSO_CORRIDA: JSON.stringify(corrida) } });
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /retomada antes por @carla-dias/);
+  assert.equal(temFrente(q, 'carrinho'), false);
+});
+
+test('item 5: sem --tickets, a lista só aponta; a decisão relê cada ticket', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  const desde = p.ghChamadas().length;
+  assert.equal(q.ah(['open', 'carrinho']).codigo, 0);
+  const chamadas = p.ghChamadas().slice(desde).map(c => c.argv.slice(0, 3).join(' '));
+  const lista = chamadas.indexOf('issue list --label');
+  assert.ok(lista >= 0, chamadas.join('\n'));
+  const comentario = chamadas.indexOf('issue comment 1');
+  assert.ok(chamadas.slice(lista + 1, comentario).includes('issue view 1'), chamadas.join('\n'));
+});
+
+test('item 6: ticket de --tickets que não existe tem erro próprio', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  p.ghSemear(9, { apagado: true });
+  const q = maquina(t, p);
+  const r = q.ah(['open', 'carrinho', '--tickets', '9']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /Não achei o ticket #9/);
+  assert.doesNotMatch(r.erro, /preciso do GitHub/);
 });

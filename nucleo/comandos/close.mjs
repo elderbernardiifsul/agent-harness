@@ -6,7 +6,7 @@ import { frentesDa, gravarFrente, lerFrente, linhaDoHistorico, listarFrentesTole
 import { existeRamo, ramoAtual, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
 import { reenviarComAviso } from '../lib/pendentes.mjs';
-import { desfazerAbertura, liberarTickets } from '../lib/reserva.mjs';
+import { desfazerAbertura, liberarTickets, quemTemAFrente } from '../lib/reserva.mjs';
 import { gravarSessao, idCurto, lerSessao, tocarSinal } from '../lib/sessao.mjs';
 import { aberturaParada, prazoMs, vidaDaSessao } from '../lib/vida.mjs';
 
@@ -225,6 +225,21 @@ export async function executar(args, amb) {
     const primeiros = conferir();
     if (primeiros.length) recusarProblemas(primeiros);
 
+    // Frente passada com tickets: outra máquina pode tê-la retomado. Então este close só tira o registro e o
+    // worktree daqui; comentar o fechamento soltaria a reserva de quem está com ela.
+    let soLocal = null;
+    if (frente.estado === 'passada' && (frente.tickets ?? []).length && !frente.fechamentoComentado) {
+      const oGh = { cwd: raiz, env, avisar: amb.avisar };
+      const login = loginAtual(oGh) ?? frente.abertaPor ?? 'local';
+      const q = quemTemAFrente({ frente, login, sessao: amb.sessaoId, rotulo: cfg.github.rotuloDeReserva, dirEstado }, oGh);
+      if (q.situacao === 'sem-rede') {
+        throw recusa(`Não fechei ${frente.nome}: preciso do GitHub para confirmar que ninguém retomou ${frente.nome} (${q.motivo}).`,
+          `tente de novo com rede: ah close ${frente.nome}; nada foi apagado`);
+      }
+      if (q.situacao === 'outra') soLocal = `a frente ${q.id} está ativa com @${q.login} em outra máquina`;
+      if (q.situacao === 'solta') soLocal = `nos tickets a frente ${frente.id} já não está passada (fechada em outra máquina)`;
+    }
+
     // Resumo: o que o usuário deu, ou o título do último commit do ramo.
     let resumo = o.resumo;
     if (resumo === undefined) {
@@ -236,7 +251,7 @@ export async function executar(args, amb) {
 
     // 3. Tickets: comentário de fechamento (livre) e, com reserva, sai responsável e rótulo. Não fecha ticket.
     // Uma vez só, mesmo se o close for repetido.
-    if (!frente.fechamentoComentado) {
+    if (!frente.fechamentoComentado && !soLocal) {
       if ((frente.tickets ?? []).length) {
         const oGh = { cwd: raiz, env, avisar: amb.avisar };
         const login = loginAtual(oGh) ?? frente.abertaPor ?? 'local';
@@ -275,9 +290,9 @@ export async function executar(args, amb) {
       if (r.codigo !== 0) amb.avisar(`Aviso: não apaguei o ramo ${frente.ramo} (${r.erro.trim().split('\n')[0]}). Apague à mão: git branch -D ${frente.ramo}\n`);
     }
 
-    // 5. Histórico.
+    // 5. Histórico (não no fechamento só local: a frente continua em outra máquina).
     const arquivo = path.join(raiz, ...ARQUIVO_DO_HISTORICO.split('/'));
-    try {
+    if (!soLocal) try {
       if (!linhaJaGravada()) {
         const atual = fs.existsSync(arquivo) ? fs.readFileSync(arquivo, 'utf8') : '';
         fs.mkdirSync(path.dirname(arquivo), { recursive: true });
@@ -303,9 +318,13 @@ export async function executar(args, amb) {
     };
     soltarFoco(sessao);
     soltarFoco(sessaoDona);
-    registrarEvento(dirEstado, { tipo: 'fechamento', sessao: amb.sessaoId, id: frente.id, nome: frente.nome, aberta: frente.abertaEm, fechada: new Date().toISOString() });
+    registrarEvento(dirEstado, { tipo: soLocal ? 'fechamento-local' : 'fechamento', sessao: amb.sessaoId, id: frente.id, nome: frente.nome, aberta: frente.abertaEm, fechada: new Date().toISOString() });
 
     // 7. Saída.
+    if (soLocal) {
+      amb.escrever(`Registro local da frente ${frente.id} ${frente.nome} fechado: ${soLocal}. Não comentei nem mexi nos tickets, e o histórico não mudou.\n`);
+      return 0;
+    }
     amb.escrever(`Frente ${frente.id} ${frente.nome} fechada.\n`);
     if (daEncerrada && frente.estado === 'passada') {
       const por = !frente.passadaPor ? ''

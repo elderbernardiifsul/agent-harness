@@ -29,9 +29,12 @@ export function repoAtual(o = {}) {
   return r.codigo === 0 && /^[^/\s]+\/[^/\s]+$/.test(nome) ? nome : null;
 }
 
-// O corpo vai pela entrada padrão, nunca por argumento.
+// O corpo vai pela entrada padrão, nunca por argumento. Devolve o url do comentário que o gh imprime (com o
+// `issuecomment-<n>`), `true` se deu certo sem url, ou `false`.
 export function comentar(ticket, corpo, o = {}) {
-  return gh(['issue', 'comment', String(ticket), '--body-file', '-'], { ...o, entrada: corpo }).codigo === 0;
+  const r = gh(['issue', 'comment', String(ticket), '--body-file', '-'], { ...o, entrada: corpo });
+  if (r.codigo !== 0) return false;
+  return r.saida.split('\n').map(l => l.trim()).find(l => /^https?:\/\//.test(l)) ?? true;
 }
 
 // gh issue edit <ticket> ...args (ex.: ['--add-assignee', '@me', '--add-label', 'em-andamento']).

@@ -5,7 +5,7 @@
 // O último marcador de uma frente diz o estado dela no ticket; na corrida decide a ordem do servidor em cada
 // ticket (o número do comentário): fica só quem tem o primeiro marcador em todos os seus tickets.
 import { comentar, criarRotulo, editarTicket, gh } from './github.mjs';
-import { ENVIADO, NA_FILA, PERDIDO, comentarOuEnfileirar, editarOuEnfileirar } from './pendentes.mjs';
+import { ENVIADO, NA_FILA, PERDIDO, comentarOuEnfileirar, editarOuEnfileirar, pendentesDoTicket } from './pendentes.mjs';
 import { idCurto } from './sessao.mjs';
 
 const ORDEM = ['id', 'nome', 'ramo', 'estado', 'login', 'sessao', 'tickets', 'plano', 'abertaPor', 'abertaEm'];
@@ -70,9 +70,12 @@ function marcadoresDosComentarios(comentarios) {
 // Uma chamada: `comments` do gh issue view traz todos os comentários (o gh pagina sozinho) com o `url`.
 // Marcador de terceiro (autor diferente do `login` que o marcador declara) não vale: nem reserva nem libera.
 // Marcador sem `login` só vale se for o `ah:frente` antigo (fatia 1); `fechamento` e os demais sem login, não.
+const TICKET_INEXISTENTE = /Could not resolve to an issue|issue .* not found|Not Found \(HTTP 404\)/i;
+
 export function lerTicket(numero, o = {}) {
   const r = gh(['issue', 'view', String(numero), '--json', 'state,assignees,labels,comments'], o);
-  if (r.codigo !== 0) return { ok: false, motivo: motivoCurto(r) };
+  // Ticket que não existe (ou foi apagado) é outro erro que a falta de rede: `naoExiste`.
+  if (r.codigo !== 0) return { ok: false, motivo: motivoCurto(r), naoExiste: TICKET_INEXISTENTE.test(`${r.erro}\n${r.saida}`) };
   let j;
   try {
     j = JSON.parse(r.saida);
@@ -374,6 +377,7 @@ export function desfazerAbertura({ frente, login, sessao, rotulo, dirEstado }, o
 
 const estadoDo = m => m.campos.estado ?? ESTADO_DO_TIPO[m.tipo] ?? 'ativa';
 const numerosDe = texto => String(texto ?? '').split(',').map(s => s.trim()).filter(s => /^[1-9]\d{0,8}$/.test(s)).map(Number);
+const loginDo = m => m.campos.login ?? m.autor;
 
 // Situação de uma frente pelos seus marcadores (de todos os tickets, na ordem do servidor). Quem segura é o
 // primeiro marcador ativo depois do último que solta (`livre`) ou passa adiante (`passada`); uma `tomada` depois
@@ -391,25 +395,27 @@ function situacaoDaFrente(marcadores) {
       segura = null;
     } else if (!segura || m.tipo === 'tomada') {
       segura = m;
-      const login = m.campos.login ?? m.autor;
-      if (!logins.includes(login)) logins.push(login);
+      if (!logins.includes(loginDo(m))) logins.push(loginDo(m));
     }
   }
   const ultimo = marcadores.at(-1) ?? null;
   return { estado: ultimo ? estadoDo(ultimo) : null, ultimo, segura, logins };
 }
 
-// Marcadores de cada ticket: `{ok, porTicket: [{numero, marcadores}]}` ou `{ok: false, motivo}`.
-function lerMarcadoresDosTickets({ tickets, rotulo }, o) {
-  if (tickets.length) {
-    const porTicket = [];
-    for (const n of tickets) {
-      const r = lerTicket(n, o);
-      if (!r.ok) return { ok: false, motivo: `#${n}: ${r.motivo}` };
-      porTicket.push({ numero: n, marcadores: r.ticket.marcadores });
-    }
-    return { ok: true, porTicket };
+// Marcadores de cada ticket: `{ok, porTicket: [{numero, marcadores}]}` ou `{ok: false, motivo, naoAchei?}`.
+function lerOsTickets(tickets, o) {
+  const porTicket = [];
+  for (const n of tickets) {
+    const r = lerTicket(n, o);
+    if (!r.ok) return r.naoExiste ? { ok: false, naoAchei: n, motivo: `não achei o ticket #${n}` } : { ok: false, motivo: `#${n}: ${r.motivo}` };
+    porTicket.push({ numero: n, marcadores: r.ticket.marcadores });
   }
+  return { ok: true, porTicket };
+}
+
+// Sem tickets dados: os abertos com o rótulo de reserva onde algum marcador tem o `nome` (a lista do gh só aponta;
+// a decisão vem da leitura de cada um por lerTicket).
+function ticketsComONome({ nome, rotulo }, o) {
   const r = gh(['issue', 'list', '--label', rotulo, '--state', 'open', '--json', 'number,comments', '--limit', '200'], o);
   if (r.codigo !== 0) return { ok: false, motivo: motivoCurto(r) };
   let lista;
@@ -419,7 +425,9 @@ function lerMarcadoresDosTickets({ tickets, rotulo }, o) {
     return { ok: false, motivo: 'resposta do gh ilegível' };
   }
   if (!Array.isArray(lista)) return { ok: false, motivo: 'resposta do gh ilegível' };
-  return { ok: true, porTicket: lista.map(i => ({ numero: Number(i?.number), marcadores: marcadoresDosComentarios(i?.comments) })) };
+  const numeros = lista.filter(i => marcadoresDosComentarios(i?.comments).some(m => m.campos.nome === nome))
+    .map(i => Number(i?.number)).filter(n => Number.isInteger(n) && n > 0);
+  return { ok: true, tickets: [...new Set(numeros)].sort((a, b) => a - b) };
 }
 
 // Marcadores de uma frente (por id) em todos os tickets lidos, na ordem do servidor, com o ticket de cada um.
@@ -427,51 +435,105 @@ const marcadoresDoId = (porTicket, id) => porTicket
   .flatMap(t => t.marcadores.filter(m => m.campos.id === id).map(m => ({ ...m, ticket: t.numero })))
   .sort((a, b) => a.ordem - b.ordem);
 
+// Os dados da frente que um marcador completo carrega (passagem, retomada, tomada).
+const dadosDoMarcador = (m, id, nome, tickets) => ({
+  id, nome, ramo: m.campos.ramo ?? null,
+  tickets: numerosDe(m.campos.tickets).length ? numerosDe(m.campos.tickets) : tickets,
+  plano: m.campos.plano ?? null, abertaPor: m.campos.abertaPor ?? null, abertaEm: m.campos.abertaEm ?? null,
+});
+
 // Procura a passagem da frente `nome` nos `tickets` dados ou, sem eles, nos tickets abertos com o rótulo de
-// reserva. Vale o último marcador com esse nome: `passagem` devolve a passagem; ativo devolve quem a segura.
+// reserva (relidos um a um). Vale o último marcador com esse nome: `passagem` devolve a passagem; ativo devolve
+// quem a segura (`ativa`: id, login, sessão curta, número do comentário, os dados da frente e os logins).
+// Falha: `{ok: false, motivo}`, com `naoAchei: <n>` quando o ticket não existe.
 export function acharPassagem({ nome, tickets = [], rotulo }, o = {}) {
-  const lidos = lerMarcadoresDosTickets({ tickets, rotulo }, o);
-  if (!lidos.ok) return { ok: false, motivo: lidos.motivo };
+  let onde = tickets;
+  if (!onde.length) {
+    const l = ticketsComONome({ nome, rotulo }, o);
+    if (!l.ok) return { ok: false, motivo: l.motivo };
+    onde = l.tickets;
+  }
+  const lidos = lerOsTickets(onde, o);
+  if (!lidos.ok) return lidos;
   const doNome = lidos.porTicket.flatMap(t => t.marcadores.filter(m => m.campos.nome === nome && m.campos.id))
     .sort((a, b) => a.ordem - b.ordem);
   const ultimo = doNome.at(-1);
   if (!ultimo) return { ok: true, passagem: null };
   const id = ultimo.campos.id;
-  const s = situacaoDaFrente(marcadoresDoId(lidos.porTicket, id));
-  if (s.estado === 'ativa') return { ok: true, passagem: null, ativa: { id, login: (s.segura ?? s.ultimo).campos.login ?? (s.segura ?? s.ultimo).autor } };
+  const doId = marcadoresDoId(lidos.porTicket, id);
+  const s = situacaoDaFrente(doId);
+  const ondeApareceu = tipo => [...new Set(doId.filter(m => m.tipo === tipo).map(m => m.ticket))].sort((a, b) => a - b);
+  if (s.estado === 'ativa') {
+    const m = s.segura ?? s.ultimo;
+    return {
+      ok: true, passagem: null,
+      ativa: { id, login: loginDo(m), sessao: m.campos.sessao ?? null, numero: m.ordem, frente: dadosDoMarcador(m, id, nome, ondeApareceu(m.tipo)), logins: s.logins },
+    };
+  }
   if (s.estado !== 'passada') return { ok: true, passagem: null };
-  const c = s.ultimo.campos;
-  const ondeApareceu = [...new Set(marcadoresDoId(lidos.porTicket, id).filter(m => m.tipo === 'passagem').map(m => m.ticket))];
-  return {
-    ok: true,
-    passagem: {
-      id, nome, ramo: c.ramo ?? null,
-      tickets: numerosDe(c.tickets).length ? numerosDe(c.tickets) : ondeApareceu.sort((a, b) => a - b),
-      plano: c.plano ?? null, abertaPor: c.abertaPor ?? null, abertaEm: c.abertaEm ?? null,
-      logins: s.logins, login: c.login ?? s.ultimo.autor,
-    },
-  };
+  return { ok: true, passagem: { ...dadosDoMarcador(s.ultimo, id, nome, ondeApareceu('passagem')), logins: s.logins, login: loginDo(s.ultimo) } };
 }
 
-// Retomada de uma passagem achada no GitHub (outra máquina): comenta `retomada` em cada ticket da frente e se
-// põe de responsável, direto (sem fila: sem confirmar a corrida não se retoma), relê e decide a corrida pela
-// regra de situacaoDaFrente (a retomada de menor número fica). Quem perde ou falha desfaz: comentário sem marcador
-// (não muda o estado da frente no ticket) e sai de responsável se a reserva não o tinha.
+// A passagem desta frente ainda na fila desta máquina (o GitHub não a mostra): então nenhuma outra máquina pode
+// tê-la retomado, porque lá a frente ainda aparece ativa com quem a passou.
+export function passagemNaFila(dirEstado, frente) {
+  return (frente.tickets ?? []).some(n => pendentesDoTicket(dirEstado, n)
+    .some(op => op.tipo === 'comentario' && lerMarcadores(op.corpo).some(m => m.tipo === 'passagem' && m.campos.id === frente.id)));
+}
+
+// Antes de retomar ou fechar uma frente `passada` local com tickets: quem está com ela no GitHub. Devolve
+// `{situacao}`: 'na-fila' (a passagem desta máquina ainda não saiu), 'passada' (a passagem dela é a última),
+// 'propria' (esta sessão a segura: retomada que parou no meio; `proprios` = número do comentário), 'outra'
+// (`login`, `id`: ativa com outro), 'solta' (fechada ou sem marcador dela), 'sem-rede' (`motivo`) ou
+// 'nao-achei' (`ticket`).
+export function quemTemAFrente({ frente, login, sessao, rotulo, dirEstado }, o = {}) {
+  if (passagemNaFila(dirEstado, frente)) return { situacao: 'na-fila' };
+  const a = acharPassagem({ nome: frente.nome, tickets: frente.tickets ?? [], rotulo }, o);
+  if (!a.ok) return a.naoAchei ? { situacao: 'nao-achei', ticket: a.naoAchei } : { situacao: 'sem-rede', motivo: a.motivo };
+  if (a.passagem) return a.passagem.id === frente.id ? { situacao: 'passada', passagem: a.passagem } : { situacao: 'outra', login: a.passagem.login, id: a.passagem.id, passada: true };
+  if (a.ativa) {
+    if (a.ativa.id === frente.id && a.ativa.login === login && a.ativa.sessao === idCurto(sessao)) return { situacao: 'propria', proprios: [a.ativa.numero] };
+    return { situacao: 'outra', login: a.ativa.login, id: a.ativa.id };
+  }
+  return { situacao: 'solta' };
+}
+
+// Retomada conferida no GitHub: comenta `retomada` em cada ticket da frente e se põe de responsável, direto (sem
+// fila: sem confirmar a corrida não se retoma), relê e decide a corrida pela regra de situacaoDaFrente (a retomada
+// de menor número fica). O próprio marcador se reconhece pelo número do comentário (o url que o gh devolve; os de
+// uma retomada anterior desta sessão vêm em `proprios`); sem url, por login e sessão. Quem perde desfaz pela
+// fila: comentário sem marcador (não muda o estado da frente) e sai de responsável. Quem falha sem perder relê:
+// se ainda segura a frente, comenta de novo a `passagem` (com os dados da frente) para ela voltar a passada.
 // Devolve {ok: true, logins} | {ok: false, vencedor?: {login}, motivo, como}.
-export function confirmarRetomada({ frente, login, sessao, rotulo, dirEstado, esperaMs = ESPERA_DA_RELEITURA_MS }, o = {}) {
+export function confirmarRetomada({ frente, login, sessao, rotulo, dirEstado, proprios = [], esperaMs = ESPERA_DA_RELEITURA_MS }, o = {}) {
   const tickets = frente.tickets ?? [];
   const reservaTickets = frente.reserva?.tickets ?? tickets;
   const antes = frente.reserva?.logins ?? [];
   const entra = !antes.includes(login);
-  const corpo = `Frente ${frente.id} (${frente.nome}) retomada por @${login}.\n\n${montarMarcador('retomada', camposCompletos(frente, 'ativa', login, sessao))}\n`;
+  const corpo = corpoDaMarcacao({ frente, tipo: 'retomada', texto: `Frente ${frente.id} (${frente.nome}) retomada por @${login}.`, login, sessao });
+  const meus = new Set(proprios);
+  let semUrl = false;
   const comentados = [];
   const editados = [];
+  const eMeu = m => Boolean(m) && m.tipo === 'retomada'
+    && (meus.has(m.ordem) || (semUrl && loginDo(m) === login && m.campos.sessao === idCurto(sessao)));
+  // Situação relida e se algum marcador desta retomada já aparece.
+  const reler = () => {
+    const lidos = lerOsTickets(tickets, o);
+    if (!lidos.ok) return null;
+    const ms = marcadoresDoId(lidos.porTicket, frente.id);
+    return { ...situacaoDaFrente(ms), visto: ms.some(eMeu) };
+  };
   const desfazer = (motivo, vencedor = null) => {
     const situacoes = [];
     const evento = { sessao, frente: frente.nome };
-    for (const n of comentados) {
-      situacoes.push(comentarOuEnfileirar(dirEstado, n, `Retomada da frente ${frente.id} (${frente.nome}) por @${login} desfeita: ${motivo}.\n`, { ...o, evento }));
-    }
+    // Sem ter perdido: se a frente ainda está com esta retomada, a passagem volta a ser a última palavra.
+    // Onde comentar: onde esta retomada comentou; se nada saiu agora e há uma anterior desta sessão, em todos.
+    const alvos = comentados.length ? comentados : proprios.length ? tickets : [];
+    const devolver = !vencedor && alvos.length > 0 && eMeu(reler()?.segura);
+    const texto = `Retomada da frente ${frente.id} (${frente.nome}) por @${login} desfeita: ${motivo}.`;
+    const corpoDesfeito = devolver ? corpoDaMarcacao({ frente, tipo: 'passagem', texto, login, sessao }) : `${texto}\n`;
+    for (const n of alvos) situacoes.push(comentarOuEnfileirar(dirEstado, n, corpoDesfeito, { ...o, evento }));
     // Sai de responsável só se entrou agora e quem ficou com a frente não é o mesmo login.
     if (vencedor?.login !== login) {
       for (const n of editados) situacoes.push(editarOuEnfileirar(dirEstado, n, ['--remove-assignee', login], { ...o, evento }));
@@ -482,33 +544,34 @@ export function confirmarRetomada({ frente, login, sessao, rotulo, dirEstado, es
     return { ok: false, motivo: `não consegui falar com o GitHub para retomar (o rótulo ${rotulo} não foi criado)`, como: 'nada foi feito nos tickets' };
   }
   for (const n of tickets) {
+    const url = comentar(n, corpo, o);
+    if (!url) return { ok: false, motivo: `não consegui comentar a retomada em #${n}`, como: desfazer('o GitHub falhou no meio da retomada') };
     comentados.push(n);
-    if (!comentar(n, corpo, o)) return { ok: false, motivo: `não consegui comentar a retomada em #${n}`, como: desfazer('o GitHub falhou no meio da retomada') };
+    const numero = numeroDoComentario(url);
+    if (numero === null) semUrl = true;
+    else meus.add(numero);
   }
   if (entra) {
     for (const n of reservaTickets) {
-      editados.push(n);
       if (!editarTicket(n, ['--add-assignee', login, '--add-label', rotulo], o)) {
         return { ok: false, motivo: `não consegui pôr @${login} de responsável em #${n}`, como: desfazer('o GitHub falhou no meio da retomada') };
       }
+      editados.push(n);
     }
   }
-  const eMeu = m => m && m.tipo === 'retomada' && (m.campos.login ?? m.autor) === login && m.campos.sessao === idCurto(sessao);
   let s = null;
   for (let tentativa = 0; tentativa < 2; tentativa++) {
     if (tentativa) esperar(esperaMs);
-    const lidos = lerMarcadoresDosTickets({ tickets, rotulo }, o);
-    if (!lidos.ok) continue;
-    const ms = marcadoresDoId(lidos.porTicket, frente.id);
+    const lida = reler();
     // O próprio marcador ainda não aparece: atraso do servidor; relê uma vez.
-    if (!ms.some(eMeu)) continue;
-    s = situacaoDaFrente(ms);
+    if (!lida || !lida.visto || !lida.segura) continue;
+    s = lida;
     break;
   }
   if (!s) return { ok: false, motivo: 'não consegui confirmar a retomada (o comentário não apareceu na releitura)', como: desfazer('não consegui confirmar a retomada') };
   if (!eMeu(s.segura)) {
-    const quem = s.segura ? { login: s.segura.campos.login ?? s.segura.autor } : null;
-    const motivo = quem ? `@${quem.login} retomou antes` : 'a frente não ficou com esta retomada';
+    const quem = { login: loginDo(s.segura) };
+    const motivo = `@${quem.login} retomou antes`;
     return { ok: false, vencedor: quem, motivo, como: desfazer(motivo, quem) };
   }
   return { ok: true, logins: entra ? [...antes, login] : [...antes] };
