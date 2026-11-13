@@ -12,15 +12,15 @@ const SEM_SESSAO = { env: { AH_SESSAO: '' } };
 test('board lista a frente; vazio diz que não há', () => {
   const vazio = criarProjeto();
   assert.match(vazio.ah(['board']).saida, /Nenhuma frente aberta\./);
-  assert.deepEqual(JSON.parse(vazio.ah(['board', '--json']).saida), { frentes: [], sessoes: [], sessoesIlegiveis: [] });
+  assert.deepEqual(JSON.parse(vazio.ah(['board', '--json']).saida), { frentes: [], sessoes: [], sessoesIlegiveis: [], sobreposicoes: [] });
   vazio.limpar();
 
   const p = criarProjeto();
   assert.equal(p.ah(['open', 'carrinho', '--tickets', '1,2']).codigo, 0);
   const r = p.ah(['board']);
   assert.equal(r.codigo, 0, r.erro);
-  assert.match(r.saida, /as-1\s+carrinho\s+sessao-t\s+ativa\s+#1,#2\s+—\s+—/);
-  assert.match(r.saida, /^ID\s+NOME\s+DONA\s+ESTADO\s+TICKETS\s+PLANO\s+ÚLTIMA NOTA/m);
+  assert.match(r.saida, /as-1\s+carrinho\s+sessao-t\s+ativa\s+#1,#2\s+—\s+—\s+—/);
+  assert.match(r.saida, /^ID\s+NOME\s+DONA\s+ESTADO\s+TICKETS\s+SOBREPÕE\s+PLANO\s+ÚLTIMA NOTA/m);
   assert.equal(JSON.parse(p.ah(['board', '--json']).saida).frentes[0].id, 'as-1');
   p.limpar();
 });

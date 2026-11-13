@@ -3,11 +3,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { ErroDeUso, arquivoDaMaquina, dirWorktrees } from '../lib/caminhos.mjs';
 import { comTrava, lerJson, registrarEvento } from '../lib/estado.mjs';
-import { frentesDa, gravarFrente, lerFrente, listarFrentes, nomeValido, novaFrente, proximoId, removerFrente, siglaValida } from '../lib/frente.mjs';
+import { frentesDa, gravarFrente, lerFrente, listarFrentes, listarFrentesTolerante, nomeValido, novaFrente, proximoId, removerFrente, siglaValida } from '../lib/frente.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
 import { reenviarComAviso } from '../lib/pendentes.mjs';
 import { desfazerReserva, reservar } from '../lib/reserva.mjs';
+import { arquivosDaFrente, caminhosEmComum, tocaOsCaminhos } from '../lib/sobreposicao.mjs';
 import { gravarSessao, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
 import { inicioDoProcesso, pidDeComando, vidaDaSessao } from '../lib/vida.mjs';
 
@@ -222,7 +223,7 @@ export async function executar(args, amb) {
     ? ` (reserva: ${desfazerReserva({ frente, login, sessao: amb.sessaoId, rotulo, dirEstado, motivo }, oGh)})` : '');
 
   // Fase 3, sob a trava: worktree e a frente vira ativa.
-  return comTrava(dirEstado, 'frentes', async () => {
+  await comTrava(dirEstado, 'frentes', async () => {
     const atual = lerFrente(dirEstado, frente.nome);
     if (!atual || atual.estado !== 'abrindo' || atual.dona !== amb.sessaoId || atual.id !== id) {
       const como = desfazer('outra sessão tomou o registro da frente');
@@ -251,8 +252,54 @@ export async function executar(args, amb) {
       amb.avisar(`Aviso: o checkout principal tem arquivos modificados (não os toquei):\n${sujos.map(l => `  ${l}`).join('\n')}\n`);
     }
     amb.escrever(`Frente ${id} ${frente.nome} aberta.\nTrabalhe em: ${frente.worktree}\n`);
-    return 0;
   }, { venceMs: 120000 });
+
+  // Fora da trava (o git das outras frentes pode demorar): avisos sobre quem já mexe no mesmo lugar. Nunca recusa.
+  try {
+    avisarDasOutras(frente, caminhos, amb);
+  } catch (e) {
+    if (e?.name === 'ErroDeUso') throw e;
+    amb.avisar(`Aviso: não consegui conferir as outras frentes (${String(e?.message ?? e).split('\n')[0].slice(0, 120)}).\n`);
+  }
+  return 0;
+}
+
+const LIMITE_NOTA = 120;
+const NOTAS_MOSTRADAS = 3;
+const ARQUIVOS_MOSTRADOS = 10;
+const TEMPO_DO_GIT_POR_CHAMADA_MS = 5000;
+
+const linhaUnica = (texto, limite) => {
+  const t = String(texto ?? '').replace(/[\p{Cc}\p{Zl}\p{Zp}]+/gu, ' ').replace(/\s+/g, ' ').trim();
+  return t.length > limite ? `${t.slice(0, limite - 1)}…` : t;
+};
+
+// Para cada outra frente ativa (ou em abertura): as últimas notas e, com --caminhos, o que ela já mudou
+// dentro deles e os caminhos que ela declarou em comum.
+function avisarDasOutras(minha, caminhos, amb) {
+  const { frentes } = listarFrentesTolerante(amb.dirEstado);
+  const outras = frentes.filter(f => f.nome !== minha.nome && (f.estado === 'ativa' || f.estado === 'abrindo'));
+  const linhas = [];
+  for (const f of outras) {
+    const rotulo = `${linhaUnica(f.id, 20)} ${linhaUnica(f.nome, 49)}`;
+    const notas = (Array.isArray(f.notas) ? f.notas : []).slice(-NOTAS_MOSTRADAS);
+    if (notas.length) {
+      linhas.push(`Notas de ${rotulo}:`, ...notas.map(n => `  ${linhaUnica(`${String(n?.em ?? '').slice(0, 10)} ${n?.texto ?? ''}`, LIMITE_NOTA)}`));
+    }
+    if (!caminhos.length) continue;
+    const arquivos = f.estado === 'ativa'
+      ? arquivosDaFrente(f, { raiz: amb.raiz, base: amb.config.git.base, env: amb.env, tempoPorChamadaMs: TEMPO_DO_GIT_POR_CHAMADA_MS })
+      : [];
+    const tocados = tocaOsCaminhos(arquivos, caminhos);
+    if (tocados.length) {
+      const lista = tocados.slice(0, ARQUIVOS_MOSTRADOS).map(a => linhaUnica(a, 120)).join(', ');
+      const resto = tocados.length > ARQUIVOS_MOSTRADOS ? ` e mais ${tocados.length - ARQUIVOS_MOSTRADOS}` : '';
+      linhas.push(`Atenção: ${rotulo} já mudou ${tocados.length} arquivo(s) de --caminhos: ${lista}${resto}`);
+    }
+    const comuns = caminhosEmComum(Array.isArray(f.caminhos) ? f.caminhos.filter(c => typeof c === 'string') : [], caminhos);
+    if (comuns.length) linhas.push(`Atenção: ${rotulo} declarou os mesmos caminhos: ${linhaUnica(comuns.join(','), 200)}`);
+  }
+  if (linhas.length) amb.avisar(`${linhas.join('\n')}\n`);
 }
 
 // A sessão está viva? Arquivo ilegível conta como não viva.

@@ -9,7 +9,8 @@
 // `acao` é {tipo: 'comando', comando} | {tipo: 'edicao', arquivo} | {tipo: 'outra'}.
 // `amb` é o do despacho (raiz, config, dirEstado, env), mais, opcionais, `topoDe`,
 // `ramoAtual`, `baseDoPr`, `tempoDoGhMs` (para as travas), `pid` (padrão: o pid do agente,
-// `AH_PID_AGENTE` ou o processo pai do gancho), `inicioDoProcesso`, `existe` e `agora`.
+// `AH_PID_AGENTE` ou o processo pai do gancho), `inicioDoProcesso`, `existe`, `agora` e
+// `prazoDaSobreposicaoMs` (quanto o `inicio` gasta, no máximo, com o git da sobreposição).
 // `tratar` é assíncrono: a herança e as gravações de sessão rodam sob a trava das frentes.
 // Um comando pode trazer `shell: 'posix'` quando o agente o roda num shell POSIX (Bash).
 import fs from 'node:fs';
@@ -27,6 +28,7 @@ import {
 import { montarResumo } from '../lib/resumo.mjs';
 import { topoDe, ramoAtual, limpo } from '../lib/git.mjs';
 import { gh } from '../lib/github.mjs';
+import { arquivosDaFrenteOuNulo, contaNaSobreposicao, sobreposicoes as calcularSobreposicoes } from '../lib/sobreposicao.mjs';
 
 const LIMITE_COMANDO_NO_EVENTO = 500;
 const LIMITE_MOTIVO = 300;
@@ -34,6 +36,8 @@ const LIMITE_MOTIVO = 300;
 const ESPERA_DA_TRAVA_NO_ANTES_MS = 200;
 // O gancho do agente tem tempo-limite próprio; se o processo morresse antes, a ação passaria.
 const TEMPO_DO_GH_MS = 5000;
+// O cálculo de sobreposição não pode atrasar o começo da sessão: estourado o prazo, o resumo sai sem a linha.
+const PRAZO_DA_SOBREPOSICAO_MS = 1500;
 
 const cortar = (texto, limite) => (texto.length > limite ? `${texto.slice(0, limite - 1)}…` : texto);
 
@@ -91,6 +95,33 @@ function frentesSemDona(frentes, minha, amb) {
   return lista;
 }
 
+// Sobreposições da frente da sessão com as outras: [{arquivo, frentes: [ids das outras]}].
+// Qualquer falha ou demora do git devolve lista vazia (o resumo sai sem a linha).
+function sobreposicoesDaSessao(minha, frentes, amb) {
+  if (!minha || !contaNaSobreposicao(minha)) return [];
+  const prazoMs = amb.prazoDaSobreposicaoMs ?? PRAZO_DA_SOBREPOSICAO_MS;
+  if (!(prazoMs > 0)) return [];
+  const prazo = Date.now() + prazoMs;
+  const opcoes = { raiz: amb.raiz, base: amb.config.git.base, env: amb.env, prazo };
+  try {
+    const meus = arquivosDaFrenteOuNulo(minha, opcoes);
+    if (meus === null) return [];
+    if (!meus.length) return [];
+    const porFrente = new Map([[minha.id, meus]]);
+    for (const f of frentes) {
+      if (f.nome === minha.nome || !contaNaSobreposicao(f)) continue;
+      const deles = arquivosDaFrenteOuNulo(f, opcoes);
+      if (deles === null) return [];
+      porFrente.set(f.id, [...(porFrente.get(f.id) ?? []), ...deles]);
+    }
+    return calcularSobreposicoes(porFrente)
+      .filter(s => s.frentes.includes(minha.id))
+      .map(s => ({ arquivo: s.arquivo, frentes: s.frentes.filter(id => id !== minha.id) }));
+  } catch {
+    return [];
+  }
+}
+
 async function inicio(evento, amb) {
   const id = evento.sessao;
   const declarado = amb.pid !== undefined || pidDoAgente(amb.env, null) !== null;
@@ -127,7 +158,8 @@ async function inicio(evento, amb) {
     });
     avisos.push(`Sua frente ${foco.id} ${foco.nome} está com a sessão ${idCurto(foco.dona)}.`);
   }
-  const situacao = { semDona: frentesSemDona(frentes, sessao.frente, amb), sobreposicoes: [], avisos };
+  const minha = typeof sessao.frente === 'string' ? frentes.find(f => f.nome === sessao.frente && f.dona === id) : null;
+  const situacao = { semDona: frentesSemDona(frentes, sessao.frente, amb), sobreposicoes: sobreposicoesDaSessao(minha, frentes, amb), avisos };
   const contexto = montarResumo({ sessao, frentes, config: amb.config, baseLimpa: baseLimpa(amb), situacao });
   return { contexto };
 }

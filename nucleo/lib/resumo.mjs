@@ -39,12 +39,15 @@ function linhasDaSituacao({ semDona = [], sobreposicoes = [], avisos = [] }) {
     linhas.push(corte(`Sem dona: ${semDona.map(f => `${linha(f.id, 20)} ${linha(f.nome, 49)} (${linha(f.saida, 80)})`).join('; ')}`));
   }
   if (sobreposicoes.length) {
-    linhas.push(corte(`Sobreposições: ${sobreposicoes.map(s => `${linha(s.arquivo, 80)} (${s.frentes.map(n => linha(n, 49)).join(', ')})`).join('; ')}`));
+    // Os IDs ficam sempre; a lista de arquivos é que encurta para caber.
+    const com = ` com ${linha([...new Set(sobreposicoes.flatMap(s => s.frentes))].join(', '), 80)}`;
+    const cabe = LIMITE_LINHA_DA_SITUACAO - 'Sobreposição: '.length - com.length;
+    linhas.push(corte(`Sobreposição: ${linha(sobreposicoes.map(s => s.arquivo).join(', '), cabe)}${com}`));
   }
   return linhas;
 }
 
-// `situacao` = {semDona: [{id, nome, saida}], sobreposicoes: [{arquivo, frentes}], avisos: [texto]}.
+// `situacao` = {semDona: [{id, nome, saida}], sobreposicoes: [{arquivo, frentes: [ids das outras frentes]}], avisos: [texto]}.
 export function montarResumo({ sessao, frentes = [], config, baseLimpa, situacao = {} }) {
   const minha = nomeDaFrente(sessao.frente);
   const listadasSemDona = new Set((situacao.semDona ?? []).map(f => f.nome));
