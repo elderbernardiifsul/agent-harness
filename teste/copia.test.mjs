@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { criarRepo } from './apoio/repo.mjs';
-import { arquivosDaCopia, eClone, lerManifesto, listaInstalada, versaoDoClone } from '../nucleo/lib/copia.mjs';
+import { arquivosDaCopia, citar, eClone, lerManifesto, listaInstalada, versaoDoClone } from '../nucleo/lib/copia.mjs';
 import { VERSAO } from '../nucleo/versao.mjs';
 
 const RAIZ = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -39,4 +39,10 @@ test('o init grava no manifesto a lista dos arquivos e registra o clone de orige
   assert.equal(m.arquivos['bin/ah.mjs'], sha(fs.readFileSync(path.join(nucleo, 'bin', 'ah.mjs'))));
   const origem = JSON.parse(fs.readFileSync(path.join(p.estado, 'loja', 'origem.json'), 'utf8'));
   assert.equal(origem.clone, fs.realpathSync(RAIZ));
+});
+
+test('citar põe aspas simples só no caminho que precisa', () => {
+  assert.equal(citar('/tmp/agent-harness'), '/tmp/agent-harness');
+  assert.equal(citar('/tmp/meu clone'), "'/tmp/meu clone'");
+  assert.equal(citar("/tmp/d'ana"), "'/tmp/d'\\''ana'");
 });

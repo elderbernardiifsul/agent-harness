@@ -9,7 +9,7 @@ import { siglaValida, siglaDeLogin } from '../lib/frente.mjs';
 import { git, existeRamo, ramoAtual } from '../lib/git.mjs';
 import { consultarProtecao, loginAtual, protegerRamo, repoAtual } from '../lib/github.mjs';
 import { VERSAO } from '../versao.mjs';
-import { arquivosDaCopia, listarArquivosDoNucleo, listaDoManifesto, montarManifesto } from '../lib/copia.mjs';
+import { arquivosDaCopia, commitDoClone, listarArquivosDoNucleo, listaDoManifesto, montarManifesto } from '../lib/copia.mjs';
 
 export const descricao = 'instala o harness neste projeto, a partir do clone do agent-harness';
 export const uso = 'ah init [--projeto <nome>] [--sigla <sigla>] [--agentes claude-code] [--teste "<comando>"] [--sem-protecao] [--sobrescrever]';
@@ -282,8 +282,7 @@ export async function executar(args, amb) {
     const acompanha = a.rel.startsWith('docs/') || a.rel.startsWith('modelos/');
     colocar(PREFIXO_NUCLEO + a.rel, fs.readFileSync(a.origem), acompanha ? { atualizaSe: () => true } : {});
   }
-  const c = git(['rev-parse', 'HEAD'], { cwd: RAIZ_DO_HARNESS, env: amb.env });
-  const commit = c.codigo === 0 && /^[0-9a-f]{40}$/.test(c.saida.trim()) ? c.saida.trim() : null;
+  const commit = commitDoClone(RAIZ_DO_HARNESS, amb.env);
   const arquivoManifesto = PREFIXO_NUCLEO + 'MANIFEST.json';
   const anterior = lerJson(path.join(raiz, ...arquivoManifesto.split('/')), null);
   const manifesto = montarManifesto({ versao: VERSAO, commit, arquivos });

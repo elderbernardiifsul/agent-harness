@@ -18,7 +18,7 @@ import { gh, protecaoDoRamo, repoAtual } from '../lib/github.mjs';
 import { mesclarGanchos } from './init.mjs';
 import { ADAPTADORES, O_QUE_SE_PERDE, agenteEmUso } from '../adaptadores/registro.mjs';
 import { dirDaFila, retratoDaFila } from '../lib/fila.mjs';
-import { arquivosDaCopia, diferenca, eClone, lerManifesto, listaDoManifesto, versaoDoClone } from '../lib/copia.mjs';
+import { arquivosDaCopia, citar, diferenca, eClone, lerManifesto, listaDoManifesto, versaoDoClone } from '../lib/copia.mjs';
 
 export const descricao = 'confere se o projeto está bem preparado';
 export const uso = 'ah doctor [--json]';
@@ -228,12 +228,17 @@ export const VERIFICACOES = [
     if (!eClone(clone)) return aviso(nome, `o clone registrado (${clone}) não existe mais ou não é um clone do agent-harness; rode tools/ah atualizar --de <clone>`);
     const m = lerManifesto(path.join(amb.raiz, '.harness', 'nucleo'));
     const instalada = listaDoManifesto(m);
-    if (!instalada) return aviso(nome, `o MANIFEST.json não tem a lista dos arquivos (cópia de antes da atualização existir); rode tools/ah atualizar --de ${clone}`);
-    const doClone = Object.fromEntries(arquivosDaCopia(clone).arquivos.map(a => [a.rel, a.sha256]));
+    if (!instalada) return aviso(nome, `o MANIFEST.json não tem a lista dos arquivos (cópia de antes da atualização existir); rode tools/ah atualizar --de ${citar(clone)}`);
+    let doClone;
+    try {
+      doClone = Object.fromEntries(arquivosDaCopia(clone).arquivos.map(a => [a.rel, a.sha256]));
+    } catch (e) {
+      return aviso(nome, `o clone registrado (${clone}) está incompleto (${e.code === 'ENOENT' && e.path ? `falta ${path.relative(clone, e.path)}` : (e.code ?? e.message)}); atualize o clone (git pull nele, ou clone de novo) e rode tools/ah atualizar --de ${citar(clone)}`);
+    }
     const d = diferenca(instalada, doClone);
     const n = d.novos.length + d.alterados.length + d.removidos.length;
     if (n === 0) return ok(nome);
-    return aviso(nome, `o clone em ${clone} (versão ${versaoDoClone(clone) ?? 'desconhecida'}) difere da cópia instalada (${m.versao ?? 'versão desconhecida'}) em ${n} arquivo(s); rode tools/ah atualizar --de ${clone} (--simular mostra o que muda)`);
+    return aviso(nome, `o clone em ${clone} (versão ${versaoDoClone(clone) ?? 'desconhecida'}) difere da cópia instalada (${m.versao ?? 'versão desconhecida'}) em ${n} arquivo(s); rode tools/ah atualizar --de ${citar(clone)} (--simular mostra o que muda)`);
   }),
 
   verificacao('Arquivos de estado legíveis', amb => {

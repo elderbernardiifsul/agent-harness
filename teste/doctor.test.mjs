@@ -498,6 +498,9 @@ test('fatia 5: o núcleo é conferido contra o clone de origem registrado na má
 
   fs.writeFileSync(origem, JSON.stringify({ clone: path.join(clone.raiz, 'sumiu') }));
   assert.match(linha(), /^aviso\s+Núcleo igual ao clone de origem: o clone registrado \(.*sumiu\) não existe mais/);
+  fs.writeFileSync(origem, JSON.stringify({ clone: clone.raiz }));
+  clone.apagar('modelos/agents-trecho.md');
+  assert.match(linha(), /^aviso\s+Núcleo igual ao clone de origem: o clone registrado \(.*\) está incompleto/);
   fs.rmSync(origem);
   assert.match(linha(), /^ok\s+Núcleo igual ao clone de origem \(sem clone registrado nesta máquina; não conferido\)$/);
   assert.equal(p.ah(['doctor']).codigo, 0);

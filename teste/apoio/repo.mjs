@@ -232,17 +232,32 @@ export function envelhecerSinal(p, sessao, minutos) {
   utimesSync(arquivo, quando, quando);
 }
 
-// Clone descartável do agent-harness (sem git): o núcleo, os modelos e os documentos que o init copia.
+// Clone descartável do agent-harness: o núcleo, os modelos e os documentos que o init copia.
 // `gravar` e `apagar` mexem nele por caminho relativo; `ah(p, args)` roda o ah dele na pasta do projeto `p`.
-export function copiarHarness() {
+// Com `git` (o ambiente de um projeto de teste), o clone é um repositório com um commit, e `commit(msg)`
+// e `git(args)` mexem nele.
+export function copiarHarness({ git = null } = {}) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), 'ah-teste-clone-')));
   PASTAS_A_LIMPAR.add(base);
   const raiz = join(base, 'agent-harness');
   for (const rel of ['nucleo', 'modelos', 'docs/agentes', 'docs/referencia']) {
     cpSync(join(RAIZ_HARNESS, ...rel.split('/')), join(raiz, ...rel.split('/')), { recursive: true });
   }
+  const gitDoClone = args => {
+    const r = executar(args, { cwd: raiz, env: git });
+    if (r.codigo !== 0) throw new Error(`git ${args.join(' ')} no clone falhou: ${r.erro}`);
+    return r.saida.trim();
+  };
+  const commit = msg => {
+    gitDoClone(['add', '-A']);
+    gitDoClone(['commit', '-q', '--allow-empty', '-m', msg]);
+    return gitDoClone(['rev-parse', 'HEAD']);
+  };
+  if (git) { gitDoClone(['init', '-q', '-b', 'main']); commit('clone'); }
   return {
     raiz,
+    git: gitDoClone,
+    commit,
     gravar(rel, texto) {
       const destino = join(raiz, ...rel.split('/'));
       mkdirSync(dirname(destino), { recursive: true });

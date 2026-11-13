@@ -8,7 +8,8 @@ import { ErroDeUso } from '../lib/caminhos.mjs';
 import { ErroDeEstado, gravarJson, lerJson, registrarEvento } from '../lib/estado.mjs';
 import { git } from '../lib/git.mjs';
 import {
-  MANIFESTO, arquivosDaCopia, compararVersoes, diferenca, eClone, lerManifesto, listaDoManifesto, listaInstalada, montarManifesto,
+  MANIFESTO, ancestralEstrito, arquivosDaCopia, citar, commitDoClone, compararVersoes, diferenca, eClone, lerManifesto, listaDoCommit,
+  listaDoManifesto, listaInstalada, montarManifesto,
 } from '../lib/copia.mjs';
 import { agentsComTrecho, mesclarGanchos, passosDoCommit } from './init.mjs';
 import { VERSAO } from '../versao.mjs';
@@ -50,7 +51,7 @@ function delegar(clone, o, amb) {
   const r = spawnSync(process.execPath, [path.join(clone, 'nucleo', 'bin', 'ah.mjs'), 'atualizar', ...o.resto], {
     cwd: amb.cwd, env: amb.env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
   });
-  if (r.error) throw new ErroDeEstado(`não consegui rodar o atualizar do clone em ${clone} (${r.error.message})`, null, `rode node ${clone}/nucleo/bin/ah.mjs atualizar na pasta do projeto`);
+  if (r.error) throw new ErroDeEstado(`não consegui rodar o atualizar do clone em ${clone} (${r.error.message})`, null, `rode node ${citar(path.join(clone, 'nucleo', 'bin', 'ah.mjs'))} atualizar na pasta do projeto`);
   if (r.stdout) amb.escrever(r.stdout);
   if (r.stderr) amb.avisar(r.stderr);
   return r.status ?? 1;
@@ -71,23 +72,27 @@ function tratarSobras(dirHarness, dirNucleo, simular) {
   }
 }
 
-// Arquivos alterados à mão: o que difere da lista do manifesto. Sem lista (manifesto anterior à fatia 5),
-// o que o git mostra como não commitado em .harness/nucleo/.
-function alteradosAMao(amb, anterior, instalado) {
-  const doManifesto = listaDoManifesto(anterior);
-  if (doManifesto) {
-    const d = diferenca(doManifesto, instalado.lista);
+// Arquivos alterados à mão: {itens, semProva}. Vale a lista do manifesto; sem ela (manifesto anterior à
+// fatia 5), a lista do commit instalado, montada a partir do clone. Sem as duas não há como provar que o
+// núcleo está intacto (uma mudança à mão já commitada não aparece no git status): `semProva`, e os itens
+// são o que o git mostra como não commitado.
+function alteradosAMao(amb, anterior, instalado, clone) {
+  const comparar = antes => {
+    const d = diferenca(antes, instalado.lista);
     return [
       ...d.alterados.map(r => `${r} (mudou)`), ...d.removidos.map(r => `${r} (sumiu)`), ...d.novos.map(r => `${r} (a mais)`),
       ...instalado.links.map(r => `${r} (link simbólico)`),
     ];
-  }
+  };
+  const doManifesto = listaDoManifesto(anterior);
+  if (doManifesto) return { itens: comparar(doManifesto), semProva: false };
+  const doCommit = listaDoCommit(clone, anterior?.commit, amb.env);
+  if (doCommit) return { itens: comparar(doCommit), semProva: false };
   const st = git(['status', '--porcelain', '--untracked-files=all', '--', '.harness/nucleo'], { cwd: amb.raiz, env: amb.env });
-  if (st.codigo !== 0) return [`.harness/nucleo (o git status falhou: ${(st.erro.trim().split('\n')[0] || `código ${st.codigo}`).slice(0, 120)})`];
-  return [
-    ...st.saida.split('\n').filter(Boolean).map(l => `${l.slice(3).replace(/^\.harness\/nucleo\//, '')} (não commitado)`),
-    ...instalado.links.map(r => `${r} (link simbólico)`),
-  ];
+  const itens = st.codigo !== 0
+    ? [`.harness/nucleo (o git status falhou: ${(st.erro.trim().split('\n')[0] || `código ${st.codigo}`).slice(0, 120)})`]
+    : st.saida.split('\n').filter(Boolean).map(l => `${l.slice(3).replace(/^\.harness\/nucleo\//, '')} (não commitado)`);
+  return { itens: [...itens, ...instalado.links.map(r => `${r} (link simbólico)`)], semProva: true };
 }
 
 // Arquivos fora do núcleo que mudam de versão para versão e que o atualizar não troca: os que diferem
@@ -159,7 +164,8 @@ function trocar(dirHarness, dirNucleo, arquivos, manifesto) {
 export async function executar(args, amb) {
   const o = lerOpcoes(args);
   const aqui = fs.realpathSync(RAIZ_DO_HARNESS);
-  const registro = amb.dirEstado ? lerJson(path.join(amb.dirEstado, 'origem.json'), null) : null;
+  let registro = null;
+  try { registro = amb.dirEstado ? lerJson(path.join(amb.dirEstado, 'origem.json'), null) : null; } catch { /* ilegível: como sem registro; é regravado */ }
 
   // De onde: --de, ou este clone; da cópia instalada sem --de, recusa e diz o clone registrado.
   if (o.de !== null) {
@@ -169,7 +175,7 @@ export async function executar(args, amb) {
     }
     if (clone !== aqui) return delegar(clone, o, amb);
   } else if (!eClone(aqui)) {
-    const sugestao = typeof registro?.clone === 'string' ? registro.clone : '<caminho do clone do agent-harness>';
+    const sugestao = typeof registro?.clone === 'string' ? citar(registro.clone) : '<caminho do clone do agent-harness>';
     throw new ErroDeUso(`não sei de onde atualizar: este é o núcleo instalado no projeto, não o clone\nPróximo passo: rode tools/ah atualizar --de ${sugestao}`);
   }
   const raiz = amb.raiz;
@@ -197,14 +203,19 @@ export async function executar(args, amb) {
     throw new ErroDeUso(`o clone tem a versão ${VERSAO}, mais velha que a instalada (${versaoAntes})\nPróximo passo: atualize o clone (git pull nele), ou repita com --forcar para voltar à ${VERSAO}`);
   }
 
+  // Commit mais velho que o instalado (a versão é a mesma em vários commits): só com --forcar.
+  const commit = commitDoClone(aqui, amb.env);
+  if (commit && !o.forcar && ancestralEstrito(aqui, commit, anterior?.commit, amb.env)) {
+    throw new ErroDeUso(`o clone está no commit ${curto(commit)}, anterior ao instalado (${curto(anterior.commit)})\nPróximo passo: atualize o clone (git pull nele), ou repita com --forcar para voltar ao ${curto(commit)}`);
+  }
+
   // O que muda e o que impede.
   const { arquivos } = arquivosDaCopia(aqui);
-  const c = git(['rev-parse', 'HEAD'], { cwd: aqui, env: amb.env });
-  const commit = c.codigo === 0 && /^[0-9a-f]{40}$/.test(c.saida.trim()) ? c.saida.trim() : null;
   const manifesto = montarManifesto({ versao: VERSAO, commit, arquivos });
   const instalado = listaInstalada(dirNucleo);
   const mudancas = diferenca(instalado.lista, manifesto.arquivos);
-  const aMao = alteradosAMao(amb, anterior, instalado);
+  const conferencia = alteradosAMao(amb, anterior, instalado, aqui);
+  const aMao = conferencia.itens;
   const agents = agentsNovo(raiz);
   const fora = foraDoNucleo(amb);
   const nucleoMuda = mudancas.novos.length + mudancas.alterados.length + mudancas.removidos.length + instalado.links.length > 0
@@ -226,6 +237,11 @@ export async function executar(args, amb) {
     relatorio += `${o.simular ? 'Reaplicaria' : 'Reapliquei'} o trecho do harness em ${ARQUIVO_AGENTS}.\n`;
   }
 
+  if (conferencia.semProva && !o.forcar) {
+    if (o.simular && relatorio) amb.escrever(relatorio);
+    if (aMao.length) amb.avisar(lista('Arquivos do núcleo alterados à mão no projeto', aMao));
+    throw new ErroDeUso(`não consigo provar que .harness/nucleo/ está intacto: o MANIFEST.json não tem a lista dos arquivos e o commit instalado (${curto(anterior?.commit)}) não está no clone\nPróximo passo: rode o atualizar de um clone que tenha esse commit (git fetch nele), ou confira as mudanças em .harness/nucleo/ (git log -p -- .harness/nucleo) e repita com --forcar`);
+  }
   if (aMao.length && !o.forcar) {
     if (o.simular && relatorio) amb.escrever(relatorio);
     amb.avisar(lista('Arquivos do núcleo alterados à mão no projeto', aMao));
@@ -251,12 +267,13 @@ export async function executar(args, amb) {
   try {
     registrarEvento(amb.dirEstado, {
       tipo: 'atualizacao', sessao: amb.sessaoId, de: versaoAntes, para: VERSAO, deCommit: anterior?.commit ?? null, paraCommit: commit,
-      novos: mudancas.novos.length, alterados: mudancas.alterados.length, removidos: mudancas.removidos.length, forcado: aMao.length > 0,
+      novos: mudancas.novos.length, alterados: mudancas.alterados.length, removidos: mudancas.removidos.length, forcado: o.forcar && (aMao.length > 0 || conferencia.semProva),
     });
   } catch { /* sem como registrar: a atualização vale do mesmo jeito */ }
 
   amb.escrever(relatorio);
   if (aMao.length) amb.escrever(lista('Descartei (--forcar)', aMao));
+  else if (conferencia.semProva) amb.escrever('Sem como conferir o núcleo antigo (--forcar): o que houvesse de mudança à mão foi descartado.\n');
   if (fora.length) amb.escrever(foraTexto(fora));
   amb.escrever(passosDoCommit(raiz, amb.config.git.base, amb.env, {
     caminhos: ['.harness/nucleo', ARQUIVO_AGENTS], mensagem: MENSAGEM_DO_COMMIT,
@@ -266,5 +283,5 @@ export async function executar(args, amb) {
 }
 
 function foraTexto(fora) {
-  return `${lista('Fora do núcleo, diferentes do que o init deste clone grava (não mexi)', fora)}Faça: rode o init a partir do clone (node ${RAIZ_DO_HARNESS}/nucleo/bin/ah.mjs init) para trocá-los; ele mostra o que não sobrescreve\n`;
+  return `${lista('Fora do núcleo, diferentes do que o init deste clone grava (não mexi)', fora)}Faça: rode o init a partir do clone (node ${citar(path.join(RAIZ_DO_HARNESS, 'nucleo', 'bin', 'ah.mjs'))} init) para trocá-los; ele mostra o que não sobrescreve\n`;
 }

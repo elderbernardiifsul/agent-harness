@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { copiarHarness, criarProjeto, dirDoTeste } from './apoio/repo.mjs';
+import { copiarHarness, criarProjeto, criarRepo, dirDoTeste } from './apoio/repo.mjs';
 import { lerManifesto, listaInstalada } from '../nucleo/lib/copia.mjs';
 import { VERSAO } from '../nucleo/versao.mjs';
 
@@ -140,21 +140,94 @@ test('arquivo do núcleo alterado à mão recusa com a lista e a saída; --forca
   assert.equal(existe(p, '.harness/nucleo/comandos/sweep.mjs'), true);
 });
 
-test('manifesto sem a lista (anterior à fatia 5): confere pelo git o que não foi commitado', t => {
-  const { p, clone } = cenario(t);
+// Tira a lista do MANIFEST.json (como os de antes da fatia 5) e commita.
+function semLista(p) {
   const arq = path.join(nucleo(p), 'MANIFEST.json');
   const m = JSON.parse(fs.readFileSync(arq, 'utf8'));
   delete m.arquivos;
   fs.writeFileSync(arq, JSON.stringify(m, null, 2));
   p.git(['commit', '-qam', 'manifesto antigo']);
+}
+
+// Projeto preparado a partir de um clone com git; o clone ganha depois um commit com um arquivo novo.
+function cenarioComGit(t) {
+  const p = criarRepo();
+  const clone = copiarHarness({ git: p.env });
+  t.after(() => { p.limpar(); clone.limpar(); });
+  const r = clone.ah(p, ['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']);
+  if (r.codigo !== 0) throw new Error(r.erro);
+  p.git(['add', '--', '.harness', 'tools', 'docs/agents', '.claude', '.github', 'AGENTS.md']);
+  p.git(['commit', '-qm', 'chore: instala o harness']);
+  const instalado = clone.git(['rev-parse', 'HEAD']);
+  clone.gravar('nucleo/lib/novidade.mjs', 'export const nova = 1;\n');
+  const novo = clone.commit('novidade');
+  return { p, clone, instalado, novo };
+}
+
+test('manifesto sem a lista e clone sem o commit instalado: recusa sem --forcar, mesmo com tudo commitado', t => {
+  const { p, clone } = cenario(t);
+  semLista(p);
   fs.appendFileSync(path.join(nucleo(p), 'comandos', 'board.mjs'), '// sem commit\n');
   const r = clone.ah(p, ['atualizar']);
   assert.equal(r.codigo, 1);
   assert.match(r.erro, /comandos\/board\.mjs \(não commitado\)/);
-  p.git(['checkout', '--', '.harness/nucleo/comandos/board.mjs']);
+  assert.match(r.erro, /Recusado: não consigo provar que \.harness\/nucleo\/ está intacto/);
+  assert.match(r.erro, /Faça: .*--forcar/);
+
+  // O cenário da revisão: a mudança à mão já commitada também recusa.
+  p.git(['commit', '-qam', 'mexe no núcleo']);
+  const c = clone.ah(p, ['atualizar']);
+  assert.equal(c.codigo, 1);
+  assert.match(c.erro, /Recusado: não consigo provar que \.harness\/nucleo\/ está intacto/);
+  assert.match(ler(p, '.harness/nucleo/comandos/board.mjs'), /sem commit/);
+  const f = clone.ah(p, ['atualizar', '--forcar']);
+  assert.equal(f.codigo, 0, f.erro);
+  assert.doesNotMatch(ler(p, '.harness/nucleo/comandos/board.mjs'), /sem commit/);
+  assert.ok(lerManifesto(nucleo(p)).arquivos);
+});
+
+test('manifesto sem a lista e clone com o commit instalado: a lista antiga sai do clone', t => {
+  const { p, clone } = cenarioComGit(t);
+  semLista(p);
+  fs.appendFileSync(path.join(nucleo(p), 'comandos', 'board.mjs'), '// mexi\n');
+  p.git(['commit', '-qam', 'mexe no núcleo']);
+  const r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /comandos\/board\.mjs \(mudou\)/);
+  assert.match(r.erro, /Recusado: 1 arquivo\(s\) de \.harness\/nucleo\/ alterado\(s\) à mão/);
+
+  p.git(['checkout', '-q', 'HEAD~1', '--', '.harness/nucleo/comandos/board.mjs']);
+  p.git(['commit', '-qam', 'desfaz']);
   const ok = clone.ah(p, ['atualizar']);
   assert.equal(ok.codigo, 0, ok.erro);
-  assert.ok(lerManifesto(nucleo(p)).arquivos);
+  assert.equal(existe(p, '.harness/nucleo/lib/novidade.mjs'), true);
+});
+
+test('clone num commit anterior ao instalado recusa; --forcar volta', t => {
+  const { p, clone, instalado, novo } = cenarioComGit(t);
+  assert.equal(clone.ah(p, ['atualizar']).codigo, 0);
+  assert.equal(lerManifesto(nucleo(p)).commit, novo);
+  clone.git(['checkout', '-q', instalado]);
+  const r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, new RegExp(`Recusado: o clone está no commit ${instalado.slice(0, 7)}, anterior ao instalado \\(${novo.slice(0, 7)}\\)`));
+  assert.match(r.erro, /Faça: atualize o clone \(git pull nele\), ou repita com --forcar/);
+  assert.equal(existe(p, '.harness/nucleo/lib/novidade.mjs'), true);
+  const f = clone.ah(p, ['atualizar', '--forcar']);
+  assert.equal(f.codigo, 0, f.erro);
+  assert.equal(existe(p, '.harness/nucleo/lib/novidade.mjs'), false);
+});
+
+test('origem.json ilegível conta como sem registro e é regravado', t => {
+  const { p, clone } = cenario(t);
+  const origem = path.join(dirDoTeste(p), 'origem.json');
+  fs.writeFileSync(origem, '{ quebrado');
+  const r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.equal(JSON.parse(fs.readFileSync(origem, 'utf8')).clone, clone.raiz);
+  fs.writeFileSync(origem, '{ quebrado');
+  const i = instalado(p, ['atualizar']);
+  assert.match(i.erro, /Faça: rode tools\/ah atualizar --de <caminho do clone do agent-harness>/);
 });
 
 test('clone mais velho que o instalado recusa; --forcar volta; abaixo do harnessMinimo nunca', t => {
