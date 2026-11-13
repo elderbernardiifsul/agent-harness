@@ -471,3 +471,21 @@ test('M6. cd x && a; b: a avaliado só em x, b também na pasta de antes', () =>
   for (const c of ['cd /w && git status; git add -A', 'cd /w && git log && git status; git add -A', 'cd /w && true; git commit -a -m x'])
     assert.equal(av(c).trava, 'T2', c);
 });
+
+// ---- pendência 11: merge de PR pela API
+test('T5: gh api …/pulls/<n>/merge com PUT é avaliado como gh pr merge (pendência 11)', () => {
+  for (const c of ['gh api -X PUT repos/{owner}/{repo}/pulls/8/merge', 'gh api repos/:owner/:repo/pulls/8/merge --method PUT',
+    'gh api --method=put /repos/{owner}/{repo}/pulls/8/merge -f merge_method=squash', 'gh api -XPUT repos/{owner}/{repo}/pulls/8/merge',
+    'gh api repos/{owner}/{repo}/pulls/8/merge -f merge_method=squash', 'gh api repos/exemplo/loja/pulls/7/merge -X PUT',
+    'gh api repos/{owner}/{repo}/pulls/9/merge -X PUT', 'gh api repos/{owner}/{repo}/pulls/8/merge -X $M', 'gh api repos/{owner}/{repo}/pulls/$N/merge -X PUT',
+    'gh api https://api.github.com/repos/exemplo/loja/pulls/8/merge -X PUT', 'gh api -H "Accept: x" repos/{owner}/{repo}/pulls/8/merge/ -X PUT']) {
+    const r = av(c);
+    assert.equal(r.trava, 'T5', c);
+    assert.ok(r.saida, c);
+  }
+  assert.match(av('gh api -X PUT repos/{owner}/{repo}/pulls/8/merge').motivo, /main/);
+  // A base livre passa; ler o estado do merge (GET) e outras rotas também.
+  for (const c of ['gh api -X PUT repos/{owner}/{repo}/pulls/7/merge', 'gh api repos/{owner}/{repo}/pulls/8/merge', 'gh api repos/{owner}/{repo}/pulls/8/merge -X GET',
+    'gh api repos/{owner}/{repo}/pulls/8', 'gh api -X PATCH repos/{owner}/{repo}/pulls/8 -f title=x', 'gh api repos/{owner}/{repo}/pulls/8/merge --jq .merged'])
+    assert.ok(av(c).permite, c);
+});

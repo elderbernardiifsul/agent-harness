@@ -12,7 +12,8 @@
 //   <extensão>/<id>  travas das extensões ligadas (`ctx.extensoes`), avaliadas depois destas
 //
 // Limites conhecidos (a trava enxerga a mais, não a tudo): apelidos do git
-// (`-c alias.x=push`), `gh api` direto, `push.default` e `remote.*.push` da
+// (`-c alias.x=push`), `gh api` com endpoint em variável ou pelo GraphQL (a rota REST de merge do PR
+// é avaliada), `push.default` e `remote.*.push` da
 // configuração, `git add` com glob do shell que cobre tudo sem ser `*` solto
 // (`*.*`, `[a-z]*`) e caminhos que chegam por `xargs` ou `--pathspec-from-file`. Na T4: caminho
 // relativo com cwd desconhecido, caminho com variável, crase ou `~`, e programas que escrevem
@@ -246,10 +247,49 @@ function travaT5Merge(args, ctx, cmd) {
   if (outroRepo || !legivel) {
     return recusa('T5', 'não consigo saber para qual ramo o PR será mesclado', saida);
   }
+  return recusaPelaBase(numero, ctx, cmd, 'gh pr merge', saida);
+}
+
+function recusaPelaBase(numero, ctx, cmd, forma, saida) {
   const base = ctx.baseDoPr(numero, cmd.cwd);
   if (base == null) return recusa('T5', 'não consegui descobrir o ramo de destino do PR', saida);
-  if (protegidos.includes(base)) return recusa('T5', `gh pr merge mescla em ${base}, que é protegido`, saida);
+  if (ctx.config.git.protegidos.includes(base)) return recusa('T5', `${forma} mescla em ${base}, que é protegido`, saida);
   return null;
+}
+
+// `gh api …/repos/<dono>/<repo>/pulls/<n>/merge` com método que não seja GET (o PUT da API de merge; sem -X,
+// campo -f/-F/--input vira POST) mescla o PR como o `gh pr merge`. Dono e repositório escritos por extenso
+// podem ser outro repositório: não dá para saber a base. Endpoint em variável e a mutação do GraphQL
+// (mergePullRequest) não são avaliados.
+const GH_API_COM_VALOR = new Set(['-X', '--method', '-H', '--header', '-f', '--raw-field', '-F', '--field', '--input', '-q', '--jq',
+  '-t', '--template', '--hostname', '--cache', '-p', '--preview']);
+const GH_API_CAMPOS = new Set(['-f', '--raw-field', '-F', '--field', '--input']);
+const ENDPOINT_MERGE = /^(?:https?:\/\/[^/]+)?\/?(?:api\/v3\/)?repos\/([^/]+)\/([^/]+)\/pulls\/([^/?#]+)\/merge\/?(?:[?#].*)?$/;
+
+function travaT5Api(args, ctx, cmd) {
+  let metodo = null;
+  let comCampo = false;
+  let endpoint = null;
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    const igual = a.startsWith('--') ? a.indexOf('=') : -1;
+    const opcao = igual > 0 ? a.slice(0, igual) : a;
+    if (opcao === '-X' || opcao === '--method') { metodo = igual > 0 ? a.slice(igual + 1) : args[++k] ?? ''; continue; }
+    if (/^-X./.test(a)) { metodo = a.slice(2); continue; }
+    if (GH_API_COM_VALOR.has(opcao)) { if (GH_API_CAMPOS.has(opcao)) comCampo = true; if (igual < 0) k++; continue; }
+    if (/^-[fF]./.test(a)) { comCampo = true; continue; }
+    if (a.startsWith('-') && a.length > 1) continue;
+    endpoint ??= a;
+  }
+  const m = endpoint == null ? null : ENDPOINT_MERGE.exec(endpoint);
+  if (!m) return null;
+  metodo ??= comCampo ? 'POST' : 'GET';
+  if (!naoLiteral(metodo) && /^(GET|HEAD)$/i.test(metodo)) return null;
+  const saida = 'abra ou atualize o PR e peça a ordem do executivo para o merge em ramo protegido; o merge da base livre passa pelo gh pr merge';
+  const [, dono, repo, n] = m;
+  const esteRepo = /^(\{owner\}|:owner)$/.test(dono) && /^(\{repo\}|:repo)$/.test(repo);
+  if (!esteRepo || !/^\d+$/.test(n)) return recusa('T5', 'não consigo saber para qual ramo o PR será mesclado pela API', saida);
+  return recusaPelaBase(Number(n), ctx, cmd, 'gh api …/merge', saida);
 }
 
 function travaT5(cmd, ctx) {
@@ -267,6 +307,7 @@ function travaT5(cmd, ctx) {
       const antes = cmd.argv.slice(1, k);
       return travaT5Merge([...antes, ...resto.slice(2)], ctx, cmd);
     }
+    if (resto[0] === 'api') return travaT5Api(resto.slice(1), ctx, cmd);
   }
   return null;
 }
