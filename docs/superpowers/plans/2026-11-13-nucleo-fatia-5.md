@@ -49,3 +49,11 @@ docs/referencia/comandos.md, README.md, docs/aula/*
 - Atualizar `tools/ah`, `tools/ah.cmd`, `.claude/settings.json`, a CI e `docs/agents/`: o `atualizar` só aponta a diferença; quem troca é o `init`.
 - Migrar o esquema de `config.json` de uma versão para outra.
 - Ensaio com agente real e em Windows e macOS.
+
+## Pendências (depois da entrega)
+
+- Entre as duas renomeações da troca há alguns milissegundos sem `.harness/nucleo/`: um gancho ou um `tools/ah` que comece exatamente aí recusa com "não achei .harness/nucleo". Não há trava entre o `atualizar` e as sessões vivas.
+- Windows e macOS não executados. No Windows, renomear a pasta com um arquivo aberto por outro processo falha; o `atualizar` recusa e deixa a cópia antiga, mas isso não foi visto rodando.
+- Não ensaiado com agente real.
+- O item do `doctor` só confere quando a máquina tem o clone registrado (`origem.json`, gravado pelo `init` e pelo `atualizar` desta versão em diante); projeto preparado em outra máquina sai `ok` com "não conferido".
+- O `MANIFEST.json` passou a ter uma linha por arquivo do núcleo (perto de cem): o commit de cada atualização mostra a lista inteira quando muda.
