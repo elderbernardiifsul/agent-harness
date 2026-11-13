@@ -77,10 +77,13 @@ function moduloDaExtensao(nome, { extensao, comando }) {
   };
 }
 
-// `--help` ou `-h` antes de um `--` pede a ajuda do comando.
-const pedeAjuda = args => {
+// `--help` ou `-h` antes de um `--` pede a ajuda do comando. O comando cujos argumentos são texto livre (`nota`)
+// declara `ajudaSoComoUnicoArgumento`: aí só a opção sozinha pede ajuda, e no meio do texto ela é palavra.
+const eAjuda = a => a === '--help' || a === '-h';
+const pedeAjuda = (args, modulo) => {
+  if (modulo.ajudaSoComoUnicoArgumento) return args.length === 1 && eAjuda(args[0]);
   const fim = args.indexOf('--');
-  return (fim < 0 ? args : args.slice(0, fim)).some(a => a === '--help' || a === '-h');
+  return (fim < 0 ? args : args.slice(0, fim)).some(eAjuda);
 };
 
 export async function despachar(argv, {
@@ -99,7 +102,7 @@ export async function despachar(argv, {
   let amb = null;
   try {
     const modulo = daExtensao ? moduloDaExtensao(nome, daExtensao) : await import(pathToFileURL(path.join(dirComandos, `${nome}.mjs`)).href);
-    if (pedeAjuda(args)) {
+    if (pedeAjuda(args, modulo)) {
       escrever(`ah ${nome}: ${modulo.descricao ?? ''}\nUso: ${modulo.uso ?? `ah ${nome}`}\n`);
       return 0;
     }
