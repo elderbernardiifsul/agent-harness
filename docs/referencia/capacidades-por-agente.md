@@ -2,6 +2,8 @@
 
 Sondagem de 2026-11-12. Vale para as versões ensaiadas: Claude Code 2.1.319, Codex CLI 0.166.0 e OpenCode 2.2.2. Ao trocar de versão, refaça o ensaio do fim deste documento.
 
+Só o Claude Code tem adaptador no harness. Para Codex, OpenCode ou outro agente, o próprio agente escreve o adaptador seguindo o roteiro em [`docs/agentes/`](../agentes/README.md) (spec, seção 15); as colunas de Codex e OpenCode abaixo são o ponto de partida dele e, onde não há ensaio, valem como "da documentação, não ensaiado".
+
 Fontes (consultadas em 2026-11-12):
 
 - **[CC-hooks]** Claude Code, referência de ganchos: https://code.claude.com/docs/en/hooks
