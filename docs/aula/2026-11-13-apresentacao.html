@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vários agentes, um repositório</title>
+<title>Coordenação de vários agentes</title>
 <style>
 :root {
   --bg: #f6f6f2;
@@ -278,30 +278,30 @@ body.com-notas #painel-notas { display: block; }
 <section class="slide">
   <p class="rotulo">Programação Agêntica · IFSul · 13/11/2026</p>
   <h1>Coordenação de vários agentes<br>num mesmo repositório</h1>
-  <p class="sub">Harness de agentes de código: os problemas de várias sessões e pessoas no mesmo projeto e as classes de solução</p>
+  <p class="sub">Harness de agentes de código: problemas de coordenação entre sessões e pessoas num mesmo projeto e classes de solução</p>
   <p class="pequeno sub">professor elderbernardi</p>
-  <aside class="notas">Abertura. Pergunte quem já teve trabalho sobrescrito por outra pessoa num trabalho em grupo. Ouça no máximo duas histórias. Não apresente soluções.</aside>
+  <aside class="notas">Abertura. Perguntar à turma quem já teve trabalho sobrescrito por um colega em trabalho de grupo. Ouvir no máximo dois relatos. Não apresentar soluções.</aside>
 </section>
 
 <!-- 2 -->
 <section class="slide">
   <p class="rotulo">Organização da aula</p>
-  <h2>Método da aula</h2>
+  <h2>Estrutura de cada questão</h2>
   <ol>
-    <li>Problema e por que ele ocorre</li>
-    <li>Problematização: perguntas antes de qualquer solução</li>
+    <li>Problema e causa</li>
+    <li>Problematização: perguntas anteriores à solução</li>
     <li><span class="destaque">Proposta da turma</span>, em duplas</li>
     <li>Comparação das propostas: custo e condição de falha</li>
-    <li>Solução proposta: o mecanismo geral, com condições e custo</li>
-    <li>Um exemplo de implementação, em segundo plano</li>
+    <li>Solução proposta: mecanismo geral, condição de validade e custo</li>
+    <li>Exemplo de implementação, como complemento</li>
   </ol>
-  <aside class="notas">Formato das rodadas: 1 min individual, no papel; 3 min em duplas; uma proposta por dupla, numa linha do quadro. Desenhe no quadro a tabela de comparação (Proposta | Custa adotar | Custa não ter | Quebra quando) e mantenha-a até o fim da aula. O exemplo de implementação aparece só depois do mecanismo, como uma linha a mais da tabela.</aside>
+  <aside class="notas">Formato das rodadas: 1 min individual, em papel; 3 min em duplas; uma proposta por dupla, numa linha do quadro. Desenhar no quadro a tabela de comparação (Proposta | Custo de adoção | Custo da ausência | Condição de falha) e mantê-la até o fim da aula. O exemplo de implementação aparece somente depois do mecanismo, como uma linha adicional da tabela.</aside>
 </section>
 
 <!-- 3 -->
 <section class="slide">
   <p class="rotulo">Nivelamento</p>
-  <h2>Fluxo de trabalho individual: do ticket ao merge</h2>
+  <h2>Fluxo de trabalho individual, do ticket ao merge</h2>
   <div class="figura">
     <svg viewBox="0 0 1200 300" role="img" aria-label="Fluxo: ticket, ramo, commits, push, pull request, revisão e CI, merge na main">
       <defs>
@@ -320,16 +320,16 @@ body.com-notas #painel-notas { display: block; }
       <text x="290" y="102" text-anchor="middle" font-size="18" class="t-muted">linha separada</text>
       <rect x="410" y="30" width="150" height="100" rx="12" class="caixa"/>
       <text x="485" y="72" text-anchor="middle" font-size="24" font-weight="700">commits</text>
-      <text x="485" y="102" text-anchor="middle" font-size="18" class="t-muted">fotografias</text>
+      <text x="485" y="102" text-anchor="middle" font-size="18" class="t-muted">registros</text>
       <rect x="605" y="30" width="150" height="100" rx="12" class="caixa"/>
       <text x="680" y="72" text-anchor="middle" font-size="24" font-weight="700">push + PR</text>
-      <text x="680" y="102" text-anchor="middle" font-size="18" class="t-muted">pede para juntar</text>
+      <text x="680" y="102" text-anchor="middle" font-size="18" class="t-muted">pedido de junção</text>
       <rect x="800" y="30" width="170" height="100" rx="12" class="caixa"/>
       <text x="885" y="72" text-anchor="middle" font-size="24" font-weight="700">revisão + CI</text>
-      <text x="885" y="102" text-anchor="middle" font-size="18" class="t-muted">Carla lê, testes rodam</text>
+      <text x="885" y="102" text-anchor="middle" font-size="18" class="t-muted">leitura e testes</text>
       <rect x="1015" y="30" width="165" height="100" rx="12" class="caixa-a"/>
       <text x="1097" y="72" text-anchor="middle" font-size="24" font-weight="700">merge</text>
-      <text x="1097" y="102" text-anchor="middle" font-size="18" class="t-muted">entra na main</text>
+      <text x="1097" y="102" text-anchor="middle" font-size="18" class="t-muted">junção na main</text>
       <line x1="172" y1="80" x2="211" y2="80" class="seta" marker-end="url(#pf)"/>
       <line x1="367" y1="80" x2="406" y2="80" class="seta" marker-end="url(#pf)"/>
       <line x1="562" y1="80" x2="601" y2="80" class="seta" marker-end="url(#pf)"/>
@@ -337,18 +337,18 @@ body.com-notas #painel-notas { display: block; }
       <line x1="972" y1="80" x2="1011" y2="80" class="seta" marker-end="url(#pf)"/>
     </svg>
   </div>
-  <p class="pequeno sub">Ana, projeto <span class="mono">loja</span>: ticket #1 "o total do carrinho está errado".</p>
-  <aside class="notas">Explique cada termo em uma frase, apontando a caixa. Ticket (issue): tarefa registrada, com número. Ramo: linha de trabalho separada; main é o ramo principal. Commit: registro das mudanças, com mensagem. Push: envio dos commits ao remoto, a cópia no GitHub. PR: pedido para juntar o ramo na main. Revisão: leitura do código por outra pessoa. CI: serviço que roda os testes automaticamente. Merge: junção do ramo. Pergunte por que o trabalho não se faz direto na main.</aside>
+  <p class="pequeno sub">Exemplo: projeto <span class="mono">loja</span>, mantido por Ana; ticket #1, "o total do carrinho está errado".</p>
+  <aside class="notas">Explicar cada termo em uma frase, com referência à caixa correspondente. Ticket (issue): tarefa registrada, com número. Ramo: linha de trabalho separada; main é o ramo principal. Commit: registro das mudanças, com mensagem. Push: envio dos commits ao remoto, a cópia no GitHub. PR: pedido de junção do ramo na main. Revisão: leitura do código por outra pessoa. CI: serviço que executa os testes automaticamente. Merge: junção do ramo. Perguntar à turma por que o trabalho não se faz direto na main.</aside>
 </section>
 
 <!-- 4 -->
 <section class="slide">
-  <p class="rotulo">Nivelamento: atividade sobre o fluxo</p>
-  <p class="pergunta">Atividade: ordene os passos do fluxo de Ana e indique o que acontece se ela omitir a revisão ou a CI.</p>
-  <div class="atividade"><span class="chip">duplas</span><span class="chip">3 min</span><span class="chip">ordem escrita no papel</span></div>
+  <p class="rotulo">Nivelamento: atividade</p>
+  <p class="pergunta">Atividade: ordenar os passos do fluxo de Ana e indicar a consequência da omissão da revisão ou da CI.</p>
+  <div class="atividade"><span class="chip">duplas</span><span class="chip">3 min</span><span class="chip">ordem registrada em papel</span></div>
   <p class="mono pequeno sub">merge · revisão · ticket · push · commit · criar ramo · PR · CI</p>
-  <div class="espaco">ordem da turma</div>
-  <aside class="notas">Os cartões aparecem fora de ordem. Resposta: ticket, ramo, commit, push, PR, CI e revisão (podem correr juntas), merge. Sem revisão, só o autor leu o código. Sem CI, a execução dos testes depende de alguém lembrar. Pergunte o que muda quando o autor é um agente que afirma ter rodado os testes.</aside>
+  <div class="espaco">ordem proposta pela turma</div>
+  <aside class="notas">Os cartões aparecem fora de ordem. Resposta: ticket, ramo, commit, push, PR, CI e revisão (que podem ocorrer em paralelo), merge. Sem revisão, apenas o autor leu o código. Sem CI, a execução dos testes depende de alguém se lembrar de executá-los. Perguntar o que muda quando o autor é um agente que afirma ter executado os testes.</aside>
 </section>
 
 <!-- 5 -->
@@ -357,25 +357,25 @@ body.com-notas #painel-notas { display: block; }
   <h2>Conflito de merge e ramos de integração</h2>
   <div class="duas">
     <div>
-      <p>Carla alterou a mesma linha em outro ramo. No segundo merge, o git não decide qual versão vale:</p>
+      <p>Carla alterou a mesma linha em outro ramo. No segundo merge, o git não escolhe entre as duas versões e marca o conflito:</p>
       <pre>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
 total = soma(preco * qtd)
 =======
 total = soma(preco) - desconto
 &gt;&gt;&gt;&gt;&gt;&gt;&gt; cupom</pre>
-      <p class="pequeno">Uma pessoa lê as duas versões e decide. O conflito decorre de duas alterações no mesmo trecho.</p>
+      <p class="pequeno">O conflito decorre de duas alterações no mesmo trecho. A resolução cabe a uma pessoa, que lê as duas versões e escolhe o resultado.</p>
     </div>
     <div>
-      <p>Ramos comuns em projetos:</p>
+      <p>Ramos usuais de um projeto:</p>
       <ul>
-        <li><span class="mono">dev</span>: integração, onde os trabalhos se juntam</li>
+        <li><span class="mono">dev</span>: integração dos trabalhos</li>
         <li><span class="mono">stage</span>: teste</li>
-        <li><span class="mono">main</span>: produção, o que está publicado</li>
+        <li><span class="mono">main</span>: produção (versão publicada)</li>
       </ul>
-      <p class="pequeno sub">Publicar = levar a dev para stage ou main.</p>
+      <p class="pequeno sub">Publicação: passagem da dev para stage ou main.</p>
     </div>
   </div>
-  <aside class="notas">Mostre que o conflito aparece só no segundo merge: quem mesclou primeiro não tem conflito a resolver. Encerre o nivelamento com o conceito de pasta de trabalho: numa pasta, um ramo está em uso por vez, e trocar de ramo troca os arquivos da pasta inteira. O conceito volta na questão 2.</aside>
+  <aside class="notas">Mostrar que o conflito aparece apenas no segundo merge: quem fez o primeiro merge não tem conflito a resolver. Encerrar o nivelamento com o conceito de pasta de trabalho: numa pasta, um único ramo está em uso por vez, e a troca de ramo substitui os arquivos da pasta inteira. O conceito volta na questão 2.</aside>
 </section>
 
 <!-- 6 -->
@@ -383,13 +383,13 @@ total = soma(preco) - desconto
   <p class="rotulo">Nivelamento</p>
   <h2>Vocabulário do agente de código</h2>
   <ul>
-    <li><b>Agente de código</b>: programa que lê, edita e roda comandos no projeto</li>
-    <li><b>Conversa</b> (sessão): um terminal com o agente aberto</li>
-    <li><b>Contexto</b>: o que o agente consegue ler de uma vez; tem limite</li>
-    <li><b>Limpar ou compactar</b>: reiniciar a conversa, do zero ou a partir de um resumo</li>
-    <li><b>Ferramenta</b>: cada ação do agente (rodar um comando, editar um arquivo)</li>
+    <li><b>Agente de código</b>: programa que lê, edita e executa comandos no projeto</li>
+    <li><b>Conversa</b> (sessão): terminal com o agente em execução</li>
+    <li><b>Contexto</b>: texto que o agente lê de uma vez, de tamanho limitado</li>
+    <li><b>Limpeza ou compactação</b>: reinício da conversa, do zero ou a partir de um resumo</li>
+    <li><b>Ferramenta</b>: cada ação do agente (execução de comando, edição de arquivo)</li>
   </ul>
-  <aside class="notas">Pergunte quem já usou um agente de código e quem já atingiu o limite do contexto. Exemplos: Claude Code, OpenCode (o da disciplina), Codex. Processo: o programa do agente em execução no computador, com um número; o termo aparece na questão 1.</aside>
+  <aside class="notas">Perguntar quem já usou um agente de código e quem já atingiu o limite do contexto. Exemplos: Claude Code, OpenCode (adotado na disciplina), Codex. Processo: o programa do agente em execução no computador, identificado por um número; o termo aparece na questão 1.</aside>
 </section>
 
 <!-- 7 -->
@@ -407,42 +407,42 @@ total = soma(preco) - desconto
       <text x="170" y="182" text-anchor="middle" font-size="17" class="t-muted">pedido, arquivos, resultados</text>
       <rect x="450" y="110" width="300" height="100" rx="14" class="caixa-a"/>
       <text x="600" y="152" text-anchor="middle" font-size="24" font-weight="700">modelo</text>
-      <text x="600" y="182" text-anchor="middle" font-size="17" class="t-muted">escolhe o próximo passo</text>
+      <text x="600" y="182" text-anchor="middle" font-size="17" class="t-muted">escolha do próximo passo</text>
       <rect x="880" y="110" width="300" height="100" rx="14" class="caixa"/>
       <text x="1030" y="152" text-anchor="middle" font-size="24" font-weight="700">ferramenta</text>
-      <text x="1030" y="182" text-anchor="middle" font-size="17" class="t-muted">o programa executa</text>
+      <text x="1030" y="182" text-anchor="middle" font-size="17" class="t-muted">execução pelo programa</text>
       <line x1="322" y1="160" x2="446" y2="160" class="seta" marker-end="url(#pl)"/>
       <line x1="752" y1="160" x2="876" y2="160" class="seta" marker-end="url(#pl)"/>
-      <text x="814" y="148" text-anchor="middle" font-size="16" class="t-muted">pede</text>
+      <text x="814" y="148" text-anchor="middle" font-size="16" class="t-muted">pedido</text>
       <path d="M1030,212 C1030,290 170,290 170,214" class="seta" marker-end="url(#pl)"/>
-      <text x="600" y="314" text-anchor="middle" font-size="17" class="t-muted">o resultado volta ao contexto</text>
+      <text x="600" y="314" text-anchor="middle" font-size="17" class="t-muted">retorno do resultado ao contexto</text>
       <line x1="600" y1="108" x2="600" y2="40" class="seta-a" marker-end="url(#pla)"/>
       <text x="620" y="50" font-size="17" class="t-acc">resposta sem pedido de ferramenta: fim do laço</text>
     </svg>
   </div>
-  <p class="pequeno">O modelo só sabe o que está no contexto. O programa em volta decide quais ferramentas existem e executa cada pedido.</p>
-  <aside class="notas">3 min. Percorra o laço com um pedido concreto: "conserte o total". O modelo lê o contexto, pede para abrir total.js, recebe o arquivo, pede uma edição, pede para rodar os testes e responde. Pergunte o que o modelo sabe sobre o trabalho depois que a conversa é limpa. A resposta prepara a questão 1.</aside>
+  <p class="pequeno">O modelo dispõe apenas do que está no contexto. O programa que envolve o modelo define as ferramentas disponíveis e executa cada pedido.</p>
+  <aside class="notas">3 min. Percorrer o laço com um pedido concreto, "conserte o total": o modelo lê o contexto, pede a abertura de total.js, recebe o arquivo, pede uma edição, pede a execução dos testes e responde. Perguntar o que o modelo sabe sobre o trabalho depois da limpeza da conversa. A resposta prepara a questão 1.</aside>
 </section>
 
 <!-- 8 -->
 <section class="slide">
   <p class="rotulo">Contexto e definição</p>
-  <h2>Harness: o que envolve o modelo</h2>
-  <p class="pequeno">Harness é o conjunto de programa e regras em volta do modelo: as ferramentas, as permissões, o que entra no contexto e o que roda antes e depois de cada ação.</p>
+  <h2>Harness do agente e harness do projeto</h2>
+  <p class="pequeno">Harness: conjunto de programas e regras em torno do modelo, que define as ferramentas, as permissões, o conteúdo do contexto e o que é executado antes e depois de cada ação.</p>
   <div class="duas">
     <div>
       <p><b>Harness do agente</b></p>
-      <p class="pequeno sub">o programa: Claude Code, Codex, OpenCode</p>
+      <p class="pequeno sub">programa do agente: Claude Code, Codex, OpenCode</p>
       <ul class="pequeno">
         <li>ferramentas e permissões</li>
         <li>pontos de extensão: ganchos antes e depois das ferramentas, plugins</li>
-        <li>gestão do contexto: compactar, limpar</li>
+        <li>gestão do contexto: compactação e limpeza</li>
         <li>leitura do arquivo de instruções do projeto</li>
       </ul>
     </div>
     <div>
       <p><b>Harness do projeto</b></p>
-      <p class="pequeno sub">o que a equipe acrescenta</p>
+      <p class="pequeno sub">acréscimos da equipe</p>
       <ul class="pequeno">
         <li>instruções escritas (<span class="mono">AGENTS.md</span>, skills)</li>
         <li>comandos próprios da equipe</li>
@@ -451,23 +451,23 @@ total = soma(preco) - desconto
       </ul>
     </div>
   </div>
-  <p class="pequeno sub">Esta aula trata do harness do projeto, que se apoia nos pontos de extensão do harness do agente.</p>
-  <aside class="notas">Peça à turma um exemplo de cada coluna que ela já usou. O harness do agente vem pronto e muda a cada versão do programa; o harness do projeto é escrito e mantido pela equipe. As soluções desta aula usam as duas colunas: o gancho é um ponto de extensão do agente, configurado com uma regra do projeto.</aside>
+  <p class="pequeno sub">Objeto desta aula: o harness do projeto, construído sobre os pontos de extensão do harness do agente.</p>
+  <aside class="notas">Pedir à turma um exemplo de cada coluna, entre os que ela já usou. O harness do agente vem pronto e muda a cada versão do programa; a equipe escreve e mantém o harness do projeto. As soluções desta aula usam as duas colunas: o gancho é um ponto de extensão do agente, configurado com uma regra do projeto.</aside>
 </section>
 
 <!-- 9 -->
 <section class="slide">
   <p class="rotulo">Contexto e definição</p>
-  <h2>Questões que surgem com várias sessões</h2>
+  <h2>Problemas de coordenação entre várias sessões</h2>
   <p>Com uma sessão, a pessoa acompanha o agente, e o estado do trabalho cabe na conversa.</p>
-  <p>Com várias sessões e várias pessoas, o repositório passa a ser estado compartilhado. Cada sessão conhece só a própria conversa e não responde a perguntas como:</p>
+  <p>Com várias sessões e várias pessoas, o repositório passa a ser estado compartilhado. Cada sessão conhece apenas a própria conversa e não tem como determinar:</p>
   <ul class="pequeno">
-    <li>qual trabalho é desta sessão, depois de limpar a conversa?</li>
-    <li>onde cada sessão escreve, e quem decide uma disputa por tarefa?</li>
-    <li>o que fazer com o trabalho de uma sessão que parou?</li>
+    <li>o trabalho que pertence à sessão depois da limpeza da conversa;</li>
+    <li>o local de escrita de cada sessão e a instância que decide uma disputa por tarefa;</li>
+    <li>o destino do trabalho de uma sessão interrompida.</li>
   </ul>
-  <p class="pequeno sub">As respostas ficam a cargo do harness do projeto.</p>
-  <aside class="notas">2 min. Ligue ao conceito de sistema concorrente: vários escritores no mesmo estado, sem um coordenador. Não antecipe soluções; o cenário a seguir mostra cada pergunta acontecendo.</aside>
+  <p class="pequeno sub">Essas determinações cabem ao harness do projeto.</p>
+  <aside class="notas">2 min. Relacionar com o conceito de sistema concorrente: vários escritores sobre o mesmo estado, sem coordenador. Não antecipar soluções; o cenário seguinte ilustra cada um dos problemas.</aside>
 </section>
 
 <!-- 10 -->
@@ -496,30 +496,30 @@ total = soma(preco) - desconto
       </svg>
     </div>
     <ul class="pequeno">
-      <li>O agente do cupom grava "tudo o que mudou" e inclui o arquivo do carrinho, editado pela metade.</li>
-      <li>O agente do frete troca de ramo; os outros continuam a trabalhar no ramo errado.</li>
-      <li>Ana limpa a conversa do carrinho; o agente novo não conhece o trabalho do carrinho.</li>
-      <li>Carla, em casa, pega a mesma tarefa do frete.</li>
-      <li>Às 18h, a conversa do cupom trava, sem registro do que ficou feito.</li>
+      <li>O agente do cupom faz commit de "tudo o que mudou" e inclui o arquivo do carrinho, ainda incompleto.</li>
+      <li>O agente do frete troca de ramo; os outros dois continuam a trabalhar no ramo errado.</li>
+      <li>Ana limpa a conversa do carrinho; o novo agente desconhece o trabalho em curso.</li>
+      <li>Carla, em casa, assume a mesma tarefa do frete.</li>
+      <li>Às 18h, a conversa do cupom trava sem registro do trabalho concluído.</li>
     </ul>
   </div>
-  <aside class="notas">Apresente o cenário sem termos novos e sem soluções. Se alguém sugerir uma pasta por pessoa, anote no canto do quadro e informe que o tema volta na questão 2.</aside>
+  <aside class="notas">Apresentar o cenário sem termos novos e sem soluções. Se alguém sugerir uma pasta por pessoa, anotar a sugestão no canto do quadro e informar que o tema volta na questão 2.</aside>
 </section>
 
 <!-- 11 -->
 <section class="slide">
   <p class="rotulo">Problema geral: atividade</p>
-  <p class="pergunta">Atividade: classifique os problemas do cenário em dois grupos: os causados por falta de cuidado e os que o cuidado não evita.</p>
-  <div class="atividade"><span class="chip">duplas</span><span class="chip">2 min</span><span class="chip">lista no papel</span></div>
-  <div class="espaco">problemas que a turma viu</div>
-  <p class="pequeno sub">Relato de um projeto real: mais de 280 trabalhos em um mês; 15% dos commits eram só atualizar um arquivo de "quem faz o quê".</p>
-  <aside class="notas">Junte as listas no quadro. A lista da turma serve de roteiro para as próximas questões; marque com um número cada item que corresponder a uma questão. O relato vem de um projeto privado; informe que os números não podem ser conferidos e servem só de ilustração. Conceito a fixar: várias pessoas escrevendo ao mesmo tempo formam um sistema concorrente (como dois caixas vendendo o último ingresso), e a atenção individual não elimina as disputas desse sistema.</aside>
+  <p class="pergunta">Atividade: classificar os problemas do cenário em dois grupos, os causados por falta de cuidado e os que o cuidado não evita.</p>
+  <div class="atividade"><span class="chip">duplas</span><span class="chip">2 min</span><span class="chip">lista em papel</span></div>
+  <div class="espaco">problemas identificados pela turma</div>
+  <p class="pequeno sub">Relato de um projeto real: mais de 280 trabalhos em um mês; 15% dos commits consistiam apenas na atualização de um arquivo de "quem faz o quê".</p>
+  <aside class="notas">Reunir as listas no quadro. A lista da turma serve de roteiro para as questões seguintes; numerar cada item que corresponda a uma questão. O relato vem de um projeto privado; informar que os números não podem ser conferidos e têm valor apenas ilustrativo. Conceito: várias pessoas que escrevem ao mesmo tempo formam um sistema concorrente (por exemplo, dois caixas que vendem o último ingresso), e a atenção individual não elimina as disputas desse sistema.</aside>
 </section>
 
 <!-- 12 -->
 <section class="slide">
   <p class="rotulo">Roteiro</p>
-  <h2>Questões desta aula</h2>
+  <h2>Questões da aula 1</h2>
   <ol class="pequeno">
     <li>Identidade da sessão e continuidade do trabalho</li>
     <li>Isolamento do diretório de trabalho</li>
@@ -527,57 +527,57 @@ total = soma(preco) - desconto
     <li>Reserva de tarefas e desempate</li>
     <li>Regras pedidas e regras impostas</li>
   </ol>
-  <p class="pequeno sub">A aula 2 trata de mais oito questões. Em cada questão, a turma propõe e compara custos; só depois vem o mecanismo geral, com um exemplo de implementação.</p>
-  <aside class="notas">Ligue cada item da lista da turma a um número. Os itens que não couberem nas cinco questões devem estar entre as oito da aula 2 (sessão interrompida, mesmo arquivo, memória da máquina, rede, agentes diferentes, custo do método, critério de pronto, fechamento e publicação). Não apresente soluções.</aside>
+  <p class="pequeno sub">A aula 2 trata de outras oito questões. Em cada questão, a proposta da turma e a comparação de custos precedem o mecanismo geral e o exemplo de implementação.</p>
+  <aside class="notas">Associar cada item da lista da turma a um número. Os itens fora das cinco questões devem estar entre as oito da aula 2 (sessão interrompida, mesmo arquivo, memória da máquina, rede, agentes diferentes, custo do método, critério de pronto, fechamento e publicação). Não apresentar soluções.</aside>
 </section>
 
 <!-- Q1 -->
 <section class="slide">
   <p class="rotulo">Aula 1 · problema</p>
   <h2>Questão 1: identidade da sessão e continuidade do trabalho</h2>
-  <p>Ana pede "comece o carrinho" e trabalha uma hora. O contexto atinge o limite, e ela limpa a conversa.</p>
-  <p>A conversa nova não conhece o trabalho do carrinho e começa outra tarefa no mesmo lugar.</p>
-  <p>Em outro terminal, Ana retoma uma conversa de ontem, que passa a tratar o carrinho como trabalho dela.</p>
-  <p class="pequeno"><b>Por que ocorre:</b> a conversa é a única memória da sessão. Limpar descarta a conversa; compactar a troca por um resumo que pode omitir o trabalho em curso. Nada fora da conversa guarda o vínculo entre a sessão e o trabalho.</p>
-  <aside class="notas">Pergunte quem limpa ou compacta a conversa no uso diário do agente. Volte ao laço do slide 7: o modelo só sabe o que está no contexto.</aside>
+  <p>Ana pede "comece o carrinho" e trabalha uma hora. O contexto atinge o limite, e Ana limpa a conversa.</p>
+  <p>A nova conversa desconhece o trabalho do carrinho e inicia outra tarefa no mesmo diretório.</p>
+  <p>Em outro terminal, Ana retoma uma conversa do dia anterior, que passa a tratar o carrinho como trabalho próprio.</p>
+  <p class="pequeno"><b>Causa:</b> a conversa é a única memória da sessão. A limpeza descarta a conversa; a compactação a substitui por um resumo, que pode omitir o trabalho em curso. Nenhum registro externo à conversa guarda o vínculo entre a sessão e o trabalho.</p>
+  <aside class="notas">Perguntar quem limpa ou compacta a conversa no uso diário do agente. Retomar o laço do slide 7: o modelo dispõe apenas do que está no contexto.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questão 1: problematização</p>
-  <p class="pergunta">Atividade: proponha como o agente identifica o próprio trabalho depois de limpar a conversa. Indique quem decide quando duas conversas reivindicam o mesmo trabalho.</p>
-  <p class="pequeno">Antes de propor: o que o agente sabe sobre si mesmo depois de limpar a conversa? Quem, além dele, poderia guardar esse dado?</p>
-  <div class="atividade"><span class="chip">1 min sozinho</span><span class="chip">3 min em duplas</span><span class="chip">uma proposta por dupla no quadro</span></div>
+  <p class="pergunta">Atividade: propor um meio de o agente identificar o próprio trabalho depois da limpeza da conversa e indicar quem decide quando duas conversas reivindicam o mesmo trabalho.</p>
+  <p class="pequeno">Perguntas de apoio: o que o agente sabe sobre si mesmo depois da limpeza da conversa? Que outro componente poderia guardar esse dado?</p>
+  <div class="atividade"><span class="chip">1 min individual</span><span class="chip">3 min em duplas</span><span class="chip">uma proposta por dupla no quadro</span></div>
   <div class="espaco">propostas</div>
-  <aside class="notas">Respostas típicas: o agente anota num arquivo o que está fazendo; pergunta à pessoa; cada conversa recebe um nome escolhido; o agente lê o histórico do git. Se a turma não tratar da segunda parte, pergunte qual erro custa mais: herdar o trabalho de outra conversa ou soltar um trabalho que era dela.</aside>
+  <aside class="notas">Respostas frequentes: o agente anota num arquivo a tarefa em curso; o agente pergunta à pessoa; cada conversa recebe um nome escolhido; o agente lê o histórico do git. Se a turma não tratar da segunda parte, perguntar qual erro custa mais: herdar o trabalho de outra conversa ou perder um trabalho próprio.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questão 1: alternativas e custos</p>
   <table>
-    <tr><th>Proposta</th><th>Custa adotar</th><th>Quebra quando</th></tr>
-    <tr><td>O agente pergunta à pessoa</td><td>nada</td><td>a pessoa também esquece; cinco terminais</td></tr>
-    <tr><td>Anotar num arquivo do projeto</td><td>escrever o arquivo</td><td>todos disputam o mesmo arquivo</td></tr>
-    <tr><td>Um nome por conversa, dado pela pessoa</td><td>disciplina</td><td>alguém esquece de dar o nome</td></tr>
-    <tr><td>Na dúvida, herdar o trabalho</td><td>nada</td><td>duas conversas viram donas da mesma coisa</td></tr>
-    <tr><td class="vazio">a de vocês</td><td></td><td></td></tr>
+    <tr><th>Proposta</th><th>Custo de adoção</th><th>Condição de falha</th></tr>
+    <tr><td>O agente pergunta à pessoa</td><td>nenhum</td><td>esquecimento da pessoa; cinco terminais abertos</td></tr>
+    <tr><td>Anotação num arquivo do projeto</td><td>escrita do arquivo</td><td>disputa de todos pelo mesmo arquivo</td></tr>
+    <tr><td>Um nome por conversa, dado pela pessoa</td><td>disciplina</td><td>esquecimento do nome</td></tr>
+    <tr><td>Herança do trabalho em caso de dúvida</td><td>nenhum</td><td>duas conversas donas do mesmo trabalho</td></tr>
+    <tr><td class="vazio">proposta da turma</td><td></td><td></td></tr>
   </table>
-  <p class="pequeno"><b>Não resolver custa:</b> trabalho sem dono, ou com dois donos.</p>
-  <aside class="notas">Preencha com as propostas da turma; as linhas impressas são as mais frequentes. Conduza a discussão para a comparação entre dois erros: herdar o trabalho de outra conversa e deixar um trabalho sem dono.</aside>
+  <p class="pequeno"><b>Custos e riscos da ausência de solução:</b> trabalho sem dono ou com dois donos.</p>
+  <aside class="notas">Preencher com as propostas da turma; as linhas impressas são as mais frequentes. Conduzir a discussão para a comparação entre dois erros: herdar o trabalho de outra conversa e deixar um trabalho sem dono.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Aula 1 · solução proposta</p>
   <h2>Questão 1: solução proposta (identidade fornecida pelo agente e herança condicionada)</h2>
   <ul class="pequeno">
-    <li>A sessão usa como identidade o id de conversa que o próprio agente fornece. A pessoa não precisa nomear nada.</li>
-    <li>O vínculo entre a sessão e o trabalho fica registrado fora da conversa. O agente o recebe num resumo curto no começo de cada conversa.</li>
-    <li>A conversa nova herda o trabalho só com prova de continuidade: o mesmo processo do agente. <b>Na dúvida, não herda.</b></li>
+    <li>A sessão usa como identidade o id de conversa fornecido pelo próprio agente, sem nomeação pela pessoa.</li>
+    <li>O vínculo entre a sessão e o trabalho fica registrado fora da conversa e chega ao agente num resumo curto no início de cada conversa.</li>
+    <li>A nova conversa herda o trabalho apenas com prova de continuidade: o mesmo processo do agente. <b>Em caso de dúvida, não há herança.</b></li>
   </ul>
-  <p class="pequeno"><b>Vale quando</b> o agente fornece um id e avisa o começo de cada conversa; sem isso, a pessoa informa um nome à mão. <b>Custo:</b> às vezes a conversa perde um trabalho que era dela e precisa retomá-lo. O desenho aceita esse erro, que aparece como trabalho sem dono, para evitar dois donos.</p>
+  <p class="pequeno"><b>Condição de validade:</b> o agente fornece um id e avisa o início de cada conversa; sem isso, a pessoa informa um nome manualmente. <b>Custo:</b> em alguns casos a conversa perde um trabalho próprio e precisa retomá-lo. O desenho aceita esse erro (trabalho sem dono) para evitar o erro oposto (dois donos).</p>
   <p class="rotulo">Exemplo de implementação (agent-harness)</p>
   <pre><span class="cmd">$ tools/ah whoami</span>
 Sessão 7f3a9c21 (executor) · frente: as-1 carrinho</pre>
-  <aside class="notas">Compare com a tabela: o mecanismo corresponde a "um nome por conversa", sem depender da pessoa. Pergunte qual erro a turma prefere: herdar o trabalho de outra conversa ou deixar um trabalho sem dono. Condição de validade: a prova de continuidade exige que o sistema identifique o processo do agente; onde isso não é possível, a herança falha e o trabalho fica sem dono. No exemplo, "frente" é o trabalho com nome, e o executor tem uma frente por vez; à mão, a variável AH_SESSAO informa o nome da sessão.</aside>
+  <aside class="notas">Comparar com a tabela: o mecanismo corresponde a "um nome por conversa", sem depender da pessoa. Perguntar qual erro a turma prefere: herdar o trabalho de outra conversa ou deixar um trabalho sem dono. Condição de validade: a prova de continuidade exige que o sistema identifique o processo do agente; onde isso não é possível, a herança falha e o trabalho fica sem dono. No exemplo, "frente" designa o trabalho com nome, e o executor tem uma frente por vez; no uso manual, a variável AH_SESSAO informa o nome da sessão.</aside>
 </section>
 
 <!-- Q2 -->
@@ -585,34 +585,34 @@ Sessão 7f3a9c21 (executor) · frente: as-1 carrinho</pre>
   <p class="rotulo">Aula 1 · problema</p>
   <h2>Questão 2: isolamento do diretório de trabalho</h2>
   <p>O agente do carrinho edita <span class="mono">total.js</span>.</p>
-  <p>O agente do cupom grava "tudo o que mudou" e inclui o arquivo editado pela metade.</p>
-  <p>O agente do frete troca de ramo para conferir um detalhe. Os outros dois passam a trabalhar no ramo errado sem perceber.</p>
-  <p class="pequeno"><b>Por que ocorre:</b> um diretório de trabalho tem um só ramo em uso e uma só área de preparação do commit (o índice). As sessões na mesma pasta compartilham os dois.</p>
-  <aside class="notas">Se necessário, volte à figura do slide 10. Retome o nivelamento: numa pasta, um ramo em uso por vez.</aside>
+  <p>O agente do cupom faz commit de "tudo o que mudou" e inclui o arquivo ainda incompleto.</p>
+  <p>O agente do frete troca de ramo para conferir um detalhe. Os outros dois agentes passam a trabalhar no ramo errado sem detectar a troca.</p>
+  <p class="pequeno"><b>Causa:</b> um diretório de trabalho tem um único ramo em uso e uma única área de preparação do commit (o índice). As sessões na mesma pasta compartilham os dois.</p>
+  <aside class="notas">Se necessário, retomar a figura do slide 10 e o conceito do nivelamento: numa pasta, um ramo em uso por vez.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questão 2: problematização</p>
-  <p class="pergunta">Atividade: três pessoas alteram os mesmos arquivos, na mesma pasta, ao mesmo tempo. Proponha uma organização que impeça uma de danificar o trabalho da outra.</p>
-  <p class="pequeno">Antes de propor: o que as três sessões compartilham na mesma pasta? Quais desses itens podem ficar separados sem separar o repositório?</p>
-  <div class="atividade"><span class="chip">1 min sozinho</span><span class="chip">4 min em duplas</span><span class="chip">uma proposta por dupla no quadro</span></div>
+  <p class="pergunta">Atividade: três pessoas alteram os mesmos arquivos, na mesma pasta, ao mesmo tempo. Propor uma organização que impeça uma pessoa de danificar o trabalho de outra.</p>
+  <p class="pequeno">Perguntas de apoio: o que as três sessões compartilham na mesma pasta? Quais desses itens podem ficar separados sem separar o repositório?</p>
+  <div class="atividade"><span class="chip">1 min individual</span><span class="chip">4 min em duplas</span><span class="chip">uma proposta por dupla no quadro</span></div>
   <div class="espaco">propostas</div>
-  <aside class="notas">Respostas típicas: combinar no grupo; uma cópia da pasta para cada um; um ramo por pessoa; trava de arquivo; um de cada vez. Para cada proposta, pergunte se o agente conhece a combinação.</aside>
+  <aside class="notas">Respostas frequentes: combinação no grupo; uma cópia da pasta por pessoa; um ramo por pessoa; trava de arquivo; uma pessoa por vez. Para cada proposta, perguntar se o agente conhece a combinação.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questão 2: alternativas e custos</p>
   <table>
-    <tr><th>Proposta</th><th>Custa adotar</th><th>Quebra quando</th></tr>
-    <tr><td>Combinar no grupo</td><td>nada</td><td>no primeiro esquecimento; o agente não estava na conversa</td></tr>
-    <tr><td>Um ramo por pessoa</td><td>criar ramos</td><td>na mesma pasta só há um ramo em uso</td></tr>
-    <tr><td>Uma cópia da pasta para cada um</td><td>disco; instalar tudo de novo</td><td>na hora de juntar</td></tr>
-    <tr><td>Trava de arquivo</td><td>um sistema de travas</td><td>bloqueia trabalho legítimo; trava esquecida</td></tr>
-    <tr><td>Um de cada vez</td><td>espera</td><td>não quebra; só é lento</td></tr>
-    <tr><td class="vazio">a de vocês</td><td></td><td></td></tr>
+    <tr><th>Proposta</th><th>Custo de adoção</th><th>Condição de falha</th></tr>
+    <tr><td>Combinação no grupo</td><td>nenhum</td><td>primeiro esquecimento; agente ausente da combinação</td></tr>
+    <tr><td>Um ramo por pessoa</td><td>criação de ramos</td><td>pasta única, com um só ramo em uso</td></tr>
+    <tr><td>Uma cópia da pasta por pessoa</td><td>disco; nova instalação das dependências</td><td>integração das cópias</td></tr>
+    <tr><td>Trava de arquivo</td><td>sistema de travas</td><td>bloqueio de trabalho legítimo; trava esquecida</td></tr>
+    <tr><td>Uma pessoa por vez</td><td>espera</td><td>sem falha; apenas lentidão</td></tr>
+    <tr><td class="vazio">proposta da turma</td><td></td><td></td></tr>
   </table>
-  <p class="pequeno"><b>Não resolver custa:</b> commit com o trabalho do outro; horas no ramo errado.</p>
-  <aside class="notas">Conduza a turma à combinação de duas propostas: um ramo por pessoa e uma pasta por pessoa. Pergunte o custo de um worktree só depois que a turma chegar à ideia de uma pasta por trabalho.</aside>
+  <p class="pequeno"><b>Custos e riscos da ausência de solução:</b> commit com o trabalho de outra sessão; horas de trabalho no ramo errado.</p>
+  <aside class="notas">Conduzir a turma à combinação de duas propostas: um ramo por pessoa e uma pasta por pessoa. Introduzir o custo de um worktree somente depois que a turma chegar à ideia de uma pasta por trabalho.</aside>
 </section>
 
 <section class="slide">
@@ -623,7 +623,7 @@ Sessão 7f3a9c21 (executor) · frente: as-1 carrinho</pre>
       <svg viewBox="0 0 560 360" role="img" aria-label="Um repositório com três pastas de trabalho, cada uma com seu ramo">
         <rect x="20" y="20" width="520" height="80" rx="12" class="caixa"/>
         <text x="280" y="55" text-anchor="middle" font-size="22" font-weight="700">pasta principal · dev</text>
-        <text x="280" y="84" text-anchor="middle" font-size="18" class="t-muted">de todos: só integrar</text>
+        <text x="280" y="84" text-anchor="middle" font-size="18" class="t-muted">compartilhada: apenas integração</text>
         <rect x="20" y="170" width="245" height="90" rx="12" class="caixa-a"/>
         <text x="142" y="207" text-anchor="middle" font-size="21" font-weight="700">wt/carrinho</text>
         <text x="142" y="238" text-anchor="middle" font-size="18" class="mono">feat/carrinho</text>
@@ -638,67 +638,67 @@ Sessão 7f3a9c21 (executor) · frente: as-1 carrinho</pre>
     <div>
       <ul class="pequeno">
         <li>Cada trabalho recebe um ramo e uma pasta próprios, criada com <span class="mono">git worktree add</span>.</li>
-        <li>As pastas compartilham o repositório e o histórico; cada uma tem o seu ramo em uso e o seu índice. O git recusa o mesmo ramo em duas pastas.</li>
-        <li>A pasta principal fica reservada para integrar.</li>
+        <li>As pastas compartilham o repositório e o histórico; cada uma tem ramo em uso e índice próprios. O git recusa o mesmo ramo em duas pastas.</li>
+        <li>A pasta principal fica reservada à integração.</li>
       </ul>
-      <p class="pequeno"><b>Vale</b> para várias sessões numa máquina. <b>Custo:</b> uma pasta por trabalho, com a sua cópia das dependências; os conflitos aparecem no merge.</p>
+      <p class="pequeno"><b>Condição de validade:</b> várias sessões numa só máquina. <b>Custo:</b> uma pasta por trabalho, com cópia própria das dependências; os conflitos aparecem no merge.</p>
       <p class="rotulo">Exemplo de implementação (agent-harness)</p>
       <pre><span class="cmd">$ tools/ah open carrinho</span>
 <span class="ok">Frente as-1 carrinho aberta.</span>
 Trabalhe em: ~/.cache/…/wt/carrinho</pre>
     </div>
   </div>
-  <aside class="notas">Worktree: uma segunda pasta de trabalho do mesmo repositório, com o seu próprio ramo, sem copiar o histórico. O mecanismo combina "um ramo por pessoa" e "uma pasta por pessoa". Se perguntarem o que impede uma sessão de alterar a pasta principal ou a pasta de outra, informe que o tema é a questão 5, anote e prossiga. Para fixar, indique o exercício 3 do material: git worktree add, git worktree list e a recusa do git ao usar o mesmo ramo em duas pastas.</aside>
+  <aside class="notas">Worktree: segunda pasta de trabalho do mesmo repositório, com ramo próprio, sem cópia do histórico. O mecanismo combina "um ramo por pessoa" e "uma pasta por pessoa". Se alguém perguntar o que impede uma sessão de alterar a pasta principal ou a pasta de outra sessão, informar que o tema é a questão 5, anotar a pergunta e prosseguir. Para fixação, indicar o exercício 3 do material: git worktree add, git worktree list e a recusa do git ao mesmo ramo em duas pastas.</aside>
 </section>
 
 <!-- Q3 -->
 <section class="slide">
   <p class="rotulo">Aula 1 · problema</p>
   <h2>Questão 3: registro de quem faz o quê</h2>
-  <p>O grupo cria <span class="mono">QUADRO.md</span> no projeto. Cada agente escreve "estou no carrinho" ao começar.</p>
-  <p>Uma semana depois, metade dos commits altera o quadro, os merges dão conflito nesse arquivo e cada agente lê o arquivo inteiro antes de trabalhar.</p>
-  <p class="pequeno"><b>Por que ocorre:</b> o quadro é estado que muda a cada minuto, guardado num sistema de versões feito para histórico. Cada mudança vira commit, e cada ramo carrega uma versão diferente do quadro.</p>
-  <aside class="notas">Ligue ao relato do slide 11. Pergunte quanto do contexto do agente a leitura do quadro consome, e o que sobra para o trabalho.</aside>
+  <p>O grupo cria <span class="mono">QUADRO.md</span> no projeto. Cada agente escreve "estou no carrinho" ao iniciar o trabalho.</p>
+  <p>Uma semana depois, metade dos commits altera o quadro, os merges geram conflito nesse arquivo e cada agente lê o arquivo inteiro antes de trabalhar.</p>
+  <p class="pequeno"><b>Causa:</b> o quadro contém estado que muda a cada minuto, armazenado num sistema de controle de versões projetado para histórico. Cada mudança gera um commit, e cada ramo contém uma versão diferente do quadro.</p>
+  <aside class="notas">Relacionar com o relato do slide 11. Perguntar que fração do contexto do agente a leitura do quadro consome e quanto resta para o trabalho.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questão 3: problematização</p>
-  <p class="pergunta">Atividade: proponha onde registrar quem faz o quê, de modo que todos consultem o registro, ninguém dispute o arquivo e o agente não gaste meia conversa na leitura.</p>
-  <p class="pequeno">Antes de propor: o quadro é histórico do projeto ou estado de agora? Quem precisa dele em outra máquina, e com que detalhe?</p>
-  <div class="atividade"><span class="chip">1 min sozinho</span><span class="chip">3 min em duplas</span><span class="chip">uma proposta por dupla no quadro</span></div>
+  <p class="pergunta">Atividade: propor um local para o registro de quem faz o quê que permita a consulta por todos, evite a disputa pelo arquivo e não consuma metade da conversa do agente na leitura.</p>
+  <p class="pequeno">Perguntas de apoio: o quadro é histórico do projeto ou estado atual? Quem precisa dele em outra máquina, e com que grau de detalhe?</p>
+  <div class="atividade"><span class="chip">1 min individual</span><span class="chip">3 min em duplas</span><span class="chip">uma proposta por dupla no quadro</span></div>
   <div class="espaco">propostas</div>
-  <aside class="notas">Respostas típicas: arquivo no repositório; grupo de mensagens; planilha; os tickets do GitHub; um servidor. Critério para a comparação: a informação é histórico do projeto ou estado atual?</aside>
+  <aside class="notas">Respostas frequentes: arquivo no repositório; grupo de mensagens; planilha; tickets do GitHub; servidor dedicado. Critério de comparação: a informação é histórico do projeto ou estado atual?</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questão 3: alternativas e custos</p>
   <table>
-    <tr><th>Proposta</th><th>Custa adotar</th><th>Quebra quando</th></tr>
-    <tr><td>Arquivo no projeto</td><td>nada de infraestrutura</td><td>commits e conflitos só de quadro; custo de leitura</td></tr>
-    <tr><td>Grupo de mensagens, planilha</td><td>nada</td><td>o agente não vê</td></tr>
-    <tr><td>Tickets do GitHub</td><td>rede</td><td>sem internet; quem não usa ticket some</td></tr>
-    <tr><td>Um servidor só para isso</td><td>manter o servidor</td><td>o servidor cai</td></tr>
-    <tr><td class="vazio">a de vocês</td><td></td><td></td></tr>
+    <tr><th>Proposta</th><th>Custo de adoção</th><th>Condição de falha</th></tr>
+    <tr><td>Arquivo no projeto</td><td>nenhuma infraestrutura</td><td>commits e conflitos só de quadro; custo de leitura</td></tr>
+    <tr><td>Grupo de mensagens, planilha</td><td>nenhum</td><td>informação invisível para o agente</td></tr>
+    <tr><td>Tickets do GitHub</td><td>rede</td><td>falta de internet; trabalho sem ticket invisível</td></tr>
+    <tr><td>Servidor dedicado</td><td>manutenção do servidor</td><td>queda do servidor</td></tr>
+    <tr><td class="vazio">proposta da turma</td><td></td><td></td></tr>
   </table>
-  <p class="pequeno"><b>Não resolver custa:</b> ninguém sabe quem faz o quê; perguntar a cada vez.</p>
-  <aside class="notas">Conduza à distinção entre o que outra máquina precisa saber (pouco) e o que só esta máquina precisa (muito).</aside>
+  <p class="pequeno"><b>Custos e riscos da ausência de solução:</b> desconhecimento de quem faz o quê; consulta manual a cada vez.</p>
+  <aside class="notas">Conduzir à distinção entre o que outra máquina precisa saber (pouco) e o que apenas esta máquina precisa saber (muito).</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Aula 1 · solução proposta</p>
   <h2>Questão 3: solução proposta (estado de coordenação fora do versionamento)</h2>
   <ul class="pequeno">
-    <li><b>Estado de agora</b> (quem faz o quê): fora do git, em arquivos locais da máquina, com escrita atômica e um escritor por vez.</li>
-    <li><b>Histórico</b> (o que foi concluído): no git, uma linha por trabalho fechado.</li>
-    <li><b>Entre máquinas</b>: comentários nos tickets do rastreador.</li>
-    <li>O agente recebe um resumo curto do estado, e não o quadro inteiro.</li>
+    <li><b>Estado atual</b> (quem faz o quê): fora do git, em arquivos locais da máquina, com escrita atômica e um escritor por vez.</li>
+    <li><b>Histórico</b> (trabalho concluído): no git, uma linha por trabalho fechado.</li>
+    <li><b>Comunicação entre máquinas</b>: comentários nos tickets do rastreador.</li>
+    <li>O agente recebe um resumo curto do estado, em vez do quadro inteiro.</li>
   </ul>
-  <p class="pequeno"><b>Vale quando</b> a maior parte da coordenação acontece numa máquina. <b>Custo:</b> outra máquina vê só o que passa pelos tickets; trabalho sem ticket fica invisível para ela.</p>
+  <p class="pequeno"><b>Condição de validade:</b> a maior parte da coordenação ocorre numa só máquina. <b>Custo:</b> outra máquina vê apenas o que passa pelos tickets; trabalho sem ticket fica invisível para ela.</p>
   <p class="rotulo">Exemplo de implementação (agent-harness)</p>
   <pre><span class="cmd">$ tools/ah board</span>
 ID    NOME      DONA      ESTADO  TICKETS  …  ÚLTIMA NOTA
 as-1  carrinho  ana-term  ativa   #1       …  mexendo no total</pre>
-  <aside class="notas">Compare com as propostas: o mecanismo usa duas, uma para cada alcance (arquivo, fora do git, para esta máquina; tickets entre máquinas). Escrita atômica: gravar num arquivo temporário e trocar o nome de uma vez, para o arquivo nunca ficar pela metade. Relação com o trabalho final: o registro da disciplina é histórico e vai para o git com data; o "quem faz o quê agora" não precisa ir.</aside>
+  <aside class="notas">Comparar com as propostas: o mecanismo usa duas delas, uma para cada alcance (arquivo fora do git, para esta máquina; tickets, entre máquinas). Escrita atômica: gravação num arquivo temporário seguida de renomeação numa única operação, de modo que o arquivo nunca fique incompleto. Relação com o trabalho final: o registro da disciplina é histórico e vai para o git com data; o "quem faz o quê agora" não precisa ir.</aside>
 </section>
 
 <!-- Q4 -->
@@ -706,33 +706,33 @@ as-1  carrinho  ana-term  ativa   #1       …  mexendo no total</pre>
   <p class="rotulo">Aula 1 · problema</p>
   <h2>Questão 4: reserva de tarefas e desempate</h2>
   <p>Ana e Carla, cada uma em casa, consultam os tickets às 9h.</p>
-  <p>As duas pegam o #2, "frete grátis acima de 200".</p>
+  <p>As duas assumem o #2, "frete grátis acima de 200".</p>
   <p>Às 11h, existem duas soluções parciais e diferentes.</p>
-  <p class="pequeno"><b>Por que ocorre:</b> conferir que a tarefa está livre e pegá-la são dois passos. Entre eles, a outra pessoa faz a mesma conferência. Os relógios das duas máquinas divergem e não servem para ordenar os pedidos.</p>
-  <aside class="notas">Depois do intervalo. Retome a tabela de comparação no quadro.</aside>
+  <p class="pequeno"><b>Causa:</b> a conferência de que a tarefa está livre e a apropriação da tarefa são dois passos distintos. Entre eles, a outra pessoa faz a mesma conferência. Os relógios das duas máquinas divergem e não servem para ordenar os pedidos.</p>
+  <aside class="notas">Slide posterior ao intervalo. Retomar a tabela de comparação no quadro.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questão 4: problematização</p>
-  <p class="pergunta">Atividade: proponha um mecanismo que impeça duas pessoas de pegar a mesma tarefa. Defina quem fica com a tarefa se as duas a pegarem no mesmo segundo.</p>
-  <p class="pequeno">Antes de propor: que registro as duas máquinas enxergam na mesma ordem? O que a perdedora precisa desfazer?</p>
-  <div class="atividade"><span class="chip">1 min sozinho</span><span class="chip">4 min em duplas</span><span class="chip">uma regra de desempate por dupla</span></div>
+  <p class="pergunta">Atividade: propor um mecanismo que impeça duas pessoas de assumir a mesma tarefa e definir quem fica com a tarefa quando as duas a assumem no mesmo segundo.</p>
+  <p class="pequeno">Perguntas de apoio: que registro as duas máquinas enxergam na mesma ordem? O que a pessoa preterida precisa desfazer?</p>
+  <div class="atividade"><span class="chip">1 min individual</span><span class="chip">4 min em duplas</span><span class="chip">uma regra de desempate por dupla</span></div>
   <div class="espaco">propostas e regras de desempate</div>
-  <aside class="notas">Respostas típicas: combinar no chat; pôr o nome no ticket; quem chegar primeiro; dividir por área. Para "quem chegar primeiro", pergunte qual relógio define a ordem, já que os relógios das máquinas divergem.</aside>
+  <aside class="notas">Respostas frequentes: combinação no chat; nome no ticket; prioridade de quem chegar primeiro; divisão por área. Para "quem chegar primeiro", perguntar qual relógio define a ordem, dado que os relógios das máquinas divergem.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questão 4: alternativas e custos</p>
   <table>
-    <tr><th>Proposta</th><th>Custa adotar</th><th>Quebra quando</th></tr>
-    <tr><td>Combinar no chat</td><td>nada</td><td>alguém não leu</td></tr>
-    <tr><td>Pôr o nome no ticket à mão</td><td>um clique</td><td>esquece de pôr, esquece de tirar</td></tr>
-    <tr><td>Quem chegar primeiro</td><td>um relógio comum</td><td>as duas conferem no mesmo segundo</td></tr>
-    <tr><td>Dividir por área</td><td>planejar</td><td>a área de uma precisa da outra</td></tr>
-    <tr><td class="vazio">a de vocês</td><td></td><td></td></tr>
+    <tr><th>Proposta</th><th>Custo de adoção</th><th>Condição de falha</th></tr>
+    <tr><td>Combinação no chat</td><td>nenhum</td><td>mensagem não lida</td></tr>
+    <tr><td>Nome no ticket, inserido à mão</td><td>um clique</td><td>esquecimento de inserir ou de remover</td></tr>
+    <tr><td>Prioridade de quem chegar primeiro</td><td>relógio comum</td><td>duas conferências no mesmo segundo</td></tr>
+    <tr><td>Divisão por área</td><td>planejamento</td><td>dependência entre áreas</td></tr>
+    <tr><td class="vazio">proposta da turma</td><td></td><td></td></tr>
   </table>
-  <p class="pequeno"><b>Não resolver custa:</b> duas metades de solução; uma manhã jogada fora.</p>
-  <aside class="notas">Conceito central: conferir que a tarefa está livre e depois pegá-la são dois passos; entre eles, outra pessoa pode pegar a mesma tarefa. Essa situação se chama corrida.</aside>
+  <p class="pequeno"><b>Custos e riscos da ausência de solução:</b> duas soluções parciais; uma manhã de trabalho perdida.</p>
+  <aside class="notas">Conceito central: a conferência de que a tarefa está livre e a apropriação da tarefa são dois passos; entre eles, outra pessoa pode assumir a mesma tarefa. Essa situação se chama corrida.</aside>
 </section>
 
 <section class="slide">
@@ -745,22 +745,22 @@ as-1  carrinho  ana-term  ativa   #1       …  mexendo no total</pre>
         <text x="280" y="51" text-anchor="middle" font-size="22" font-weight="700">ticket #2 · comentários em ordem</text>
         <rect x="20" y="95" width="520" height="66" rx="10" class="caixa-a"/>
         <text x="40" y="125" font-size="20" font-weight="700">1º · reserva de Ana</text>
-        <text x="40" y="150" font-size="18" class="t-acc">mais antigo no servidor: fica com o ticket</text>
+        <text x="40" y="150" font-size="18" class="t-acc">mais antiga no servidor: posse do ticket</text>
         <rect x="20" y="180" width="520" height="66" rx="10" class="caixa"/>
         <text x="40" y="210" font-size="20" font-weight="700">2º · reserva de Carla</text>
-        <text x="40" y="235" font-size="18" class="t-muted">relê, vê que perdeu</text>
+        <text x="40" y="235" font-size="18" class="t-muted">releitura e constatação da precedência de Ana</text>
         <rect x="20" y="265" width="520" height="66" rx="10" class="caixa-w"/>
         <text x="40" y="295" font-size="20" font-weight="700">3º · Carla: desistência</text>
-        <text x="40" y="320" font-size="18" class="t-warn">desfaz a reserva, não cria nada</text>
+        <text x="40" y="320" font-size="18" class="t-warn">reserva desfeita, nada criado</text>
       </svg>
     </div>
     <div>
       <ul class="pequeno">
-        <li>Cada um registra a reserva no ticket, sem trava prévia, e relê o ticket depois de registrar.</li>
-        <li>Com duas reservas, vence a mais antiga na ordem do servidor. A outra desiste e desfaz o que fez.</li>
+        <li>Cada pessoa registra a reserva no ticket, sem trava prévia, e relê o ticket depois do registro.</li>
+        <li>Com duas reservas, vence a mais antiga na ordem do servidor. A outra pessoa desiste e desfaz o que fez.</li>
         <li>O relógio de cada máquina não entra na decisão.</li>
       </ul>
-      <p class="pequeno"><b>Vale</b> com rede e com um servidor que ordene os registros. <b>Custo:</b> sem rede, ninguém reserva; o rastreador de tickets passa a ser o banco de coordenação.</p>
+      <p class="pequeno"><b>Condição de validade:</b> rede e servidor que ordene os registros. <b>Custo:</b> sem rede, nenhuma reserva é possível; o rastreador de tickets passa a ser o banco de coordenação.</p>
       <p class="rotulo">Exemplo de implementação (agent-harness)</p>
       <pre><span class="cmd">$ tools/ah open frete --tickets 2</span>
 <span class="rec">Recusado: Não reservei os tickets:
@@ -768,7 +768,7 @@ o ticket #2 já está reservado pela
 frente cd-4 (frete), de @carla-dias.</span></pre>
     </div>
   </div>
-  <aside class="notas">Reserva otimista: registra primeiro e confere depois, sem trava; a releitura resolve a corrida. A reserva funciona como aviso e não garante exclusão no instante do registro; o desempate garante que, no fim, só uma fica. No exemplo, a ordem vem do número do comentário no servidor, e a reserva põe a pessoa como responsável e um rótulo no ticket. Pergunte: A pede #1 e #2, B pede #2 e #1, ao mesmo tempo; com desempate por ticket, as duas podem desistir. Garantir um vencedor exige uma ordem única entre todas as tarefas (exercício 6 do material). Pergunte se compensa.</aside>
+  <aside class="notas">Reserva otimista: o registro precede a conferência, sem trava; a releitura resolve a corrida. A reserva funciona como aviso e não garante exclusão no instante do registro; o desempate garante que, ao final, apenas uma reserva permaneça. No exemplo, a ordem vem do número do comentário no servidor, e a reserva atribui o ticket à pessoa e acrescenta um rótulo. Caso para a turma: A pede #1 e #2, B pede #2 e #1, ao mesmo tempo; com desempate por ticket, as duas podem desistir. Garantir um vencedor exige uma ordem única entre todas as tarefas (exercício 6 do material). Perguntar se esse custo compensa.</aside>
 </section>
 
 <!-- Q5 -->
@@ -776,54 +776,54 @@ frente cd-4 (frete), de @carla-dias.</span></pre>
   <p class="rotulo">Aula 1 · problema</p>
   <h2>Questão 5: regras pedidas e regras impostas</h2>
   <p>O arquivo de instruções do grupo contém a regra "nunca envie para a main".</p>
-  <p>No meio de uma tarefa longa, o agente envia para a main "para publicar a correção".</p>
-  <p>Em outra ocasião, ele troca para a main primeiro e envia sem indicar o destino, uma forma que a instrução não previa.</p>
-  <p class="pequeno"><b>Por que ocorre:</b> a instrução entra no contexto como texto. Numa tarefa longa, o modelo pode perdê-la na compactação ou não reconhecer uma forma nova do mesmo ato. Nada fora do modelo confere o comando antes de ele rodar.</p>
-  <aside class="notas">Pergunte quem já viu o agente ignorar uma instrução escrita. Não mencione ainda o gancho.</aside>
+  <p>Durante uma tarefa longa, o agente faz push para a main "para publicar a correção".</p>
+  <p>Em outra ocasião, o agente troca para a main e executa push sem indicar o destino, forma não prevista na instrução.</p>
+  <p class="pequeno"><b>Causa:</b> a instrução entra no contexto como texto. Numa tarefa longa, o modelo pode perdê-la na compactação ou não reconhecer uma forma nova do mesmo ato. Nenhum componente externo ao modelo confere o comando antes da execução.</p>
+  <aside class="notas">Perguntar quem já viu o agente ignorar uma instrução escrita. Não mencionar ainda o gancho.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questão 5: problematização</p>
-  <p class="pergunta">Atividade: escreva uma regra que exige proibição e uma que basta pedir. Indique o que acontece se o mecanismo de proibição falhar: libera tudo ou bloqueia tudo?</p>
-  <p class="pequeno">Antes de propor: quem, além do modelo, vê o comando antes de ele rodar? E depois que ele chega ao servidor?</p>
-  <div class="atividade"><span class="chip">1 min sozinho</span><span class="chip">4 min em duplas</span><span class="chip">duas regras por dupla no quadro</span></div>
-  <div class="espaco">"proibido" · "basta pedir"</div>
-  <aside class="notas">Respostas típicas: escrever melhor a instrução; pedir confirmação para tudo; tirar a permissão de enviar; um programa que confere o comando antes; proteger o ramo no GitHub. Divida o quadro em duas colunas: proibido × pedido.</aside>
+  <p class="pergunta">Atividade: escrever uma regra que exige proibição e uma que admite simples recomendação. Indicar o efeito de uma falha do mecanismo de proibição: liberar tudo ou bloquear tudo?</p>
+  <p class="pequeno">Perguntas de apoio: que outro componente, além do modelo, vê o comando antes da execução? E depois que o comando chega ao servidor?</p>
+  <div class="atividade"><span class="chip">1 min individual</span><span class="chip">4 min em duplas</span><span class="chip">duas regras por dupla no quadro</span></div>
+  <div class="espaco">proibição · recomendação</div>
+  <aside class="notas">Respostas frequentes: instrução mais bem escrita; confirmação para tudo; retirada da permissão de push; programa que confere o comando antes da execução; proteção do ramo no GitHub. Dividir o quadro em duas colunas: proibição × recomendação.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questão 5: alternativas e custos</p>
   <table>
-    <tr><th>Proposta</th><th>Custa adotar</th><th>Quebra quando</th></tr>
-    <tr><td>Instrução mais bem escrita</td><td>escrever</td><td>o agente esquece ou acha outra forma; ninguém percebe</td></tr>
-    <tr><td>Confirmação humana para tudo</td><td>atenção da pessoa</td><td>a pessoa aprova sem ler</td></tr>
-    <tr><td>Tirar a permissão</td><td>configurar o agente</td><td>o agente não consegue trabalhar</td></tr>
-    <tr><td>Conferir o comando antes de rodar</td><td>um programa que entende comandos</td><td>sempre há uma forma que escapa</td></tr>
-    <tr><td>Proteger o ramo no GitHub</td><td>configurar o servidor</td><td>repositório privado de conta gratuita não tem</td></tr>
-    <tr><td class="vazio">a de vocês</td><td></td><td></td></tr>
+    <tr><th>Proposta</th><th>Custo de adoção</th><th>Condição de falha</th></tr>
+    <tr><td>Instrução mais bem escrita</td><td>redação</td><td>esquecimento ou forma nova de comando, sem detecção</td></tr>
+    <tr><td>Confirmação humana para tudo</td><td>atenção da pessoa</td><td>aprovação sem leitura</td></tr>
+    <tr><td>Retirada da permissão</td><td>configuração do agente</td><td>agente impedido de trabalhar</td></tr>
+    <tr><td>Conferência do comando antes da execução</td><td>programa que interpreta comandos</td><td>forma de comando não reconhecida</td></tr>
+    <tr><td>Proteção do ramo no GitHub</td><td>configuração do servidor</td><td>repositório privado de conta gratuita, sem o recurso</td></tr>
+    <tr><td class="vazio">proposta da turma</td><td></td><td></td></tr>
   </table>
-  <p class="pequeno"><b>Não resolver custa:</b> um envio para produção que ninguém revisou.</p>
-  <aside class="notas">Para encerrar a comparação: a falha de uma instrução passa despercebida; a falha de um mecanismo produz uma recusa visível. Pergunte qual dos dois a turma prefere para "não enviar para a main" e qual prefere para "escrever o teste antes".</aside>
+  <p class="pequeno"><b>Custos e riscos da ausência de solução:</b> push para produção sem revisão.</p>
+  <aside class="notas">Fechamento da comparação: a falha de uma instrução passa despercebida; a falha de um mecanismo produz uma recusa visível. Perguntar qual dos dois a turma prefere para "não enviar para a main" e qual prefere para "escrever o teste antes".</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Aula 1 · solução proposta</p>
   <h2>Questão 5: solução proposta (gancho antes do comando, com falha fechada, e proteção de ramo no servidor)</h2>
   <ul class="pequeno">
-    <li><b>Gancho</b>: programa que o agente executa antes de cada ferramenta. Ele lê o comando e recusa o que estraga o trabalho dos outros; a recusa diz o motivo e a saída.</li>
-    <li><b>Falha fechada</b>: se o gancho não consegue ler ou avaliar o comando, ele recusa.</li>
-    <li><b>Proteção de ramo no servidor</b>: o servidor recusa o envio direto ao ramo protegido, em qualquer forma de comando.</li>
-    <li>Método (plano, teste antes) fica como instrução.</li>
+    <li><b>Gancho</b>: programa que o agente executa antes de cada ferramenta. O gancho lê o comando e recusa o que danifica o trabalho de outras sessões; a recusa informa o motivo e a alternativa.</li>
+    <li><b>Falha fechada</b>: recusa de todo comando que o gancho não consegue ler ou avaliar.</li>
+    <li><b>Proteção de ramo no servidor</b>: recusa do push direto ao ramo protegido, em qualquer forma de comando.</li>
+    <li>Método (plano, teste antes) permanece como instrução.</li>
   </ul>
-  <p class="pequeno"><b>Vale</b> para agentes com gancho antes da ferramenta e para plataformas com proteção de ramo. <b>Custo:</b> o gancho lê texto, e há formas de comando que escapam; o comando que a pessoa digita no terminal não passa pelo gancho.</p>
+  <p class="pequeno"><b>Condição de validade:</b> agentes com gancho antes da ferramenta e plataformas com proteção de ramo. <b>Custo:</b> o gancho lê texto, e algumas formas de comando escapam; o comando digitado pela pessoa no terminal não passa pelo gancho.</p>
   <p class="rotulo">Exemplo de implementação (agent-harness)</p>
-  <p class="pequeno">Travas numeradas no gancho: comando ilegível (T0), trocar o ramo da pasta principal (T1), "adicionar tudo" na pasta principal (T2), descartar trabalho na pasta principal (T3), escrever na pasta de outra sessão viva (T4), enviar para ramo protegido (T5).</p>
-  <aside class="notas">Duas camadas: o gancho avisa antes e indica a saída; a barreira efetiva fica no servidor. Regra do mecanismo: impor só o que protege o trabalho dos outros e a máquina; método não é motivo de recusa. Pergunte por que a falha fechada serve para "não enviar para a main" e atrapalharia "escrever o teste antes". Desvio de emergência, no exemplo: um prefixo no próprio comando libera as travas naquele comando, por ordem humana, e fica registrado; nunca libera a recusa do comando ilegível. Retome a questão 2: as travas da pasta principal e da pasta de outra sessão viva completam o isolamento por worktree. No worktree da própria sessão, ela trabalha sem restrição.</aside>
+  <p class="pequeno">Travas numeradas no gancho: comando ilegível (T0), troca de ramo na pasta principal (T1), "adicionar tudo" na pasta principal (T2), descarte de trabalho na pasta principal (T3), escrita na pasta de outra sessão viva (T4), push para ramo protegido (T5).</p>
+  <aside class="notas">Duas camadas: o gancho avisa antes e indica a alternativa; a barreira efetiva fica no servidor. Regra do mecanismo: impor apenas o que protege o trabalho de outras sessões e a máquina; método não é motivo de recusa. Perguntar por que a falha fechada serve para "não enviar para a main" e atrapalharia "escrever o teste antes". Desvio de emergência, no exemplo: um prefixo no próprio comando libera as travas naquele comando, por ordem humana, e fica registrado; o prefixo nunca libera a recusa do comando ilegível. Retomar a questão 2: as travas da pasta principal e da pasta de outra sessão viva completam o isolamento por worktree. No worktree da própria sessão, não há restrição.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questão 5: exemplo de implementação (agent-harness)</p>
-  <h2>Questão 5: recusas do gancho no exemplo</h2>
+  <h2>Questão 5: recusas do gancho no agent-harness</h2>
   <pre><span class="cmd">$ echo '{… "command":"git add -A"}' | tools/ah gancho claude-code</span>
 <span class="rec">Recusado (T2): git add com tudo … leva junto o trabalho de outras frentes</span>
 Faça: git add &lt;caminhos&gt; com só os arquivos que você mudou …
@@ -842,7 +842,7 @@ Faça: git add &lt;caminhos&gt; com só os arquivos que você mudou …
 <span class="cmd">$ … Carla edita …/wt/carrinho/src/total.js …</span>
 <span class="rec">Recusado (T4): … está no worktree da frente as-1 carrinho, da sessão ana-term, que está viva</span></pre>
   <p class="pequeno">Cada recusa informa o motivo e a alternativa.</p>
-  <aside class="notas">Leia as recusas em voz alta e ligue cada uma a um elemento do mecanismo. "dev:main" é a forma de enviar para a main que a instrução não previa. "G=git; $G push" mostra a falha fechada: o gancho não consegue ler o comando e recusa. A linha da T4 mostra a proteção da pasta de outra sessão viva. Para rodar ao vivo, entregue ao gancho o evento que o agente mandaria (material de apoio, questão 5).</aside>
+  <aside class="notas">Ler as recusas em voz alta e relacionar cada uma a um elemento do mecanismo. "dev:main" é a forma de push para a main não prevista na instrução. "G=git; $G push" ilustra a falha fechada: o gancho não consegue ler o comando e o recusa. A linha da T4 ilustra a proteção da pasta de outra sessão viva. Para execução ao vivo, entregar ao gancho o evento que o agente enviaria (material de apoio, questão 5).</aside>
 </section>
 
 <section class="slide">
@@ -850,74 +850,74 @@ Faça: git add &lt;caminhos&gt; com só os arquivos que você mudou …
   <h2>Questão 5: limites da imposição por gancho</h2>
   <p>Comandos que um gancho de leitura de texto não recusa, mesmo na pasta de outra sessão viva:</p>
   <p class="mono">python -c "…" · find &lt;pasta&gt; -delete · … | xargs rm</p>
-  <p class="pequeno">O gancho analisa o texto do comando. Ele não acompanha o que um programa faz durante a execução. Escopo: engano do agente; má-fé fica fora do escopo.</p>
-  <p class="pergunta">Discussão: compare o custo de fechar essas brechas com o custo de mantê-las.</p>
-  <aside class="notas">Leve à comparação: fechar as brechas exige caixa de areia (contêiner, usuário sem permissão), com custo de infraestrutura e prejuízo ao trabalho normal; mantê-las custa pouco enquanto o risco é engano do agente, e muito se o risco for ataque (cenário 4, a portaria das skills). Por esse motivo, a barreira efetiva é o servidor. Outras formas que passam pela leitura de texto: apelido do git, find | xargs git add, chamada direta à API de merge.</aside>
+  <p class="pequeno">O gancho analisa o texto do comando e não acompanha o comportamento do programa durante a execução. Escopo: engano do agente; má-fé fica fora do escopo.</p>
+  <p class="pergunta">Discussão: comparar o custo de fechar essas brechas com o custo de mantê-las.</p>
+  <aside class="notas">Conduzir à comparação: fechar as brechas exige caixa de areia (contêiner, usuário sem permissão), com custo de infraestrutura e prejuízo ao trabalho normal; mantê-las custa pouco enquanto o risco é engano do agente, e muito se o risco for ataque (cenário 4, a portaria das skills). Por esse motivo, a barreira efetiva é o servidor. Outras formas que escapam à leitura de texto: apelido do git, find | xargs git add, chamada direta à API de merge.</aside>
 </section>
 
 <!-- Q6 -->
 <section class="slide">
   <p class="rotulo">Aula 2 · problema</p>
   <h2>Questão 6: sessão interrompida e passagem do trabalho</h2>
-  <p>A conversa de Ana trava às 16h com o carrinho pela metade.</p>
+  <p>A conversa de Ana trava às 16h com o carrinho incompleto.</p>
   <p>No dia seguinte, o quadro ainda indica "carrinho: Ana, em andamento".</p>
-  <p>Carla quer continuar. Ana, no notebook, quer retomar o que deixou no laboratório.</p>
-  <p class="pequeno"><b>Por que ocorre:</b> um processo pode morrer sem aviso (terminal fechado, máquina desligada), e a sessão que morre não escreve nada. De fora, uma sessão morta e uma sessão lenta parecem iguais.</p>
-  <aside class="notas">Na aula 1, pule daqui para o slide 39 (digite 39 e Enter). A aula 2 começa neste slide.</aside>
+  <p>Carla pretende continuar o trabalho. Ana, no notebook, pretende retomar o trabalho deixado no laboratório.</p>
+  <p class="pequeno"><b>Causa:</b> um processo pode terminar sem aviso (terminal fechado, máquina desligada), e uma sessão encerrada dessa forma não registra nada. Vista de fora, uma sessão morta é indistinguível de uma sessão lenta.</p>
+  <aside class="notas">Na aula 1, avançar deste slide para o slide 39 (digitar 39 e Enter). A aula 2 começa neste slide.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questão 6: problematização</p>
-  <p class="pergunta">Atividade: proponha um critério que distinga uma sessão abandonada de uma sessão lenta. Escreva o bilhete que deixaria para quem continuar o trabalho.</p>
-  <p class="pequeno">Antes de propor: o que uma sessão morta consegue registrar? Quem observa a diferença entre morta e lenta, e com que dado?</p>
-  <div class="atividade"><span class="chip">1 min sozinho</span><span class="chip">4 min em duplas</span><span class="chip">um bilhete por dupla</span></div>
-  <div class="espaco">critério de "desistiu" · bilhete</div>
-  <aside class="notas">Respostas típicas: esperar a pessoa; prazo de X horas; qualquer um assume; bilhete combinado. Recolha e leia dois bilhetes; pergunte o que falta neles para alguém continuar sem perguntar nada.</aside>
+  <p class="pergunta">Atividade: propor um critério que distinga uma sessão abandonada de uma sessão lenta e redigir o bilhete destinado a quem continuar o trabalho.</p>
+  <p class="pequeno">Perguntas de apoio: o que uma sessão morta consegue registrar? Quem observa a diferença entre sessão morta e sessão lenta, e com que dado?</p>
+  <div class="atividade"><span class="chip">1 min individual</span><span class="chip">4 min em duplas</span><span class="chip">um bilhete por dupla</span></div>
+  <div class="espaco">critério de abandono · bilhete</div>
+  <aside class="notas">Respostas frequentes: espera pela pessoa; prazo de X horas; assunção por qualquer pessoa; bilhete combinado. Recolher e ler dois bilhetes; perguntar o que falta neles para que outra pessoa continue o trabalho sem consultar o autor.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questão 6: alternativas e custos</p>
   <table>
-    <tr><th>Proposta</th><th>Custa adotar</th><th>Quebra quando</th></tr>
-    <tr><td>Esperar a pessoa</td><td>nada</td><td>"em andamento" para sempre</td></tr>
-    <tr><td>Prazo automático</td><td>escolher o prazo</td><td>quem está lento parece morto</td></tr>
-    <tr><td>Qualquer um assume</td><td>nada</td><td>duas pessoas assumem</td></tr>
-    <tr><td>Bilhete combinado</td><td>escrever antes de parar</td><td>quem trava não escreve nada</td></tr>
-    <tr><td class="vazio">a de vocês</td><td></td><td></td></tr>
+    <tr><th>Proposta</th><th>Custo de adoção</th><th>Condição de falha</th></tr>
+    <tr><td>Espera pela pessoa</td><td>nenhum</td><td>"em andamento" indefinidamente</td></tr>
+    <tr><td>Prazo automático</td><td>escolha do prazo</td><td>sessão lenta tratada como morta</td></tr>
+    <tr><td>Assunção por qualquer pessoa</td><td>nenhum</td><td>duas pessoas assumem</td></tr>
+    <tr><td>Bilhete combinado</td><td>redação antes da parada</td><td>sessão travada sem bilhete</td></tr>
+    <tr><td class="vazio">proposta da turma</td><td></td><td></td></tr>
   </table>
-  <p class="pequeno"><b>Não resolver custa:</b> trabalho parado sem dono; quem continua começa do zero.</p>
-  <aside class="notas">Mostre que as propostas se complementam: o bilhete atende a parada planejada; o prazo atende a sessão que morreu.</aside>
+  <p class="pequeno"><b>Custos e riscos da ausência de solução:</b> trabalho parado e sem dono; recomeço do zero por quem continua.</p>
+  <aside class="notas">Mostrar que as propostas se complementam: o bilhete atende a parada planejada; o prazo atende a sessão que terminou sem aviso.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Aula 2 · solução proposta</p>
   <h2>Questão 6: solução proposta (sinal periódico com prazo e passagem explícita com nota)</h2>
   <ul class="pequeno">
-    <li><b>Detecção de vida</b>: a sessão renova um sinal periódico (heartbeat). Sem sinal dentro do prazo, ou sem o processo, o trabalho aparece como órfão. A posse funciona como uma trava com prazo (lease).</li>
-    <li><b>Passagem explícita</b>: quem para de forma planejada envia o ramo e deixa uma nota no ticket, com o que falta e como retomar.</li>
-    <li><b>Tomada</b> do trabalho de uma sessão morta: só com confirmação humana.</li>
+    <li><b>Detecção de sessão viva</b>: a sessão renova um sinal periódico (heartbeat). Sem sinal dentro do prazo, ou sem o processo, o trabalho aparece como órfão. A posse funciona como trava com prazo (lease).</li>
+    <li><b>Passagem explícita</b>: numa parada planejada, a sessão faz push do ramo e deixa no ticket uma nota com o que falta e o procedimento de retomada.</li>
+    <li><b>Tomada</b> do trabalho de uma sessão morta: apenas com confirmação humana.</li>
   </ul>
-  <p class="pequeno"><b>Custo:</b> o prazo escolhe entre dois erros. Curto, a sessão lenta parece morta; longo, a sessão morta parece viva até ele vencer. A passagem depende de quem para lembrar de fazê-la.</p>
+  <p class="pequeno"><b>Custo:</b> a escolha do prazo determina qual dos dois erros ocorre. Com prazo curto, a sessão lenta parece morta; com prazo longo, a sessão morta parece viva até o vencimento. A passagem depende de quem para se lembrar de executá-la.</p>
   <p class="rotulo">Exemplo de implementação (agent-harness)</p>
   <pre><span class="cmd">$ tools/ah handoff --nota "falta validar a data"</span>
 <span class="ok">Frente as-2 cupom passada.</span>
 <span class="cmd">$ tools/ah open cupom</span>          <span class="sub"># outra sessão, outra máquina</span>
 <span class="ok">Frente as-2 cupom retomada.</span></pre>
-  <aside class="notas">O mecanismo combina "prazo automático" (sinal com prazo), "bilhete combinado" (passagem com nota) e "alguém assume", este só com confirmação humana. Compare com os bilhetes da turma. No exemplo, o prazo é de 120 min, e retomar em outra máquina usa o ramo no remoto e a nota no ticket; trabalho sem ticket só se retoma na mesma máquina. Pergunte que prazo a turma escolheria e qual dos dois erros ela prefere.</aside>
+  <aside class="notas">O mecanismo combina "prazo automático" (sinal com prazo), "bilhete combinado" (passagem com nota) e "assunção por qualquer pessoa", esta apenas com confirmação humana. Comparar com os bilhetes da turma. No exemplo, o prazo é de 120 min; a retomada em outra máquina usa o ramo no remoto e a nota no ticket, e trabalho sem ticket só pode ser retomado na mesma máquina. Perguntar que prazo a turma escolheria e qual dos dois erros prefere.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Questões 7 a 13 (aula 2)</p>
   <ol start="7" class="pequeno">
     <li>Dois trabalhos no mesmo arquivo: suficiência do aviso prévio</li>
-    <li>Recurso escasso: cinco conversas rodam testes juntas e esgotam a memória da máquina</li>
-    <li>Queda de rede durante o fechamento: execução parcial ou nenhuma</li>
-    <li>Regra comum para agentes diferentes: três pessoas, três agentes</li>
+    <li>Recurso escasso: esgotamento da memória da máquina por testes simultâneos de cinco conversas</li>
+    <li>Queda de rede durante o fechamento: execução parcial ou nenhuma execução</li>
+    <li>Regra comum para agentes diferentes: três pessoas com três agentes</li>
     <li>Custo do método: plano e revisão para uma mudança de três linhas</li>
-    <li>Critério de "pronto": o que conta como prova</li>
-    <li>Fechamento do trabalho: conferências antes de apagar a pasta</li>
+    <li>Critério de "pronto": evidência aceita como prova</li>
+    <li>Fechamento do trabalho: conferências anteriores à remoção da pasta</li>
   </ol>
-  <aside class="notas">Apresente só os enunciados. As soluções ficam para depois das propostas, na aula 2. Peça que cada aluno escolha uma questão e traga uma proposta escrita.</aside>
+  <aside class="notas">Apresentar apenas os enunciados. As soluções ficam para depois das propostas, na aula 2. Pedir que cada aluno escolha uma questão e traga uma proposta escrita.</aside>
 </section>
 
 <!-- Síntese -->
@@ -925,15 +925,15 @@ Faça: git add &lt;caminhos&gt; com só os arquivos que você mudou …
   <p class="rotulo">Síntese</p>
   <h2>Síntese: mecanismos das questões 1 a 6</h2>
   <table>
-    <tr><th>Questão</th><th>Mecanismo</th><th>Custa</th><th>Falha quando</th></tr>
-    <tr><td>1 · Identidade</td><td>id fornecido pelo agente; herança só com prova de continuidade</td><td>trabalho às vezes fica sem dono</td><td>o agente não fornece id nem avisa o começo da conversa</td></tr>
-    <tr><td>2 · Isolamento</td><td><span class="mono">git worktree</span> e um ramo por trabalho</td><td>pasta e dependências por trabalho; conflito no merge</td><td>uma sessão escreve na pasta de outra</td></tr>
-    <tr><td>3 · Registro</td><td>estado local fora do git; histórico no git; tickets entre máquinas</td><td>outra máquina não vê o quadro</td><td>o trabalho não tem ticket</td></tr>
-    <tr><td>4 · Reserva</td><td>reserva otimista; desempate pela ordem do servidor</td><td>rede obrigatória</td><td>sem rede; pedidos cruzados fazem as duas desistirem</td></tr>
-    <tr><td>5 · Regras</td><td>gancho com falha fechada; proteção de ramo no servidor</td><td>manter o leitor de comandos; recusas indevidas</td><td>o comando escapa da leitura; plataforma sem proteção</td></tr>
-    <tr><td>6 · Interrupção</td><td>sinal com prazo; passagem com nota; tomada com confirmação</td><td>sessão morta parece viva até o prazo</td><td>quem trava não deixa nota</td></tr>
+    <tr><th>Questão</th><th>Mecanismo</th><th>Custo</th><th>Condição de falha</th></tr>
+    <tr><td>1 · Identidade</td><td>id fornecido pelo agente; herança só com prova de continuidade</td><td>trabalho ocasionalmente sem dono</td><td>agente sem id e sem aviso de início de conversa</td></tr>
+    <tr><td>2 · Isolamento</td><td><span class="mono">git worktree</span> e um ramo por trabalho</td><td>pasta e dependências por trabalho; conflito no merge</td><td>escrita de uma sessão na pasta de outra</td></tr>
+    <tr><td>3 · Registro</td><td>estado local fora do git; histórico no git; tickets entre máquinas</td><td>quadro invisível para outra máquina</td><td>trabalho sem ticket</td></tr>
+    <tr><td>4 · Reserva</td><td>reserva otimista; desempate pela ordem do servidor</td><td>dependência de rede</td><td>falta de rede; pedidos cruzados com desistência das duas partes</td></tr>
+    <tr><td>5 · Regras</td><td>gancho com falha fechada; proteção de ramo no servidor</td><td>manutenção do leitor de comandos; recusas indevidas</td><td>comando não reconhecido pela leitura; plataforma sem proteção</td></tr>
+    <tr><td>6 · Interrupção</td><td>sinal com prazo; passagem com nota; tomada com confirmação</td><td>sessão morta tratada como viva até o prazo</td><td>sessão travada sem nota</td></tr>
   </table>
-  <aside class="notas">Peça à turma que compare cada linha com a proposta que ela fez para a mesma questão e marque onde a dela custa menos. Na aula 1, a linha 6 fica para a aula 2. A falha da linha 2 é coberta pela linha 5.</aside>
+  <aside class="notas">Pedir à turma que compare cada linha com a proposta feita para a mesma questão e marque os pontos em que a proposta da turma custa menos. Na aula 1, a linha 6 fica para a aula 2. A linha 5 cobre a condição de falha da linha 2.</aside>
 </section>
 
 <section class="slide">
@@ -946,23 +946,23 @@ Faça: git add &lt;caminhos&gt; com só os arquivos que você mudou …
         <marker id="pca" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ponta-a"/></marker>
       </defs>
       <rect x="20" y="120" width="170" height="90" rx="14" class="caixa-a"/>
-      <text x="105" y="160" text-anchor="middle" font-size="26" font-weight="700">abrir</text>
+      <text x="105" y="160" text-anchor="middle" font-size="26" font-weight="700">abertura</text>
       <text x="105" y="190" text-anchor="middle" font-size="17" class="t-muted">ramo + pasta + reserva</text>
       <rect x="250" y="120" width="230" height="90" rx="14" class="caixa"/>
-      <text x="365" y="160" text-anchor="middle" font-size="24" font-weight="700">trabalhar</text>
-      <text x="365" y="190" text-anchor="middle" font-size="17" class="t-muted">editar e commitar na pasta</text>
+      <text x="365" y="160" text-anchor="middle" font-size="24" font-weight="700">trabalho</text>
+      <text x="365" y="190" text-anchor="middle" font-size="17" class="t-muted">edição e commit na pasta</text>
       <rect x="560" y="20" width="220" height="90" rx="14" class="caixa"/>
-      <text x="670" y="60" text-anchor="middle" font-size="26" font-weight="700">passar</text>
-      <text x="670" y="90" text-anchor="middle" font-size="17" class="t-muted">parar no meio, com nota</text>
+      <text x="670" y="60" text-anchor="middle" font-size="26" font-weight="700">passagem</text>
+      <text x="670" y="90" text-anchor="middle" font-size="17" class="t-muted">interrupção com nota</text>
       <rect x="560" y="220" width="220" height="90" rx="14" class="caixa"/>
-      <text x="670" y="260" text-anchor="middle" font-size="24" font-weight="700">integrar</text>
+      <text x="670" y="260" text-anchor="middle" font-size="24" font-weight="700">integração</text>
       <text x="670" y="290" text-anchor="middle" font-size="17" class="t-muted">merge na base</text>
       <rect x="860" y="220" width="170" height="90" rx="14" class="caixa-a"/>
-      <text x="945" y="260" text-anchor="middle" font-size="26" font-weight="700">fechar</text>
-      <text x="945" y="290" text-anchor="middle" font-size="17" class="t-muted">confere e libera</text>
+      <text x="945" y="260" text-anchor="middle" font-size="26" font-weight="700">fechamento</text>
+      <text x="945" y="290" text-anchor="middle" font-size="17" class="t-muted">checagem e baixa</text>
       <rect x="860" y="20" width="320" height="90" rx="14" class="caixa"/>
-      <text x="1020" y="60" text-anchor="middle" font-size="22" font-weight="700">outra sessão: abrir</text>
-      <text x="1020" y="90" text-anchor="middle" font-size="17" class="t-muted">retoma, até em outra máquina</text>
+      <text x="1020" y="60" text-anchor="middle" font-size="22" font-weight="700">abertura em outra sessão</text>
+      <text x="1020" y="90" text-anchor="middle" font-size="17" class="t-muted">retomada, também em outra máquina</text>
       <line x1="192" y1="165" x2="246" y2="165" class="seta" marker-end="url(#pc)"/>
       <line x1="482" y1="140" x2="556" y2="80" class="seta" marker-end="url(#pc)"/>
       <line x1="482" y1="190" x2="556" y2="250" class="seta" marker-end="url(#pc)"/>
@@ -971,77 +971,77 @@ Faça: git add &lt;caminhos&gt; com só os arquivos que você mudou …
       <path d="M1020,112 C1020,170 600,170 482,168" class="seta" marker-end="url(#pc)"/>
     </svg>
   </div>
-  <p class="pequeno sub">Atividade: a partir das propostas de hoje, liste os passos de uma sessão do início ao fim e compare com o ciclo. No exemplo, os passos são <span class="mono">open</span>, <span class="mono">handoff</span> e <span class="mono">close</span>; integrar é um <span class="mono">git merge</span> na pasta principal.</p>
-  <aside class="notas">2 min: a turma dita a sequência; anote no quadro e compare com a figura. Ligue cada caixa às questões: abrir (1, 2 e 4), trabalhar (2 e 5), passar (6), integrar e fechar (aula 2, questão 13). Se houver tempo, demonstre o ciclo com o exemplo; o passo a passo está no material de apoio, seção 4.</aside>
+  <p class="pequeno sub">Atividade: listar, a partir das propostas da aula, os passos de uma sessão do início ao fim e comparar a lista com o ciclo. No exemplo, os passos são <span class="mono">open</span>, <span class="mono">handoff</span> e <span class="mono">close</span>; a integração é um <span class="mono">git merge</span> na pasta principal.</p>
+  <aside class="notas">2 min: a turma dita a sequência; anotar no quadro e comparar com a figura. Relacionar cada caixa às questões: abertura (1, 2 e 4), trabalho (2 e 5), passagem (6), integração e fechamento (aula 2, questão 13). Se houver tempo, demonstrar o ciclo com o exemplo; o passo a passo está no material de apoio, seção 4.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Síntese</p>
   <h2>Limites de um harness de projeto</h2>
   <ul class="pequeno">
-    <li><b>Método</b>: plano, revisão e critério de pronto ficam a cargo da equipe (questões 11 e 12). Recusar por método trava trabalho legítimo.</li>
-    <li><b>Custo</b>: espera, tokens e a manutenção do próprio harness. Medir esse custo exige registro à parte.</li>
-    <li><b>Má-fé</b>: o gancho lê texto e pega engano. Contra código mal-intencionado, a proteção pede isolamento de execução (caixa de areia: contêiner, usuário sem permissão).</li>
-    <li><b>Fora do agente</b>: o comando que a pessoa digita no terminal não passa pelo gancho. A proteção no servidor continua valendo.</li>
+    <li><b>Método</b>: plano, revisão e critério de pronto ficam a cargo da equipe (questões 11 e 12). A recusa por método bloqueia trabalho legítimo.</li>
+    <li><b>Custo</b>: espera, tokens e manutenção do próprio harness. A medição desse custo exige registro à parte.</li>
+    <li><b>Má-fé</b>: o gancho lê texto e detecta engano. Contra código mal-intencionado, a proteção exige isolamento de execução (caixa de areia: contêiner, usuário sem permissão).</li>
+    <li><b>Comandos fora do agente</b>: o comando digitado pela pessoa no terminal não passa pelo gancho. A proteção no servidor continua válida.</li>
   </ul>
-  <aside class="notas">Pergunte qual desses limites pesa mais para o grupo de cada aluno no trabalho final. Ligue a má-fé ao cenário 4 (a portaria das skills) e o custo à questão 11.</aside>
+  <aside class="notas">Perguntar qual desses limites pesa mais para o grupo de cada aluno no trabalho final. Relacionar a má-fé ao cenário 4 (a portaria das skills) e o custo à questão 11.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Síntese</p>
   <h2>Princípio de verificação</h2>
-  <p class="pergunta">Teste com agente simulado verifica a lógica do harness. Ensaio com o agente real verifica as suposições sobre o comportamento do agente.</p>
-  <p class="pequeno">O teste simulado entrega ao harness eventos escritos à mão, na ordem que o autor supõe. O agente real pode mandar outra ordem.</p>
-  <p class="pequeno">Exemplo: num ensaio com o agente real, ao limpar a conversa (<span class="mono">/clear</span>), o aviso de fim da conversa antiga chegou antes do aviso de começo da nova, e os testes simulados supunham a ordem inversa.</p>
-  <p class="pequeno">A mesma regra vale para o que o agente afirma: "pronto" exige o comando e a saída no registro.</p>
-  <aside class="notas">Relacione com a questão 12 e com o trabalho final (enunciado §8): o que o artigo afirma precisa aparecer no registro. Para ver uma recusa com o agente, peça "rode exatamente este comando" e confira no registro; com pedido vago, um agente pode afirmar ter rodado um comando que não rodou. Faça o ensaio num repositório descartável.</aside>
+  <p class="pergunta">O teste com agente simulado verifica a lógica do harness. O ensaio com o agente real verifica as suposições sobre o comportamento do agente.</p>
+  <p class="pequeno">O teste simulado entrega ao harness eventos escritos à mão, na ordem suposta pelo autor do teste. O agente real pode enviar os eventos em outra ordem.</p>
+  <p class="pequeno">Exemplo: num ensaio com o agente real, na limpeza da conversa (<span class="mono">/clear</span>), o aviso de fim da conversa antiga chegou antes do aviso de início da nova; os testes simulados supunham a ordem inversa.</p>
+  <p class="pequeno">A mesma regra se aplica às afirmações do agente: "pronto" exige comando e saída no registro.</p>
+  <aside class="notas">Relacionar com a questão 12 e com o trabalho final (enunciado §8): o que o artigo afirma precisa constar do registro. Para observar uma recusa com o agente, pedir "rode exatamente este comando" e conferir no registro; com pedido vago, um agente pode afirmar ter executado um comando que não executou. Fazer o ensaio num repositório descartável.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Trabalho final</p>
   <h2>Trabalho final: princípios × cenários (1 de 2)</h2>
   <table>
-    <tr><th>Princípio</th><th>Cenário</th><th>O grupo pode aproveitar</th></tr>
-    <tr><td>Isolar cada trabalho em pasta e ramo próprios</td><td>3 · Três pessoas, quantos agentes?</td><td>contar onde cada conflito apareceu</td></tr>
-    <tr><td>Reserva como aviso, com desempate por uma autoridade única</td><td>3 · Três pessoas, quantos agentes?</td><td>combinar quem pega o quê; contar duplicações</td></tr>
-    <tr><td>Impor só o que protege o trabalho dos outros; método fica como instrução</td><td>9 · Um plugin para o DSH</td><td>decidir o que vira código e o que fica instrução</td></tr>
-    <tr><td>Construir em partes utilizáveis; peça que ninguém explica sai</td><td>7 · O meu harness</td><td>tirar a peça que ninguém explica</td></tr>
+    <tr><th>Princípio</th><th>Cenário</th><th>Aproveitamento pelo grupo</th></tr>
+    <tr><td>Isolamento de cada trabalho em pasta e ramo próprios</td><td>3 · Três pessoas, quantos agentes?</td><td>contagem dos conflitos pelo momento em que apareceram</td></tr>
+    <tr><td>Reserva como aviso, com desempate por uma autoridade única</td><td>3 · Três pessoas, quantos agentes?</td><td>acordo sobre a divisão das tarefas; contagem de duplicações</td></tr>
+    <tr><td>Imposição restrita à proteção do trabalho alheio; método como instrução</td><td>9 · Um plugin para o DSH</td><td>decisão sobre o que vira código e o que permanece instrução</td></tr>
+    <tr><td>Construção em partes utilizáveis; remoção da peça que ninguém explica</td><td>7 · O meu harness</td><td>remoção da peça que ninguém do grupo explica</td></tr>
   </table>
-  <aside class="notas">Leia uma linha por vez e pergunte qual grupo considera um cenário parecido. Cenário 3: a hipótese "cada um com o seu agente acelera o começo e complica a integração" pode ser medida; o isolamento por pasta concentra o conflito no merge. Cenário 9: a fronteira entre o que vira imposição e o que fica instrução é uma decisão que o grupo pode adotar ou contestar. Cenário 7: a construção por partes utilizáveis permite avaliar e remover cada peça.</aside>
+  <aside class="notas">Ler uma linha por vez e perguntar qual grupo considera um cenário parecido. Cenário 3: a hipótese "cada um com o seu agente acelera o começo e complica a integração" pode ser medida; o isolamento por pasta concentra o conflito no merge. Cenário 9: a fronteira entre imposição e instrução é uma decisão que o grupo pode adotar ou contestar. Cenário 7: a construção por partes utilizáveis permite avaliar e remover cada peça.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Trabalho final</p>
   <h2>Trabalho final: princípios × cenários (2 de 2)</h2>
   <table>
-    <tr><th>Princípio</th><th>Cenário</th><th>O grupo pode aproveitar</th></tr>
-    <tr><td>Estado mínimo fora do agente; na dúvida, não herdar</td><td>5 · O veterano de bolso</td><td>decidir o que guardar fora do agente</td></tr>
-    <tr><td>Exceção só com ordem humana registrada</td><td>1 · O balcão que responde</td><td>aprovar a exceção, não cada passo</td></tr>
-    <tr><td>Especificação que muda, com marcação do que prevalece</td><td>6 · Especificação antes do código</td><td>marcar o que mudou e o que vale agora</td></tr>
-    <tr><td>Imposição por leitura de texto recusa o ilegível e não isola a execução</td><td>4 · A portaria das skills</td><td>usar as formas que escapam como falso negativo</td></tr>
+    <tr><th>Princípio</th><th>Cenário</th><th>Aproveitamento pelo grupo</th></tr>
+    <tr><td>Estado mínimo fora do agente; ausência de herança em caso de dúvida</td><td>5 · O veterano de bolso</td><td>decisão sobre o que guardar fora do agente</td></tr>
+    <tr><td>Exceção só com ordem humana registrada</td><td>1 · O balcão que responde</td><td>aprovação restrita à exceção, sem aprovação de cada passo</td></tr>
+    <tr><td>Especificação que muda, com marcação do que prevalece</td><td>6 · Especificação antes do código</td><td>marcação do que mudou e do que vale</td></tr>
+    <tr><td>Imposição por leitura de texto: recusa do ilegível, sem isolamento da execução</td><td>4 · A portaria das skills</td><td>formas que escapam como exemplos de falso negativo</td></tr>
   </table>
-  <p class="pequeno sub">Ligação fraca ou nenhuma: 2, 8 e 10. Tabela completa no material de apoio.</p>
-  <aside class="notas">Cenário 5: guardar fora do agente só a identidade da sessão e o trabalho dela; discuta se isso é memória ou estado. Cenário 1: a aprovação humana fica restrita à exceção e deixa registro; no balcão, a dona aprova cada resposta. Cenário 6: uma especificação que muda durante a construção precisa marcar as seções novas que prevalecem sobre as antigas. Cenário 4: a imposição por leitura de texto não funciona como caixa de areia; a lista de comandos que escapam serve de catálogo de falsos negativos. Para todos (enunciado §4 e §8): registro com data durante o trabalho; "pronto" com comando e saída. Horas e gasto com modelo, quem precisar, registra à mão.</aside>
+  <p class="pequeno sub">Cenários com ligação fraca ou inexistente: 2, 8 e 10. Tabela completa no material de apoio.</p>
+  <aside class="notas">Cenário 5: guardar fora do agente apenas a identidade da sessão e o trabalho dela; discutir se isso é memória ou estado. Cenário 1: a aprovação humana fica restrita à exceção e deixa registro; no balcão, a dona aprova cada resposta. Cenário 6: uma especificação que muda durante a construção precisa marcar as seções novas que prevalecem sobre as antigas. Cenário 4: a imposição por leitura de texto não funciona como caixa de areia; a lista de comandos que escapam serve de catálogo de falsos negativos. Para todos (enunciado §4 e §8): registro com data durante o trabalho; "pronto" com comando e saída. Horas e gasto com modelo, quando necessários, exigem registro manual.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Trabalho final: atividade</p>
-  <p class="pergunta">Atividade: registre uma curiosidade despertada pela aula e o cenário do trabalho final em que ela apareceria.</p>
+  <p class="pergunta">Atividade: registrar uma curiosidade despertada pela aula e o cenário do trabalho final em que ela apareceria.</p>
   <div class="atividade"><span class="chip">grupos</span><span class="chip">3 min</span><span class="chip">uma curiosidade e um cenário por grupo</span></div>
-  <div class="espaco">curiosidade · cenário · uma decisão que vocês tomariam diferente</div>
-  <aside class="notas">Recolha no papel. Peça que cada grupo indique também uma decisão que tomaria de forma diferente dos mecanismos vistos, com base nas propostas de hoje. As respostas entram na discussão da proposta do trabalho final.</aside>
+  <div class="espaco">curiosidade · cenário · decisão alternativa do grupo</div>
+  <aside class="notas">Recolher em papel. Pedir que cada grupo indique também uma decisão que tomaria de forma diferente dos mecanismos vistos, com base nas propostas da aula. As respostas entram na discussão da proposta do trabalho final.</aside>
 </section>
 
 <section class="slide">
   <p class="rotulo">Próximos passos</p>
   <h2>Tarefas para a aula 2</h2>
   <ul>
-    <li>Ler o material de apoio, seção 1, e fazer os exercícios 1 a 3</li>
-    <li>Trazer uma proposta escrita para uma das sete questões</li>
-    <li>OpenCode instalado e um repositório descartável no GitHub</li>
+    <li>Leitura do material de apoio, seção 1, e exercícios 1 a 3</li>
+    <li>Proposta escrita para uma das sete questões</li>
+    <li>OpenCode instalado e repositório descartável no GitHub</li>
   </ul>
   <p class="pequeno sub">Exemplo de implementação e material: <span class="mono">github.com/elderbernardiifsul/agent-harness</span>; instalação no README, material em <span class="mono">docs/aula/</span>.</p>
-  <aside class="notas">O repositório descartável pode ser privado; nesse caso, a proteção de ramo não vale, e o fato entra na discussão da questão 5.</aside>
+  <aside class="notas">O repositório descartável pode ser privado; nesse caso, a proteção de ramo não está disponível, e o fato entra na discussão da questão 5.</aside>
 </section>
 
 </main>
