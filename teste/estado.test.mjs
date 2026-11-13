@@ -582,7 +582,8 @@ test('revisão 2, achado 7: a tomada de trava vencida limpa os restos com mais d
   fs.mkdirSync(path.join(travas, 'viva'));
   fs.writeFileSync(path.join(travas, 'viva', 'dono.json'), donoDe('viva'));
   vencidaDeMorto(d);
-  assert.equal(await comTrava(d, 'x', () => 'entrou', { esperaMs: 500 }), 'entrou');
+  // Espera folgada: com a suíte inteira rodando em paralelo, 500 ms já faltaram uma vez.
+  assert.equal(await comTrava(d, 'x', () => 'entrou', { esperaMs: 5000 }), 'entrou');
   assert.deepEqual(fs.readdirSync(travas).sort(), ['viva', novo].sort());
   assert.deepEqual(fs.readdirSync(path.join(travas, 'viva')), ['dono.json']);
   // nome de trava que pareceria resto é recusado

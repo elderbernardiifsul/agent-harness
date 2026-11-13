@@ -729,6 +729,7 @@ $ tools/ah doctor
 ok      Node 22 ou mais novo
 ok      git presente
 ok      Shell POSIX
+ok      .harness é uma pasta do projeto
 ok      .harness/config.json válido
 ok      Cópia do núcleo (MANIFEST.json)
 ok      Núcleo igual ao clone de origem
@@ -750,10 +751,11 @@ aviso   CI com comando de teste: defina ci.comandoDeTeste em .harness/config.jso
 ok      Frentes com worktree
 ok      Fila de pesado
 ok      Adaptador do agente em uso (claude-code)
+ok      Extensões (nenhuma ligada)
 0 falha(s), 1 aviso(s).
 ```
 
-(São 23 itens. O último aparece apenas quando um agente se identifica, como neste caso, em que o próprio agente executou o `doctor`; num terminal comum, aparecem 22. Há uma linha de proteção por ramo protegido. Sem `gh`, aparecem avisos no lugar dessas linhas e no da sigla; avisos não alteram o código de saída.)
+(São 25 itens. O penúltimo aparece apenas quando um agente se identifica, como neste caso, em que o próprio agente executou o `doctor`; num terminal comum, aparecem 24. Cada extensão ligada acrescenta uma linha própria e as verificações que declara. Há uma linha de proteção por ramo protegido. Sem `gh`, aparecem avisos no lugar dessas linhas e no da sigla; avisos não alteram o código de saída.)
 
 **4. Abertura da frente.** Dentro do agente, a sessão vem do gancho. No uso manual, num terminal, a sessão é informada por `AH_SESSAO`:
 
