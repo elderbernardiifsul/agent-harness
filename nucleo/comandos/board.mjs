@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { ErroDeUso } from '../lib/caminhos.mjs';
+import { fechamentoDa } from '../lib/fechamento.mjs';
 import { listarFrentesTolerante } from '../lib/frente.mjs';
 import { arquivosDaFrenteOuNulo, contaNaSobreposicao, sobreposicoes as calcularSobreposicoes } from '../lib/sobreposicao.mjs';
 import { idCurto, listarSessoes } from '../lib/sessao.mjs';
@@ -32,10 +33,11 @@ function linhaUnica(texto, limite) {
 // Órfã pela mesma regra do sweep e do takeover (frenteOrfa): ativa sem dona viva; dona ilegível não é órfã.
 // Em abertura com o processo do open morto (ou, sem processo no registro, sem dona viva) é um open que parou
 // no meio: outro `ah open <nome>` o toma. Um `ah close` entre as fases (rede) aparece como `fechando`; o que
-// parou depois de comentar o fechamento nos tickets, como `fechamento parado` (o próximo close termina).
-function estadoNoQuadro(f, vida) {
+// parou depois de começar a comentar o fechamento nos tickets (marca em fechamentos/), como `fechamento parado` (o
+// próximo close termina sem comentar de novo).
+function estadoNoQuadro(f, vida, dirEstado) {
   if (fechamentoEmCurso(f)) return 'fechando';
-  if (f.fechamentoComentado) return 'fechamento parado';
+  if (fechamentoDa(dirEstado, f)) return 'fechamento parado';
   if (frenteOrfa(f, vida)) return 'órfã';
   if (f.estado === 'abrindo') return aberturaParada(f, vida?.estado === 'viva') ? 'abrindo (parada)' : 'abrindo';
   return f.estado ?? '—';
@@ -142,6 +144,7 @@ export async function executar(args, amb) {
       ...f, donaViva: donaViva(f), donaIlegivel: donaIlegivel(f), sobrepoe: sobrepoe(f), sobreposicaoConferida: conferida(f),
       ...(f.estado === 'abrindo' ? { aberturaParada: aberturaParada(f, donaViva(f)) } : {}),
       ...(f.fechando ? { fechamentoEmCurso: fechamentoEmCurso(f) } : {}),
+      ...(fechamentoDa(dirEstado, f) ? { fechamentoComentado: true } : {}),
       ...(deps ? { bloqueios: bloqueiosDe(f) } : {}),
       ...(colunas.length ? { colunas: porExtensao(f) } : {}),
     }));
@@ -174,7 +177,7 @@ export async function executar(args, amb) {
       linhaUnica(f.id, 20),
       linhaUnica(f.nome, 49),
       rotuloDaDona(f),
-      linhaUnica(estadoNoQuadro(f, vidaCompleta(f.dona)), 20),
+      linhaUnica(estadoNoQuadro(f, vidaCompleta(f.dona), dirEstado), 20),
       f.tickets?.length ? f.tickets.map(n => `#${n}`).join(',') : '—',
       !conferida(f) ? '?' : (ids => (ids.length ? linhaUnica(ids.join(','), 40) : '—'))(sobrepoe(f)),
       f.plano ? linhaUnica(f.plano, LIMITE_PLANO) : '—',

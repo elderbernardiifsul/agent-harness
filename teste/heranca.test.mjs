@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { criarProjeto, amb, dirDoTeste, envelhecerSinal } from './apoio/repo.mjs';
-import { frenteOrfa, vidaDaDona } from '../nucleo/lib/vida.mjs';
+import { frenteOrfa, inicioDoProcesso, vidaDaDona } from '../nucleo/lib/vida.mjs';
 import { processoVivo } from './apoio/processo.mjs';
 import { tratar } from '../nucleo/adaptadores/contrato.mjs';
 import { continuarSessao } from '../nucleo/lib/heranca.mjs';
@@ -159,7 +159,7 @@ test('continuarSessao sem pid não substitui ninguém', async () => {
   registrarSessao(dir, { id: 's-a', agente: 'claude-code' });
   registrarSessao(dir, { id: 's-b', agente: 'claude-code' });
   assert.deepEqual(await continuarSessao(dir, { sessao: 's-b', pid: null, pidInicio: null, origem: 'continuacao' }),
-    { substituidas: [], herdadas: [], soltas: [], passadas: [] });
+    { substituidas: [], herdadas: [], soltas: [], passadas: [], emFechamento: [] });
   assert.equal(lerSessao(dir, 's-a').fim, null);
 });
 
@@ -364,4 +364,16 @@ test('continuação em que o destino já é dona da frente em foco da velha: nã
   assert.equal(lerSessao(dir, 's-x').frente, 'cupom');
   assert.ok(!lerEventos(dir).some(e => e.tipo === 'frente-solta' && e.motivo === 'destino-ja-tem-frente'));
   assert.doesNotMatch(r.contexto, /ficou passada/);
+});
+
+test('começo novo no mesmo processo com a frente sendo fechada: ela fica com a sessão nova, sem passar, e o resumo avisa', async () => {
+  await tratar(inicio('s-a', 'novo'), { ...amb(p), pid: proc.pid, ...comHora });
+  // A marca de um close vivo (o processo deste teste).
+  gravarFrente(dir, { ...frenteDe('s-a'), fechando: { pid: process.pid, inicio: inicioDoProcesso(process.pid) } });
+  gravarSessao(dir, { ...lerSessao(dir, 's-a'), frente: 'carrinho' });
+  const r = await tratar(inicio('s-b', 'novo'), { ...amb(p), pid: proc.pid, ...comHora });
+  assert.deepEqual([lerFrente(dir, 'carrinho').estado, lerFrente(dir, 'carrinho').dona], ['ativa', 's-b']);
+  assert.ok(lerFrente(dir, 'carrinho').fechando);
+  assert.match(r.contexto, /A frente as-1 carrinho está sendo fechada e ficou com esta sessão; se ela continuar no quadro, termine com tools\/ah close carrinho\./);
+  assert.ok(lerEventos(dir).some(e => e.tipo === 'frente-em-fechamento' && e.frente === 'carrinho'));
 });

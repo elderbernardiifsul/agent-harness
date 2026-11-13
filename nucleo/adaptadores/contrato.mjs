@@ -241,7 +241,10 @@ async function inicio(evento, amb) {
   const continuacao = await continuarSessao(amb.dirEstado, { sessao: id, pid, pidInicio, origem: evento.origem });
 
   const { frentes } = listarFrentesTolerante(amb.dirEstado);
-  const avisos = (continuacao.passadas ?? []).map(f => `A frente ${f.id} ${f.nome} ficou passada; para retomar, tools/ah open ${f.nome}.`);
+  const avisos = [
+    ...(continuacao.passadas ?? []).map(f => `A frente ${f.id} ${f.nome} ficou passada; para retomar, tools/ah open ${f.nome}.`),
+    ...(continuacao.emFechamento ?? []).map(f => `A frente ${f.id} ${f.nome} está sendo fechada e ficou com esta sessão; se ela continuar no quadro, termine com tools/ah close ${f.nome}.`),
+  ];
   let sessao = lerSessao(amb.dirEstado, id);
   const foco = typeof sessao.frente === 'string' ? frentes.find(f => f.nome === sessao.frente) : null;
   if (foco && foco.dona != null && foco.dona !== id) {
