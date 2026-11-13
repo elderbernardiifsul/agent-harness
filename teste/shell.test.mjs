@@ -474,3 +474,12 @@ test('aposSucesso: só && encadeia; ;, ||, &, ! e corpo de função não', () =>
   assert.deepEqual(antes('a && { b; c; }'), [0]);
   assert.deepEqual(antes('xargs a && c'), []);
 });
+
+// ---- pendência 8: $ e crase literais
+test('literais: $ e crase entre aspas simples ou escapados; o que expande fica de fora', () => {
+  const lit = t => comandosSimples(t, '/r')[0].literais;
+  assert.deepEqual(lit(`git add 'a$b' "c\\$d" e\\$f $'g$h'`), ['a$b', 'c$d', 'e$f', 'g$h']);
+  assert.equal(lit(`git add "$X" $Y \`z\``), undefined);
+  assert.deepEqual(lit(`git add 'a$b' a$b 'c$d'`), ['c$d']);
+  assert.deepEqual(lit(`git -C /w add 'a$b'`), ['a$b']);
+});

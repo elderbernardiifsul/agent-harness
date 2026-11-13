@@ -1030,7 +1030,8 @@ class Leitor {
     // Devolve o que certamente deu certo se o comando deu (ele mesmo, pelo índice na saída).
     const comEscritas = (argv, cwd, env) => {
       let i;
-      if (escritas.length && cwd !== ctx.cwd) { soEscritas(); i = this.emitir(argv, cwd, ctx, env); } else i = this.emitir(argv, cwd, ctx, env, escritas);
+      const literais = literaisDe(itens);
+      if (escritas.length && cwd !== ctx.cwd) { soEscritas(); i = this.emitir(argv, cwd, ctx, env, [], literais); } else i = this.emitir(argv, cwd, ctx, env, escritas, literais);
       return semSucesso ? null : { i };
     };
     const env = { ...envLocal };
@@ -1189,7 +1190,7 @@ class Leitor {
 
   // Cada comando leva a cópia do ambiente conhecido; o teto evita que milhares
   // de atribuições vezes milhares de comandos esgotem a memória.
-  emitir(argv, cwd, ctx, env, escritas) {
+  emitir(argv, cwd, ctx, env, escritas, literais) {
     const completo = { ...ctx.herdado, ...env };
     this.entradasDeAmbiente += Object.keys(completo).length + 1;
     if (this.entradasDeAmbiente > LIMITE_ENTRADAS_DE_AMBIENTE) throw new ErroDeShell('texto grande demais para ler (ambiente × comandos)', null);
@@ -1197,6 +1198,7 @@ class Leitor {
     // Os alternativos valem para o cwd da lista; com git -C ou env -C o cwd é outro.
     if (ctx.alternativos.length && cwd === ctx.cwd) saida.cwdsAlternativos = [...ctx.alternativos];
     if (escritas?.length) saida.escritas = [...escritas];
+    if (literais?.length) saida.literais = literais;
     if (ctx.garantidos) saida.aposSucesso = ctx.garantidos;
     this.saida.push(saida);
     return this.saida.length - 1;
@@ -1209,6 +1211,16 @@ class Leitor {
     this.emitir([], marca.cwd, ctx, env, escritas);
     this.desfazer(ctx, m);
   }
+}
+
+// Argumentos com `$` ou crase que são texto literal (aspas simples ou escape), não expansão. O mesmo
+// texto vindo também de uma palavra que expande fica de fora: na dúvida, é expansão.
+function literaisDe(itens) {
+  const literais = new Set();
+  const expandem = new Set();
+  for (const x of itens) if (/[$`]/.test(x.s)) (x.exp ? expandem : literais).add(x.s);
+  for (const s of expandem) literais.delete(s);
+  return [...literais];
 }
 
 // ---------------------------------------------------------------- echo e printf
@@ -1407,8 +1419,9 @@ function novoCwd(nome, itens, cwd) {
  * Não executa nada. `cwd` null quer dizer "desconhecido". `escritas` são os destinos dos
  * redirecionamentos que escrevem (relativos ao `cwd` do comando); um comando só de
  * redirecionamento (`> f`, ou o de um composto, `eval`, `bash -c`) sai com `argv: []`.
- * `aposSucesso` diz quais comandos anteriores certamente deram certo para este rodar (ver deuCerto).
- * @returns {Array<{argv: string[], cwd: string|null, env: Record<string, string>, cwdsAlternativos?: Array<string|null>, escritas?: string[], aposSucesso?: object}>}
+ * `literais` são os argumentos com `$` ou crase que vieram entre aspas simples ou escapados (texto, não
+ * expansão). `aposSucesso` diz quais comandos anteriores certamente deram certo para este rodar (ver deuCerto).
+ * @returns {Array<{argv: string[], cwd: string|null, env: Record<string, string>, cwdsAlternativos?: Array<string|null>, escritas?: string[], literais?: string[], aposSucesso?: object}>}
  */
 export function comandosSimples(texto, cwd) {
   if (typeof texto !== 'string') throw new TypeError('comandosSimples: o texto precisa ser string');

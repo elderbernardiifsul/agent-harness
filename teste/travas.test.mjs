@@ -216,6 +216,19 @@ test('I4. caminhos literais e opções seguem passando', () => {
   assert.ok(av('git add $(git ls-files -m)', '/w').permite);
   assert.ok(av('git add .', '/w').permite);
 });
+test('T2: $ ou crase em caminho literal (aspas simples, escape) não é expansão (pendência 8)', () => {
+  for (const c of [`git add 'a$b.txt'`, "git add 'src/`x`.js'", `git commit -m x -- 'a$b'`, `git add "a\\$b"`, `git add a\\$b`,
+    `bash -c "git add 'a\\$b'"`, `git stage -- 'docs/$ver.md' src/a.js`])
+    assert.ok(av(c).permite, c);
+  // O que expande continua ilegível, mesmo ao lado (ou com o mesmo texto) de um literal.
+  for (const c of [`git add "$X"`, `git add 'a'$X`, `git add 'a$b' a$b`, `git add 'a$b' "$X"`, 'git add "src/`x`.js"',
+    `git commit -m x -- "$(pwd)"`, `git add 'a$b'*`, `bash -c 'git add "$X"'`]) {
+    const r = av(c);
+    assert.equal(r.trava, 'T2', c);
+    assert.match(r.motivo, /não consegui ler os caminhos/, c);
+  }
+  assert.equal(av(`git add 'a$b' .`).trava, 'T2'); // o literal não esconde o "tudo" ao lado
+});
 
 // ---- onda final: M6 (cd que pode falhar seguido de ;)
 test('M6. cd seguido de ; avalia também na pasta de antes', () => {

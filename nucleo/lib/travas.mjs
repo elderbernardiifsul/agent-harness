@@ -72,17 +72,18 @@ function pathspecPegaTudo(a, cwd, raiz) {
   return cobreARaiz(path.resolve(cwd, pasta), raiz);
 }
 
-// Classifica os pathspecs: 'tudo', 'ilegivel' (variável ou substituição) ou null.
-function classificarPathspecs(pathspecs, cwd, raiz) {
+// Classifica os pathspecs: 'tudo', 'ilegivel' (variável ou substituição) ou null. `literais` são os
+// argumentos com `$` ou crase que o shell não expande (entre aspas simples ou escapados).
+function classificarPathspecs(pathspecs, cwd, raiz, literais = []) {
   let ilegivel = false;
   for (const a of pathspecs) {
-    if (naoLiteral(a)) { ilegivel = true; continue; }
+    if (naoLiteral(a) && !literais.includes(a)) { ilegivel = true; continue; }
     if (pathspecPegaTudo(a, cwd, raiz)) return 'tudo';
   }
   return ilegivel ? 'ilegivel' : null;
 }
 
-function addPegaTudo(args, cwd, raiz) {
+function addPegaTudo(args, cwd, raiz, literais) {
   let fimDasOpcoes = false;
   const pathspecs = [];
   for (const a of args) {
@@ -97,14 +98,14 @@ function addPegaTudo(args, cwd, raiz) {
     }
     pathspecs.push(a);
   }
-  return classificarPathspecs(pathspecs, cwd, raiz);
+  return classificarPathspecs(pathspecs, cwd, raiz, literais);
 }
 
 // Letras de `git commit` cujo valor vem junto ou no argumento seguinte.
 const COMMIT_COM_VALOR = new Set(['m', 'F', 'C', 'c', 't']);
 const COMMIT_LONGAS_COM_VALOR = new Set(['--message', '--file', '--reuse-message', '--reedit-message', '--template', '--author', '--date', '--cleanup', '--fixup', '--squash', '--trailer', '--pathspec-from-file']);
 
-function commitPegaTudo(args, cwd, raiz) {
+function commitPegaTudo(args, cwd, raiz, literais) {
   const pathspecs = [];
   for (let k = 0; k < args.length; k++) {
     const a = args[k];
@@ -125,7 +126,7 @@ function commitPegaTudo(args, cwd, raiz) {
     }
     pathspecs.push(a);
   }
-  return classificarPathspecs(pathspecs, cwd, raiz);
+  return classificarPathspecs(pathspecs, cwd, raiz, literais);
 }
 
 function travaT2(cmd, ctx) {
@@ -133,7 +134,7 @@ function travaT2(cmd, ctx) {
   const g = subcomandoGit(cmd.argv, cmd.env);
   if (!g || (g.sub !== 'add' && g.sub !== 'stage' && g.sub !== 'commit')) return null;
   const cwd = g.incerto ? null : cmd.cwd;
-  const pega = (g.sub === 'commit' ? commitPegaTudo : addPegaTudo)(g.args, cwd, ctx.raiz);
+  const pega = (g.sub === 'commit' ? commitPegaTudo : addPegaTudo)(g.args, cwd, ctx.raiz, cmd.literais);
   if (!pega) return null;
   if (cwd != null && ctx.topoDe(cwd) !== ctx.raiz) return null;
   const onde = cwd == null ? 'em uma pasta que não consegui determinar' : 'no checkout principal';
