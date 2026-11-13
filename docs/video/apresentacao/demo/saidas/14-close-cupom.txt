@@ -1,0 +1,3 @@
+$ AH_SESSAO=carla-terminal tools/ah close cupom
+Frente as-2 cupom fechada.
+[código 0]

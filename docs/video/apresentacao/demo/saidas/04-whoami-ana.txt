@@ -1,0 +1,3 @@
+$ AH_SESSAO=ana-terminal tools/ah whoami
+Sessão ana-term (executor) · frente: as-1 carrinho
+[código 0]

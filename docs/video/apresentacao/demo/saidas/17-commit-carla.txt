@@ -1,0 +1,5 @@
+$ git add teste/total.test.js && git commit -q -m 'test: total com quantidade' && git log --oneline -3
+f17b195 test: total com quantidade
+9a03005 fix: total multiplica pela quantidade
+18e8507 chore: instala o agent-harness
+[código 0]

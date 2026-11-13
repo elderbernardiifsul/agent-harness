@@ -1,0 +1,4 @@
+$ tools/ah board
+Nenhuma frente aberta.
+Sessões vivas: ana-term (executor, —, sem processo); carla-te (executor, —, sem processo)
+[código 0]

@@ -1,0 +1,5 @@
+$ AH_SESSAO=ana-terminal tools/ah handoff --nota 'falta o teste do total'
+Aviso: sem remoto: só esta máquina retoma a frente carrinho (o ramo feat/carrinho fica só aqui).
+Frente as-1 carrinho passada.
+Para retomar: tools/ah open carrinho
+[código 0]

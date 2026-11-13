@@ -1,0 +1,6 @@
+$ AH_SESSAO=carla-terminal tools/ah close
+Recusado: Fechar a frente as-1 carrinho perderia trabalho.
+Faça: - commits do ramo feat/carrinho que não estão na dev nem no remoto (2); saída: git merge --no-ff feat/carrinho na dev, ou git push -u origin feat/carrinho
+    f17b195 test: total com quantidade
+    9a03005 fix: total multiplica pela quantidade
+[código 1]

@@ -1,0 +1,4 @@
+$ echo '{"session_id":"carla-terminal","hook_event_name":"PreToolUse","cwd":"<demo>/loja","tool_name":"Bash","tool_input":{"command":"git add -A"}}' | tools/ah gancho claude-code
+Recusado (T2): git add com tudo (-A, ., -u, *, a raiz) no checkout principal leva junto o trabalho de outras frentes
+Faça: git add <caminhos> com só os arquivos que você mudou (e git commit sem -a), ou trabalhe no worktree da frente
+[código 2]

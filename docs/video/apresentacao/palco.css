@@ -1,0 +1,168 @@
+/* Cores e tipografia de docs/aula/2026-11-13-apresentacao.html, tema escuro. Tela fixa de 1920×1080. */
+:root {
+  --bg: #121513;
+  --surface: #1a1e1b;
+  --fg: #e7ebe8;
+  --muted: #9ba49f;
+  --line: #2f3632;
+  --accent: #5fc28c;
+  --accent-fg: #0f1a13;
+  --accent-soft: #1c2c22;
+  --code-bg: #191d1a;
+  --warn: #e0a54a;
+  --warn-soft: #2d2416;
+  --empty: #48504b;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Ubuntu, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 36px;
+  line-height: 1.35;
+  position: relative;
+}
+#tela {
+  position: absolute;
+  left: 120px; right: 120px; top: 70px; bottom: 110px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+#faixa {
+  position: absolute;
+  left: 120px; right: 120px; bottom: 34px;
+  height: 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 2px solid var(--line);
+  padding-top: 12px;
+  font-size: 24px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+#faixa-pos { letter-spacing: 0.04em; }
+.rotulo {
+  font-size: 26px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 650;
+  margin: 0;
+}
+h1 { font-size: 92px; line-height: 1.05; font-weight: 700; margin: 0; }
+h2 { font-size: 60px; line-height: 1.12; font-weight: 680; margin: 0; }
+.sub { color: var(--muted); }
+.mono, code, pre { font-family: var(--mono); }
+code { font-size: 0.9em; color: var(--accent); }
+
+/* Título */
+.capa { justify-content: center; gap: 36px; }
+.capa .sub { font-size: 42px; max-width: 1500px; }
+.capa .endereco { font-family: var(--mono); font-size: 34px; color: var(--accent); }
+
+/* Lista que cresce */
+.lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 26px; }
+.lista li { display: grid; grid-template-columns: 64px 1fr; column-gap: 16px; }
+.lista .num {
+  font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums;
+}
+.lista .t { font-weight: 600; }
+.lista .c { grid-column: 2; color: var(--muted); font-size: 32px; }
+.lista.compacta { gap: 16px; }
+.lista.compacta .c { font-size: 30px; }
+.lista li.apagado { opacity: 0.38; }
+.nota-rodape {
+  margin-top: auto;
+  border-left: 8px solid var(--accent);
+  padding: 10px 0 10px 26px;
+  font-size: 36px;
+}
+.nota-rodape.aviso { border-color: var(--warn); }
+
+/* Duas colunas */
+.duas { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
+.cartao {
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  padding: 34px 40px;
+}
+.cartao.a { border-color: var(--accent); background: var(--accent-soft); }
+.cartao h3 { margin: 0 0 6px; font-size: 40px; }
+.cartao .sub { font-size: 30px; margin: 0 0 20px; }
+.cartao ul { margin: 0; padding-left: 1.1em; }
+.cartao li + li { margin-top: 12px; }
+
+/* Mecanismo: diagrama em cima, custo e falha embaixo */
+.figura { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.figura svg { width: 100%; height: 100%; display: block; }
+.custos { display: grid; grid-template-columns: 270px 1fr; row-gap: 12px; column-gap: 20px; font-size: 34px; }
+.custos .k { color: var(--muted); font-weight: 600; }
+.custos .k.w { color: var(--warn); }
+
+/* Terminal */
+.terminal {
+  flex: 1; min-height: 0;
+  background: var(--code-bg);
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  padding: 20px 32px;
+  overflow: hidden;
+  display: flex; flex-direction: column; justify-content: flex-start;
+}
+.terminal pre {
+  margin: 0;
+  font-size: 29px;
+  line-height: 1.3;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.terminal .bloco + .bloco { margin-top: 18px; }
+.terminal .cmd { font-weight: 700; color: var(--fg); }
+.terminal .cmd .p { color: var(--accent); }
+.terminal .out { color: #c9cfcb; }
+.terminal .rec { color: var(--warn); font-weight: 650; }
+.terminal .faca { color: var(--fg); }
+.terminal .cod { color: var(--muted); }
+.terminal .ok { color: var(--accent); }
+.terminal .av { color: var(--warn); }
+.terminal .marca { display: inline-block; max-width: 100%; background: var(--accent-soft); outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.terminal .marca.w { background: var(--warn-soft); outline-color: var(--warn); }
+.terminal .comentario { color: var(--accent); font-family: var(--sans); font-size: 30px; font-weight: 600; }
+.terminal .omitido { color: var(--muted); }
+.legenda-tela { font-size: 32px; color: var(--muted); }
+
+/* Árvore e código */
+.arvore pre { font-size: 30px; line-height: 1.42; margin: 0; white-space: pre; }
+.arvore .d { color: var(--fg); font-weight: 650; }
+.arvore .c { color: var(--muted); font-family: var(--sans); font-size: 30px; }
+.codigo pre { font-size: 28px; line-height: 1.4; margin: 0; white-space: pre-wrap; color: #c9cfcb; }
+.codigo .lin { display: grid; grid-template-columns: 5ch 1fr; }
+.codigo .lin.marca { background: var(--accent-soft); outline: 2px solid var(--accent); }
+.codigo .arq { font-family: var(--mono); font-size: 28px; color: var(--muted); }
+.codigo .marca { background: var(--accent-soft); }
+
+/* SVG */
+svg text { font-family: var(--sans); fill: var(--fg); }
+svg .caixa { fill: var(--surface); stroke: var(--line); stroke-width: 3; }
+svg .caixa-a { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 3.5; }
+svg .caixa-w { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 3.5; }
+svg .seta { stroke: var(--muted); stroke-width: 4; fill: none; }
+svg .seta-a { stroke: var(--accent); stroke-width: 4.5; fill: none; }
+svg .seta-w { stroke: var(--warn); stroke-width: 4.5; fill: none; }
+svg .t-muted { fill: var(--muted); }
+svg .t-acc { fill: var(--accent); }
+svg .t-warn { fill: var(--warn); }
+svg .mono { font-family: var(--mono); }
+svg .b { font-weight: 700; }
+
+.terminal.exemplo { flex: 0 0 auto; margin-top: auto; }
+.lista { margin-top: 12px; }

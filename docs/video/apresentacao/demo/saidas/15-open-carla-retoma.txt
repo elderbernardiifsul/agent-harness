@@ -1,0 +1,4 @@
+$ AH_SESSAO=carla-terminal tools/ah open carrinho
+Frente as-1 carrinho retomada.
+Trabalhe em: <demo>/wt/carrinho
+[código 0]

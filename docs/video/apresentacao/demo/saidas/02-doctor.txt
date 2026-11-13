@@ -1,0 +1,26 @@
+$ tools/ah doctor
+ok      Node 22 ou mais novo
+ok      git presente
+ok      Shell POSIX
+ok      .harness/config.json válido
+ok      Cópia do núcleo (MANIFEST.json)
+ok      Núcleo igual ao clone de origem
+ok      Arquivos de estado legíveis
+aviso   Sigla sem choque: não conferi o histórico sem login do gh; instale o gh, rode gh auth login e depois ah init
+aviso   gh presente e autenticado: sem o gh não há comentário em ticket nem proteção de ramo; instale o gh e rode gh auth login
+ok      Ramo base e ramos protegidos
+ok      Ganchos do Claude Code instalados
+ok      Harness no ramo base
+ok      Gancho responde
+ok      Hora de início do processo
+ok      Gancho recusa troca de ramo
+ok      Ganchos vigiam a edição
+ok      Comentários pendentes
+ok      Frentes órfãs
+aviso   Proteção no servidor: sem o gh não consegui conferir a proteção dos ramos; só a trava local protege
+aviso   CI com comando de teste: defina ci.comandoDeTeste em .harness/config.json e rode ah init
+ok      Frentes com worktree
+ok      Fila de pesado
+ok      Adaptador do agente em uso (claude-code)
+0 falha(s), 4 aviso(s).
+[código 0]

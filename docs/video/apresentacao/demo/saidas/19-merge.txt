@@ -1,0 +1,3 @@
+$ git merge -q --no-ff -m 'merge: carrinho' feat/carrinho && git log --oneline -1
+729a699 merge: carrinho
+[código 0]

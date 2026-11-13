@@ -1,0 +1,21 @@
+$ node <clone>/nucleo/bin/ah.mjs init --projeto loja --sigla as --sem-protecao
+CI criada desligada: defina ci.comandoDeTeste em .harness/config.json e rode ah init de novo
+Criei:
+  .harness/nucleo/ (50 arquivos)
+  .harness/config.json
+  .harness/extensoes/.gitkeep
+  tools/ah
+  tools/ah.cmd
+  docs/agents/sessoes-paralelas.md
+  docs/agents/historico-das-frentes.md
+  AGENTS.md
+  .claude/settings.json
+  .github/workflows/ah-ci.yml
+  ramo dev (local)
+  ramo stage (local)
+Falta levar o harness para o ramo base dev (as frentes partem dele; fora dele não há tools/ah nem gancho):
+  git switch dev
+  git add -- .harness tools/ah tools/ah.cmd AGENTS.md docs/agents/sessoes-paralelas.md docs/agents/historico-das-frentes.md .claude/settings.json .github/workflows/ah-ci.yml
+  git commit -m "chore: instala o agent-harness"
+Depois rode: tools/ah doctor
+[código 0]

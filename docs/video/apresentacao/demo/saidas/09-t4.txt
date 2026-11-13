@@ -1,0 +1,4 @@
+$ echo '{"session_id":"carla-terminal","hook_event_name":"PreToolUse","cwd":"<demo>/loja","tool_name":"Edit","tool_input":{"file_path":"<demo>/wt/carrinho/src/total.js","old_string":"a","new_string":"b"}}' | tools/ah gancho claude-code
+Recusado (T4): <demo>/wt/carrinho/src/total.js está no worktree da frente as-1 carrinho, da sessão ana-term, que está viva
+Faça: escreva só no worktree da sua frente; para mexer em carrinho, peça à sessão ana-term (ah handoff) ou, se ela morrer, ah takeover carrinho
+[código 2]

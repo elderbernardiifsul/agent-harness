@@ -1,0 +1,4 @@
+$ AH_SESSAO=carla-terminal tools/ah open cupom
+Frente as-2 cupom aberta.
+Trabalhe em: <demo>/wt/cupom
+[código 0]

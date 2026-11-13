@@ -1,0 +1,3 @@
+$ AH_SESSAO=carla-terminal tools/ah close --resumo 'total multiplica pela quantidade'
+Frente as-1 carrinho fechada.
+[código 0]

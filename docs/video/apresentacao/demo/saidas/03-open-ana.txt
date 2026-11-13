@@ -1,0 +1,4 @@
+$ AH_SESSAO=ana-terminal tools/ah open carrinho
+Frente as-1 carrinho aberta.
+Trabalhe em: <demo>/wt/carrinho
+[código 0]

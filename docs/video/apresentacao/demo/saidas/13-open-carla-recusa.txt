@@ -1,0 +1,4 @@
+$ AH_SESSAO=carla-terminal tools/ah open carrinho
+Recusado: Esta sessão já tem a frente cupom.
+Faça: continue nela ou, antes de abrir outra, encerre com ah close cupom (o orquestrador abre várias: ah papel orquestrador)
+[código 1]

@@ -1,0 +1,4 @@
+$ echo '{"session_id":"carla-terminal","hook_event_name":"PreToolUse","cwd":"<demo>/loja","tool_name":"Bash","tool_input":{"command":"git push origin dev:main"}}' | tools/ah gancho claude-code
+Recusado (T5): push para o ramo protegido main
+Faça: abra um PR para main e peça a ordem do executivo; para publicar o seu trabalho, empurre o ramo da frente (git push origin <ramo>)
+[código 2]

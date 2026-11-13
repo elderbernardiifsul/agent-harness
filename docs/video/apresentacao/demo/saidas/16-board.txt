@@ -1,0 +1,5 @@
+$ tools/ah board
+ID    NOME      DONA      ESTADO  TICKETS  SOBREPÕE  PLANO  ÚLTIMA NOTA
+as-1  carrinho  carla-te  ativa   —        —         —      falta o teste do total
+Sessões vivas: ana-term (executor, —, sem processo); carla-te (executor, carrinho, sem processo)
+[código 0]
