@@ -2,13 +2,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ErroDeUso, arquivoDaMaquina } from '../lib/caminhos.mjs';
+import { ErroDeUso, arquivoDaMaquina, dirEstado as caminhoDoEstado } from '../lib/caminhos.mjs';
 import { PADROES, validarConfig } from '../lib/config.mjs';
 import { gravarJson, lerJson } from '../lib/estado.mjs';
 import { siglaValida, siglaDeLogin } from '../lib/frente.mjs';
 import { git, existeRamo, ramoAtual } from '../lib/git.mjs';
 import { consultarProtecao, loginAtual, protegerRamo, repoAtual } from '../lib/github.mjs';
 import { VERSAO } from '../versao.mjs';
+import { arquivosDaCopia, listarArquivosDoNucleo, listaDoManifesto, montarManifesto } from '../lib/copia.mjs';
 
 export const descricao = 'instala o harness neste projeto, a partir do clone do agent-harness';
 export const uso = 'ah init [--projeto <nome>] [--sigla <sigla>] [--agentes claude-code] [--teste "<comando>"] [--sem-protecao] [--sobrescrever]';
@@ -16,8 +17,6 @@ export const requisitos = { config: false, sessao: false };
 
 const RAIZ_DO_HARNESS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const AGENTES_SUPORTADOS = ['claude-code'];
-const DIRS_IGNORADOS = new Set(['node_modules', 'teste', 'test', '__tests__']);
-const ARQUIVO_DE_TESTE = /\.(test|spec)\.[cm]?js$/;
 const ENTRADA_GITKEEP = '.harness/extensoes/.gitkeep';
 const PREFIXO_NUCLEO = '.harness/nucleo/';
 const COM_VALOR = new Set(['--projeto', '--sigla', '--agentes', '--teste']);
@@ -29,28 +28,10 @@ const COMANDO_DA_CI_DESLIGADA = 'echo "defina ci.comandoDeTeste em .harness/conf
 const ARQUIVO_AGENTS = 'AGENTS.md';
 const MARCA_INICIO = '<!-- agent-harness: início';
 const MARCA_FIM = '<!-- agent-harness: fim -->';
-// Documentos do clone copiados para .harness/nucleo/docs/: o roteiro de adaptação e a referência que ele cita.
-const DOCS_COPIADOS = ['agentes', 'referencia'];
 const semPonto = t => String(t).replace(/[.\s]+$/, '');
 const eObjeto = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-// Lista os arquivos do núcleo a copiar. Links simbólicos nunca são seguidos (ficam em `ignorados`),
-// e node_modules, pastas de teste e arquivos de teste não entram.
-export function listarArquivosDoNucleo(dir) {
-  const arquivos = [];
-  const ignorados = [];
-  const percorrer = (atual, rel) => {
-    const entradas = fs.readdirSync(atual, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
-    for (const e of entradas) {
-      const relativo = rel ? `${rel}/${e.name}` : e.name;
-      if (e.isSymbolicLink()) ignorados.push(relativo);
-      else if (e.isDirectory()) { if (!DIRS_IGNORADOS.has(e.name)) percorrer(path.join(atual, e.name), relativo); }
-      else if (e.isFile() && !ARQUIVO_DE_TESTE.test(e.name)) arquivos.push(relativo);
-    }
-  };
-  percorrer(dir, '');
-  return { arquivos, ignorados };
-}
+export { listarArquivosDoNucleo };
 
 function lerOpcoes(args) {
   const o = { sobrescrever: false, 'sem-protecao': false };
@@ -294,31 +275,21 @@ export async function executar(args, amb) {
     conflitos.push(rel);
   }
 
-  // 1. Núcleo e manifesto.
-  const { arquivos, ignorados } = listarArquivosDoNucleo(dirNucleo);
-  for (const rel of arquivos) colocar(PREFIXO_NUCLEO + rel, fs.readFileSync(path.join(dirNucleo, ...rel.split('/'))));
+  // 1. Núcleo e manifesto. Os documentos (roteiro de adaptação e referência) e os modelos copiados
+  // (trecho do AGENTS.md, ganchos que o doctor confere) acompanham o clone sem perguntar.
+  const { arquivos, ignorados } = arquivosDaCopia(RAIZ_DO_HARNESS);
+  for (const a of arquivos) {
+    const acompanha = a.rel.startsWith('docs/') || a.rel.startsWith('modelos/');
+    colocar(PREFIXO_NUCLEO + a.rel, fs.readFileSync(a.origem), acompanha ? { atualizaSe: () => true } : {});
+  }
   const c = git(['rev-parse', 'HEAD'], { cwd: RAIZ_DO_HARNESS, env: amb.env });
   const commit = c.codigo === 0 && /^[0-9a-f]{40}$/.test(c.saida.trim()) ? c.saida.trim() : null;
   const arquivoManifesto = PREFIXO_NUCLEO + 'MANIFEST.json';
   const anterior = lerJson(path.join(raiz, ...arquivoManifesto.split('/')), null);
-  if (!(anterior && anterior.versao === VERSAO && anterior.commit === commit)) {
-    colocar(arquivoManifesto, Buffer.from(`${JSON.stringify({ versao: VERSAO, commit, copiadoEm: new Date().toISOString() }, null, 2)}\n`));
+  const manifesto = montarManifesto({ versao: VERSAO, commit, arquivos });
+  if (!(anterior && anterior.versao === VERSAO && anterior.commit === commit && JSON.stringify(listaDoManifesto(anterior)) === JSON.stringify(manifesto.arquivos))) {
+    colocar(arquivoManifesto, Buffer.from(`${JSON.stringify(manifesto, null, 2)}\n`));
   }
-
-  // Roteiro de adaptação para outros agentes (o AGENTS.md aponta para ele) e a referência que ele cita.
-  for (const pasta of DOCS_COPIADOS) {
-    const dir = path.join(RAIZ_DO_HARNESS, 'docs', pasta);
-    if (!fs.existsSync(dir)) continue;
-    for (const rel of listarArquivosDoNucleo(dir).arquivos) {
-      colocar(`${PREFIXO_NUCLEO}docs/${pasta}/${rel}`, fs.readFileSync(path.join(dir, ...rel.split('/'))), { atualizaSe: () => true });
-    }
-  }
-
-  // Trecho do AGENTS.md: o aviso do link simbólico manda copiá-lo daqui.
-  colocar(PREFIXO_NUCLEO + 'modelos/agents-trecho.md', fs.readFileSync(path.join(dirModelos, 'agents-trecho.md')), { atualizaSe: () => true });
-
-  // Modelo dos ganchos: o doctor da cópia instalada confere o settings.json contra ele.
-  colocar(PREFIXO_NUCLEO + 'modelos/claude-code/ganchos.json', fs.readFileSync(path.join(dirModelos, 'claude-code', 'ganchos.json')), { atualizaSe: () => true });
 
   // 2. Configuração e extensões: nunca sobrescritas.
   colocar('.harness/config.json', Buffer.from(`${JSON.stringify(cfg, null, 2)}\n`), { nunca: true });
@@ -353,6 +324,11 @@ export async function executar(args, amb) {
   // 4. Sigla na máquina.
   const novo = { ...(sigla.gravado ?? {}), sigla: sigla.sigla, login: sigla.login };
   gravarJson(arquivoMaquina, novo);
+  // O clone de origem fica no estado do projeto, que é da máquina: o doctor compara o núcleo com ele.
+  const projeto = typeof configLida?.projeto === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(configLida.projeto) ? configLida.projeto : cfg.projeto;
+  try {
+    gravarJson(path.join(caminhoDoEstado(projeto, amb.env, process.platform, os.homedir()), 'origem.json'), { clone: fs.realpathSync(RAIZ_DO_HARNESS) });
+  } catch { /* sem como registrar: o doctor só não confere a origem */ }
 
   // 5. Ramos locais que faltam (sem trocar de ramo e sem empurrar).
   const nomesRamos = [configFinal.git.base, ...configFinal.git.protegidos];
@@ -425,8 +401,8 @@ const MENSAGEM_DO_COMMIT = 'chore: instala o agent-harness';
 
 // As frentes partem do ramo base: o commit do harness tem de ir para lá, senão o worktree
 // nasce sem tools/ah e o gancho não existe. Diz os comandos exatos.
-function passosDoCommit(raiz, base, env) {
-  const caminhos = CAMINHOS_DO_COMMIT.filter(c => fs.existsSync(path.join(raiz, ...c.split('/'))));
+export function passosDoCommit(raiz, base, env, { caminhos: candidatos = CAMINHOS_DO_COMMIT, mensagem = MENSAGEM_DO_COMMIT } = {}) {
+  const caminhos = candidatos.filter(c => fs.existsSync(path.join(raiz, ...c.split('/'))));
   const pendentes = git(['status', '--porcelain', '--untracked-files=all', '--', ...caminhos], { cwd: raiz, env }).saida.trim() !== '';
   const atual = ramoAtual(raiz, env);
   const naBase = git(['cat-file', '-e', `refs/heads/${base}:tools/ah`], { cwd: raiz, env }).codigo === 0;
@@ -434,7 +410,7 @@ function passosDoCommit(raiz, base, env) {
   const passos = [];
   if (atual !== base) passos.push(`git switch ${base}`);
   if (pendentes) {
-    passos.push(`git add -- ${caminhos.join(' ')}`, `git commit -m "${MENSAGEM_DO_COMMIT}"`);
+    passos.push(`git add -- ${caminhos.join(' ')}`, `git commit -m "${mensagem}"`);
   } else if (atual && atual !== base) {
     passos.push(`git merge ${atual}`);
   }
