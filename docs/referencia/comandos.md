@@ -68,7 +68,7 @@ Exemplo, num repositório que só tinha a `main`:
 ```
 $ node ~/agent-harness/nucleo/bin/ah.mjs init --projeto loja --sigla as --sem-protecao
 Criei:
-  .harness/nucleo/ (25 arquivos)
+  .harness/nucleo/ (<n> arquivos)
   .harness/config.json
   .harness/extensoes/.gitkeep
   tools/ah
@@ -87,7 +87,7 @@ Depois rode: tools/ah doctor
 CI criada desligada: defina ci.comandoDeTeste em .harness/config.json e rode ah init de novo
 ```
 
-(A última linha sai na saída de erro.) O commit do harness vai **no ramo base**: as frentes nascem dele, e um worktree sem `tools/ah` não tem gancho nem trava. O `init` só manda `git switch <base>` quando o checkout está em outro ramo. Se o harness já foi commitado em outro ramo (a `main`, por exemplo), o `init` repetido manda `git switch dev` e `git merge main`. Com tudo no ramo base, ele termina com `Agora rode: tools/ah doctor`.
+(A última linha sai na saída de erro; o número de arquivos do núcleo muda de versão para versão.) O commit do harness vai **no ramo base**: as frentes nascem dele, e um worktree sem `tools/ah` não tem gancho nem trava. O `init` só manda `git switch <base>` quando o checkout está em outro ramo. Se o harness já foi commitado em outro ramo (a `main`, por exemplo), o `init` repetido manda `git switch dev` e `git merge main`. Com tudo no ramo base, ele termina com `Agora rode: tools/ah doctor`.
 
 ## doctor
 
