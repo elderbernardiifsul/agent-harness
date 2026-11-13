@@ -10,6 +10,8 @@ const ctx = {
   topoDe: c => (c && c.startsWith('/w') ? '/w' : '/r'),
   ramoAtual: c => (c?.startsWith('/w') ? 'feat/x' : 'dev'),
   baseDoPr: n => ({ 7: 'dev', 8: 'main' })[n] ?? null,
+  ehRef: (c, n) => ['main', 'stage', 'dev', 'feat/x', 'v1'].includes(n),
+  existe: c => c.endsWith('arquivo.txt'),
 };
 const av = (comando, cwd = '/r') => avaliar({ tipo: 'comando', comando, cwd }, ctx);
 const comRamo = ramo => ({ ...ctx, ramoAtual: () => ramo });
@@ -146,18 +148,27 @@ test('AH_GUARD exportado ou solto em comando anterior não vale para o seguinte'
 });
 
 // ---- onda final: C2 (troca de ramo na mesma linha)
+// A T1 recusa antes a troca de ramo no checkout principal; com a troca liberada (AH_GUARD=off
+// só nela), a T5 continua enxergando o ramo que a troca deixa em uso.
+const soTrocaLiberada = c => c.replace(/\bgit (checkout|switch)\b/g, 'AH_GUARD=off git $1');
+const C2_RECUSA = ['git checkout main && git push', 'git switch main && git merge dev && git push', 'git checkout stage && git merge dev && git push origin HEAD',
+  'git checkout main; git push', 'git switch main && git push origin', 'git checkout $RAMO && git push', 'git checkout - && git push',
+  'git switch --detach && git push', '(git checkout main) && git push', 'git switch -C main && git push', 'git checkout -B stage && git push',
+  'git switch --track origin/main && git push'];
 test('C2. checkout/switch para ramo protegido antes do push, na mesma linha', () => {
-  for (const c of ['git checkout main && git push', 'git switch main && git merge dev && git push', 'git checkout stage && git merge dev && git push origin HEAD',
-    'git checkout main; git push', 'git switch main && git push origin', 'git checkout $RAMO && git push', 'git checkout - && git push',
-    'git switch --detach && git push', '(git checkout main) && git push', 'git switch -C main && git push', 'git checkout -B stage && git push',
-    'git switch --track origin/main && git push'])
-    assert.equal(av(c).trava, 'T5', c);
+  for (const c of C2_RECUSA) assert.equal(av(soTrocaLiberada(c)).trava, 'T5', c);
+  for (const c of C2_RECUSA.filter(c => !c.includes('$RAMO'))) assert.equal(av(c).trava, 'T1', c);
 });
-test('C2. o que não troca para ramo protegido continua passando', () => {
+test('C2. o que não troca para ramo protegido continua passando na T5', () => {
   for (const c of ['git checkout -b x && git push -u origin x', 'git switch dev && git merge --no-ff feat/x && git push origin dev',
     'git switch -c nova && git push', 'git checkout main -- arquivo.txt && git push', 'git checkout -- arquivo.txt && git push',
     'git -C /w checkout main && git push', 'git checkout main && git -C /w push', 'git checkout main && git merge dev'])
+    assert.ok(av(soTrocaLiberada(c)).permite, c);
+  for (const c of ['git switch dev && git merge --no-ff feat/x && git push origin dev', 'git checkout main -- arquivo.txt && git push',
+    'git checkout -- arquivo.txt && git push', 'git -C /w checkout main && git push'])
     assert.ok(av(c).permite, c);
+  for (const c of ['git checkout -b x && git push -u origin x', 'git switch -c nova && git push', 'git checkout main && git -C /w push', 'git checkout main && git merge dev'])
+    assert.equal(av(c).trava, 'T1', c);
 });
 test('C2. troca não afrouxa o ramo protegido que já estava em uso', () => {
   assert.equal(avaliar({ tipo: 'comando', comando: 'git switch dev && git push', cwd: '/r' }, comRamo('main')).trava, 'T5');
@@ -190,4 +201,78 @@ test('M6. cd seguido de ; avalia também na pasta de antes', () => {
   assert.ok(av('cd /w || exit 1; git add -A').permite);
   assert.equal(av('cd /w; git push').trava, undefined); // dev no checkout principal: passa nos dois
   assert.equal(avaliar({ tipo: 'comando', comando: 'cd /w; git push', cwd: '/r' }, { ...ctx, ramoAtual: c => (c?.startsWith('/w') ? 'feat/x' : 'main') }).trava, 'T5');
+});
+
+// ---- T1 e T3 (checkout principal)
+for (const c of ['git switch main', 'git switch -c nova', 'git switch -', 'git switch --detach', 'git checkout main', 'git checkout -b nova',
+  'git checkout -', 'git checkout --detach HEAD~1', 'git checkout v1', 'gh pr checkout 7', 'cd . && git checkout stage', `bash -c 'git switch main'`])
+  test(`T1 recusa: ${c}`, () => { const r = av(c); assert.equal(r.trava, 'T1'); assert.match(textoDaRecusa(r), /Faça: .*tools\/ah open/); });
+test('T1 permite voltar à base e restaurar arquivo', () => {
+  for (const c of ['git switch dev', 'git checkout dev', 'git checkout arquivo.txt', 'git checkout main -- arquivo.txt', 'git checkout nao-existe']) assert.ok(av(c).permite, c);
+});
+test('T1 e T3 não valem no worktree da frente', () => { for (const c of ['git switch -c outra', 'git reset --hard', 'git stash', 'git rebase dev']) assert.ok(av(c, '/w').permite, c); });
+for (const c of ['git reset --hard', 'git reset --hard HEAD~1', 'git reset --keep x', 'git reset --merge', 'git clean -fd', 'git clean -xdf', 'git clean --force',
+  'git checkout .', 'git checkout -- .', 'git restore .', 'git restore :/', 'git checkout -f dev', 'git switch --discard-changes dev',
+  'git stash', 'git stash pop', 'git stash push -m x', 'git rebase dev', 'git rebase -i HEAD~2'])
+  test(`T3 recusa: ${c}`, () => assert.equal(av(c).trava, 'T3'));
+test('T3 permite', () => { for (const c of ['git stash list', 'git stash show', 'git rebase --abort', 'git reset', 'git reset HEAD arquivo.txt', 'git clean -n', 'git restore arquivo.txt']) assert.ok(av(c).permite, c); });
+test('T1 e T3 recusam com cwd desconhecido', () => { assert.equal(av('cd "$X" && git stash').trava, 'T3'); });
+test('AH_GUARD=off libera T1 e T3 no próprio comando', () => { assert.equal(av('AH_GUARD=off git switch main').liberada, 'T1'); assert.equal(av('AH_GUARD=off git reset --hard').liberada, 'T3'); });
+test('troca de ramo seguida de push no principal agora cai na T1', () => assert.equal(av('git switch main && git pull && git switch dev && git push').trava, 'T1'));
+
+test('T1 e T3: o texto da recusa', () => {
+  const r1 = av('git switch main');
+  assert.equal(textoDaRecusa(r1), 'Recusado (T1): trocar o ramo do checkout principal muda o chão das outras sessões\n'
+    + 'Faça: trabalhe no worktree de uma frente (tools/ah open <nome>); o checkout principal fica em dev');
+  const r3 = av('git reset --hard');
+  assert.match(r3.motivo, /^git reset --hard no checkout principal descarta ou esconde trabalho que pode ser de outra sessão$/);
+  assert.equal(r3.saida, 'faça isso no worktree da sua frente; no checkout principal, guarde por caminho (git add <caminhos> e git commit) ou combine com a dona das mudanças');
+});
+test('T1 vem antes da T3 quando as duas recusariam', () => {
+  assert.equal(av('git checkout -f main').trava, 'T1');
+  assert.equal(av('git switch --discard-changes main').trava, 'T1');
+  assert.equal(av('git checkout main -- .').trava, 'T3');
+});
+test('T1 e T3 com opções globais do git antes do subcomando', () => {
+  assert.equal(av('git -C /r switch main', '/w').trava, 'T1');
+  assert.ok(av('git -C /w switch main').permite);
+  assert.equal(av('git -c x=y reset --hard').trava, 'T3');
+  assert.equal(av('git -c x=y switch main').trava, 'T1');
+  assert.equal(av('git -C /r reset --hard', '/w').trava, 'T3');
+  assert.ok(av('git -C /w reset --hard').permite);
+  assert.equal(av('git --git-dir=/x reset --hard', '/w').trava, 'T3');
+  assert.equal(av('gh -R exemplo/loja pr checkout 7').trava, 'T1');
+});
+test('T1: outras formas de troca de ramo', () => {
+  for (const c of ['git switch --create nova', 'git switch --force-create nova', 'git switch --orphan nova', 'git switch -d', 'git switch -C nova',
+    'git switch --track origin/main', 'git checkout -B nova', 'git checkout --orphan nova', 'git checkout -bnova', 'git checkout --orphan=nova',
+    'git switch -q main', 'git checkout -q main', 'cd /w; git switch main'])
+    assert.equal(av(c).trava, 'T1', c);
+});
+test('T1: checkout com mais de um posicional ou depois de -- não troca de ramo', () => {
+  for (const c of ['git checkout main arquivo.txt', 'git checkout main -- src/a.js', 'git checkout -- main', 'git checkout -p', 'git checkout']) assert.ok(av(c).permite, c);
+});
+test('T1: sem ehRef nem existe no ctx (contexto antigo), checkout de nome solto não recusa', () => {
+  const { ehRef, existe, ...antigo } = ctx;
+  assert.ok(avaliar({ tipo: 'comando', comando: 'git checkout main', cwd: '/r' }, antigo).permite);
+  assert.equal(avaliar({ tipo: 'comando', comando: 'git switch main', cwd: '/r' }, antigo).trava, 'T1');
+  assert.equal(avaliar({ tipo: 'comando', comando: 'git checkout -b x', cwd: '/r' }, antigo).trava, 'T1');
+});
+test('T1: o caminho e a pasta que chegam a existe e ehRef', () => {
+  const vistos = [];
+  const c = { ...ctx, existe: p => { vistos.push(['existe', p]); return false; }, ehRef: (d, n) => { vistos.push(['ehRef', d, n]); return true; } };
+  assert.equal(avaliar({ tipo: 'comando', comando: 'git checkout x', cwd: '/r/src' }, c).trava, 'T1');
+  assert.deepEqual(vistos, [['existe', '/r/src/x'], ['ehRef', '/r/src', 'x']]);
+});
+test('T3: formas abreviadas e combinadas', () => {
+  for (const c of ['git reset --ha', 'git reset --me', 'git reset --ke HEAD', 'git clean -ffdx', 'git clean -df', 'git clean --fo', 'git checkout --force dev',
+    'git checkout -fq dev', 'git switch -f dev', 'git switch --force dev', 'git switch --di dev', 'git restore --staged .', 'git restore -s main -- .',
+    'git checkout main .', 'git checkout ..', 'git stash -m x', 'git stash drop', 'git stash clear', 'git rebase --continue', 'git rebase --onto dev x',
+    'git checkout "$ARQ"', 'git restore $(git diff --name-only)'])
+    assert.equal(av(c).trava, 'T3', c);
+});
+test('T3: o que não descarta passa', () => {
+  for (const c of ['git reset --soft HEAD~1', 'git reset --mixed', 'git reset -q', 'git clean -nfd', 'git clean --dry-run -f', 'git clean -e f -n',
+    'git restore src/a.js', 'git restore -s main arquivo.txt', 'git rebase --quit', 'git stash list --stat', 'git checkout -- src/a.js'])
+    assert.ok(av(c).permite, c);
 });

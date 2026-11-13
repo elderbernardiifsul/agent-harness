@@ -299,6 +299,28 @@ test('onda final: o gancho recusa a troca para ramo protegido seguida de push e 
     assert.equal(ganchoPre(p, { command: c }).codigo, 2, c);
   for (const c of ['git add *', 'cd .harness && git add ..', `git add ${p.raiz}`, 'git add "$(pwd)"', 'git commit . -m x', 'git add $(git ls-files -m)', 'cd nao-existe; git add -A'])
     assert.equal(ganchoPre(p, { command: c }).codigo, 2, c);
-  for (const c of ['git checkout -b x && git push -u origin x', 'git switch dev && git merge --no-ff feat/x && git push origin dev', 'git add README.md', 'git commit -m x'])
+  for (const c of ['git switch dev && git merge --no-ff feat/x && git push origin dev', 'git add README.md', 'git commit -m x'])
     assert.equal(ganchoPre(p, { command: c }).codigo, 0, c);
+  const r = ganchoPre(p, { command: 'git checkout -b x && git push -u origin x' });
+  assert.equal(r.codigo, 2);
+  assert.match(r.erro, /Recusado \(T1\)/);
+});
+
+test('ah gancho recusa git switch no checkout principal', () => { const r = ganchoPre(p, { command: 'git switch main' }); assert.equal(r.codigo, 2); assert.match(r.erro, /Recusado \(T1\)/); });
+
+test('ah gancho: checkout de ramo existente recusa, de arquivo existente passa (ehRef e existe do contrato)', () => {
+  assert.match(ganchoPre(p, { command: 'git checkout main' }).erro, /Recusado \(T1\)/);
+  assert.equal(ganchoPre(p, { command: 'git checkout README.md' }).codigo, 0);
+  assert.equal(ganchoPre(p, { command: 'git checkout nao-existe-nem-ramo' }).codigo, 0);
+  assert.match(ganchoPre(p, { command: 'git stash' }).erro, /Recusado \(T3\)/);
+});
+
+test('ah gancho: ramo que só existe no remoto também conta como troca de ramo (T1)', (t) => {
+  const q = criarProjeto();
+  t.after(() => q.limpar());
+  for (const args of [['branch', 'so-no-remoto'], ['push', '-q', 'origin', 'so-no-remoto'], ['branch', '-D', 'so-no-remoto'], ['fetch', '-q', 'origin']]) {
+    assert.equal(q.git(args).codigo, 0, args.join(' '));
+  }
+  assert.match(ganchoPre(q, { command: 'git checkout so-no-remoto' }).erro, /Recusado \(T1\)/);
+  assert.equal(ganchoPre(q, { command: 'git checkout -- -x' }).codigo, 0);
 });

@@ -2,7 +2,9 @@
 // recusar ou permitir. São puras: nada de git nem de disco; tudo vem pelo `ctx`.
 //
 //   T0  texto que não dá para ler com segurança e que menciona git ou gh
+//   T1  troca de ramo no checkout principal
 //   T2  git add/commit que pega tudo, no checkout principal
+//   T3  reset, clean, checkout/restore em massa, stash e rebase no checkout principal
 //   T5  push e merge de PR em ramo protegido
 //
 // Limites conhecidos (a trava enxerga a mais, não a tudo): apelidos do git
@@ -259,6 +261,167 @@ function travaT5(cmd, ctx) {
   return null;
 }
 
+// ---------------------------------------------------------------- T1 e T3
+
+// O cwd em que T1 e T3 avaliam: null quando não sei (cwd desconhecido ou repositório apontado
+// por opção ou variável; recusa como a T2), undefined quando não é o checkout principal.
+function cwdDoPrincipal(cwd, incerto, ctx) {
+  if (incerto || cwd == null) return null;
+  return ctx.topoDe(cwd) === ctx.raiz ? cwd : undefined;
+}
+const ondeDe = cwd => (cwd == null ? 'em uma pasta que não consegui determinar' : 'no checkout principal');
+
+// `a` (sem o `=valor`) é a opção longa `nome` ou uma abreviação dela com pelo menos `minimo`
+// caracteres; o git aceita abreviação inequívoca, e cada `minimo` é o que a torna inequívoca.
+function ehLonga(a, nome, minimo = nome.length) {
+  if (!a.startsWith('--')) return false;
+  const n = a.includes('=') ? a.slice(0, a.indexOf('=')) : a;
+  return n.length >= minimo && nome.startsWith(n);
+}
+
+// Opções e posicionais de um subcomando. `curtas` são as letras que levam valor (junto ou no
+// argumento seguinte); `longas`, as longas que levam o valor no argumento seguinte. Devolve
+// {opcoes: [nome], posicionais (antes do --), depois (depois do --), comTraco}.
+function lerArgs(args, curtas = new Set(), longas = new Set()) {
+  const opcoes = [];
+  const posicionais = [];
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    if (a === '--') return { opcoes, posicionais, depois: args.slice(k + 1), comTraco: true };
+    if (a.startsWith('--')) {
+      opcoes.push(a);
+      if (!a.includes('=') && longas.has(a)) k++;
+      continue;
+    }
+    if (a.startsWith('-') && a.length > 1) {
+      for (let i = 1; i < a.length; i++) {
+        opcoes.push(`-${a[i]}`);
+        if (curtas.has(a[i])) { if (i === a.length - 1) k++; break; }
+      }
+      continue;
+    }
+    posicionais.push(a);
+  }
+  return { opcoes, posicionais, depois: [], comTraco: false };
+}
+
+const SWITCH_CURTAS = new Set(['c', 'C']);
+const SWITCH_LONGAS = new Set(['--create', '--force-create', '--orphan']);
+const CHECKOUT_CURTAS = new Set(['b', 'B']);
+const CHECKOUT_LONGAS = new Set(['--orphan', '--pathspec-from-file']);
+const RESTORE_CURTAS = new Set(['s']);
+const RESTORE_LONGAS = new Set(['--source', '--pathspec-from-file']);
+
+// `git switch` troca de ramo: cria, desliga do ramo, volta ao anterior ou vai para outro que não a base.
+function switchTrocaRamo(args, base) {
+  const { opcoes, posicionais } = lerArgs(args, SWITCH_CURTAS, SWITCH_LONGAS);
+  if (opcoes.some(o => ['-c', '-C', '-d'].includes(o) || ehLonga(o, '--create', 4) || ehLonga(o, '--force-create', 8)
+    || ehLonga(o, '--orphan', 4) || ehLonga(o, '--detach', 4))) return true;
+  return posicionais.length > 0 && (posicionais[0] === '-' || posicionais[0] !== base);
+}
+
+// `git checkout` troca de ramo: -b, -B, --orphan, --detach, `-`, ou um único posicional (sem `--`)
+// que não é a base, não existe como caminho e é uma referência. Sem `ehRef` e `existe` no ctx,
+// o posicional solto não recusa.
+function checkoutTrocaRamo(args, cwd, ctx) {
+  const { opcoes, posicionais, comTraco } = lerArgs(args, CHECKOUT_CURTAS, CHECKOUT_LONGAS);
+  if (opcoes.some(o => o === '-b' || o === '-B' || ehLonga(o, '--orphan', 4) || ehLonga(o, '--detach', 4))) return true;
+  if (comTraco || posicionais.length !== 1) return false;
+  const [alvo] = posicionais;
+  if (alvo === '-') return true;
+  if (alvo === ctx.config.git.base || naoLiteral(alvo)) return false;
+  if (typeof ctx.ehRef !== 'function' || typeof ctx.existe !== 'function') return false;
+  const pasta = cwd ?? ctx.raiz;
+  if (ctx.existe(path.resolve(pasta, alvo))) return false;
+  return ctx.ehRef(pasta, alvo) === true;
+}
+
+function travaT1(cmd, ctx) {
+  const nome = nomeDe(cmd.argv[0]);
+  let incerto = false;
+  let troca = null; // função que decide, já com o cwd
+  if (nome === 'gh') {
+    let k = 1;
+    while (k < cmd.argv.length && cmd.argv[k].startsWith('-')) k += GH_COM_VALOR.has(cmd.argv[k]) ? 2 : 1;
+    if (cmd.argv[k] === 'pr' && cmd.argv[k + 1] === 'checkout') troca = () => true;
+  } else if (nome === 'git') {
+    const g = subcomandoGit(cmd.argv, cmd.env);
+    if (!g) return null;
+    incerto = g.incerto;
+    if (g.sub === 'switch') troca = () => switchTrocaRamo(g.args, ctx.config.git.base);
+    else if (g.sub === 'checkout') troca = cwd => checkoutTrocaRamo(g.args, cwd, ctx);
+  }
+  if (!troca) return null;
+  const cwd = cwdDoPrincipal(cmd.cwd, incerto, ctx);
+  if (cwd === undefined || !troca(cwd)) return null;
+  const motivo = cwd == null
+    ? 'trocar de ramo em uma pasta que não consegui determinar (pode ser o checkout principal) muda o chão das outras sessões'
+    : 'trocar o ramo do checkout principal muda o chão das outras sessões';
+  return recusa('T1', motivo, `trabalhe no worktree de uma frente (tools/ah open <nome>); o checkout principal fica em ${ctx.config.git.base}`);
+}
+
+// Forma de `git checkout`/`git restore` com pathspec que pega tudo (a regra da T2), ou null.
+function pathspecDescarta(sub, pathspecs, cwd, raiz) {
+  const c = classificarPathspecs(pathspecs, cwd, raiz);
+  if (c === 'tudo') return `git ${sub} com caminho que pega tudo (., :/, a raiz)`;
+  if (c === 'ilegivel') return `git ${sub} com caminho que não consegui ler (variável ou substituição)`;
+  return null;
+}
+
+// A forma de descartar ou esconder trabalho que o subcomando usa, ou null.
+function formaQueDescarta(sub, args, cwd, raiz) {
+  if (sub === 'reset') {
+    const { opcoes } = lerArgs(args);
+    if (opcoes.some(o => ehLonga(o, '--hard', 4))) return 'git reset --hard';
+    if (opcoes.some(o => ehLonga(o, '--keep', 4))) return 'git reset --keep';
+    if (opcoes.some(o => ehLonga(o, '--merge', 4))) return 'git reset --merge';
+    return null;
+  }
+  if (sub === 'clean') {
+    const { opcoes } = lerArgs(args, new Set(['e']), new Set(['--exclude']));
+    const forca = opcoes.some(o => o === '-f' || ehLonga(o, '--force', 4));
+    const ensaio = opcoes.some(o => o === '-n' || ehLonga(o, '--dry-run', 3));
+    return forca && !ensaio ? 'git clean -f' : null;
+  }
+  if (sub === 'checkout') {
+    const { opcoes, posicionais, depois } = lerArgs(args, CHECKOUT_CURTAS, CHECKOUT_LONGAS);
+    if (opcoes.some(o => o === '-f' || ehLonga(o, '--force', 4))) return 'git checkout -f';
+    return pathspecDescarta('checkout', [...posicionais, ...depois], cwd, raiz);
+  }
+  if (sub === 'restore') {
+    const { posicionais, depois } = lerArgs(args, RESTORE_CURTAS, RESTORE_LONGAS);
+    return pathspecDescarta('restore', [...posicionais, ...depois], cwd, raiz);
+  }
+  if (sub === 'switch') {
+    const { opcoes } = lerArgs(args, SWITCH_CURTAS, SWITCH_LONGAS);
+    if (opcoes.some(o => o === '-f' || o === '--force')) return 'git switch -f';
+    if (opcoes.some(o => ehLonga(o, '--discard-changes', 4))) return 'git switch --discard-changes';
+    return null;
+  }
+  if (sub === 'stash') {
+    const acao = args[0] == null || args[0].startsWith('-') ? null : args[0];
+    if (acao === 'list' || acao === 'show') return null;
+    return acao ? `git stash ${acao}` : 'git stash';
+  }
+  if (sub === 'rebase') {
+    if (args.some(a => ehLonga(a, '--abort', 4) || a === '--quit')) return null;
+    return 'git rebase';
+  }
+  return null;
+}
+
+function travaT3(cmd, ctx) {
+  if (nomeDe(cmd.argv[0]) !== 'git') return null;
+  const g = subcomandoGit(cmd.argv, cmd.env);
+  if (!g) return null;
+  const cwd = cwdDoPrincipal(cmd.cwd, g.incerto, ctx);
+  if (cwd === undefined) return null;
+  const forma = formaQueDescarta(g.sub, g.args, cwd, ctx.raiz);
+  if (!forma) return null;
+  return recusa('T3', `${forma} ${ondeDe(cwd)} descarta ou esconde trabalho que pode ser de outra sessão`,
+    'faça isso no worktree da sua frente; no checkout principal, guarde por caminho (git add <caminhos> e git commit) ou combine com a dona das mudanças');
+}
+
 // ---------------------------------------------------------------- T0
 
 function recusaT0(motivo) {
@@ -338,7 +501,7 @@ function novasTrocas(ctx) {
 
 // ---------------------------------------------------------------- entrada
 
-const TRAVAS = [travaT2, travaT5];
+const TRAVAS = [travaT1, travaT2, travaT3, travaT5];
 
 export function avaliar(acao, ctx) {
   if (acao?.tipo === 'edicao') return { permite: true };

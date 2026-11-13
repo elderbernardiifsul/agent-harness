@@ -8,7 +8,7 @@
 //
 // `acao` é {tipo: 'comando', comando} | {tipo: 'edicao', arquivo} | {tipo: 'outra'}.
 // `amb` é o do despacho (raiz, config, dirEstado, env), mais, opcionais, `topoDe`,
-// `ramoAtual`, `baseDoPr`, `tempoDoGhMs` (para as travas), `pid` (padrão: o pid do agente,
+// `ramoAtual`, `baseDoPr`, `tempoDoGhMs`, `ehRef`, `existeCaminho` (para as travas), `pid` (padrão: o pid do agente,
 // `AH_PID_AGENTE` ou o processo pai do gancho), `inicioDoProcesso`, `existe`, `agora` e
 // `prazoDaSobreposicaoMs` (quanto o `inicio` gasta, no máximo, com o git da sobreposição).
 // `tratar` é assíncrono: a herança e as gravações de sessão rodam sob a trava das frentes.
@@ -26,7 +26,7 @@ import {
   aberturaParada, pidDoAgente, processoExiste, inicioDoProcesso as inicioPadrao, descartarPidMorto, vidaDaSessao,
 } from '../lib/vida.mjs';
 import { montarResumo } from '../lib/resumo.mjs';
-import { topoDe, ramoAtual, limpo } from '../lib/git.mjs';
+import { git, topoDe, ramoAtual, limpo } from '../lib/git.mjs';
 import { gh } from '../lib/github.mjs';
 import { arquivosDaFrenteOuNulo, contaNaSobreposicao, sobreposicoes as calcularSobreposicoes } from '../lib/sobreposicao.mjs';
 
@@ -52,6 +52,17 @@ function baseDoPrPeloGh(env, timeoutMs) {
   };
 }
 
+// `nome` é uma referência que o `git checkout <nome>` usaria para trocar de ramo: um commit
+// pelo nome (ramo, etiqueta) ou um ramo do remoto com esse nome (o checkout cria o local).
+// Só é chamado num `git checkout` de um posicional solto que não é caminho existente.
+function ehRefPeloGit(env, remoto) {
+  return (cwd, nome) => {
+    if (typeof nome !== 'string' || nome === '' || nome.startsWith('-')) return false;
+    const existe = ref => git(['rev-parse', '--verify', '-q', `${ref}^{commit}`], { cwd: cwd ?? undefined, env }).codigo === 0;
+    return existe(nome) || existe(`${remoto}/${nome}`);
+  };
+}
+
 function contextoDasTravas(amb) {
   return {
     config: amb.config,
@@ -59,6 +70,9 @@ function contextoDasTravas(amb) {
     topoDe: amb.topoDe ?? (c => topoDe(c, amb.env)),
     ramoAtual: amb.ramoAtual ?? (c => ramoAtual(c, amb.env)),
     baseDoPr: amb.baseDoPr ?? baseDoPrPeloGh(amb.env, amb.tempoDoGhMs ?? TEMPO_DO_GH_MS),
+    ehRef: amb.ehRef ?? ehRefPeloGit(amb.env, amb.config.git.remoto),
+    // `amb.existe` é o do processo (vida da sessão); o do caminho tem nome próprio.
+    existe: amb.existeCaminho ?? (c => fs.existsSync(c)),
   };
 }
 
