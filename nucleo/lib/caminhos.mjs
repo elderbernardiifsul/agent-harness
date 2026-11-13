@@ -54,17 +54,31 @@ const modDe = plataforma => (plataforma === 'win32' ? path.win32 : path.posix);
 // Caminho real para comparar caminhos escritos de jeitos diferentes (link simbólico, `..`, `/private/var` do
 // macOS, caixa no Windows): os componentes são resolvidos na ordem, cada um pelo caminho real enquanto existir
 // (o `..` depois de um link volta da pasta real); do primeiro que não existe em diante, só se juntam.
-// No Windows, em minúsculas.
+// No Windows, em minúsculas. Fora dele, `\` é caractere de nome, não separador. Link simbólico pendurado
+// (destino que ainda não existe) é seguido pelo `readlink`: o arquivo nasceria no destino, não no link.
+const SALTOS_DE_LINK = 40;
 export function normalizarCaminho(p, plataforma = process.platform) {
+  return normalizar(String(p), plataforma, SALTOS_DE_LINK);
+}
+
+function normalizar(p, plataforma, saltos) {
   const mod = modDe(plataforma);
-  const bruto = mod.isAbsolute(p) ? String(p) : `${process.cwd()}${mod.sep}${p}`;
+  const bruto = mod.isAbsolute(p) ? p : `${process.cwd()}${mod.sep}${p}`;
   const raiz = mod.parse(bruto).root || mod.sep;
   const real = c => {
     try { return fs.realpathSync(c); } catch { return null; }
   };
+  // Destino de um link simbólico que realpath não resolve (pendurado), ou null.
+  const pendurado = c => {
+    try {
+      if (!fs.lstatSync(c).isSymbolicLink()) return null;
+      const alvo = fs.readlinkSync(c);
+      return mod.isAbsolute(alvo) ? alvo : `${mod.dirname(c)}${mod.sep}${alvo}`;
+    } catch { return null; }
+  };
   let atual = real(raiz) ?? raiz;
   let existe = atual !== null && fs.existsSync(atual);
-  for (const parte of bruto.slice(raiz.length).split(/[\\/]+/)) {
+  for (const parte of bruto.slice(raiz.length).split(plataforma === 'win32' ? /[\\/]+/ : /\/+/)) {
     if (parte === '' || parte === '.') continue;
     if (parte === '..') {
       atual = mod.dirname(atual);
@@ -75,7 +89,17 @@ export function normalizarCaminho(p, plataforma = process.platform) {
       continue;
     }
     const proximo = mod.join(atual, parte);
-    const r = existe ? real(proximo) : null;
+    let r = existe ? real(proximo) : null;
+    if (r === null && existe && saltos > 0) {
+      const alvo = pendurado(proximo);
+      if (alvo !== null) {
+        atual = normalizar(alvo, plataforma, saltos - 1);
+        const ja = real(atual);
+        existe = ja !== null;
+        if (existe) atual = ja;
+        continue;
+      }
+    }
     if (r === null) existe = false;
     atual = r ?? proximo;
   }

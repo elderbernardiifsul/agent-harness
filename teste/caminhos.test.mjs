@@ -57,6 +57,29 @@ test('normalizarCaminho resolve link e .. de arquivo que ainda não existe', { s
   assert.equal(normalizarCaminho(path.join(tmp, 'atalho')), path.join(tmp, 'wt'));
 });
 
+test('normalizarCaminho fora do Windows: \\ é caractere de nome, não separador', { skip: process.platform === 'win32' }, t => {
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ah-teste-caminho-')));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'wt', 'frete'), { recursive: true });
+  const n = normalizarCaminho(`${tmp}/wt/frete/a\\..\\..\\x`);
+  assert.equal(n, path.join(tmp, 'wt', 'frete', 'a\\..\\..\\x'));
+  assert.ok(dentroDe(n, path.join(tmp, 'wt', 'frete')));
+  assert.equal(normalizarCaminho('Q:\\a\\..\\b', 'win32'), 'q:\\b');
+});
+
+test('normalizarCaminho segue link simbólico pendurado (destino ainda inexistente)', { skip: process.platform === 'win32' }, t => {
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ah-teste-caminho-')));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'wt', 'frete'), { recursive: true });
+  fs.symlinkSync(path.join(tmp, 'wt', 'frete', 'nada'), path.join(tmp, 'pendurado'));
+  fs.symlinkSync(path.join('wt', 'frete', 'rel'), path.join(tmp, 'relativo'));
+  fs.symlinkSync(path.join(tmp, 'laco'), path.join(tmp, 'laco'));
+  assert.equal(normalizarCaminho(path.join(tmp, 'pendurado')), path.join(tmp, 'wt', 'frete', 'nada'));
+  assert.equal(normalizarCaminho(path.join(tmp, 'pendurado', 'b.js')), path.join(tmp, 'wt', 'frete', 'nada', 'b.js'));
+  assert.equal(normalizarCaminho(path.join(tmp, 'relativo')), path.join(tmp, 'wt', 'frete', 'rel'));
+  assert.equal(typeof normalizarCaminho(path.join(tmp, 'laco', 'x')), 'string');
+});
+
 test('normalizarCaminho no Windows põe em minúsculas', () => {
   assert.equal(normalizarCaminho('Q:\\Nao\\Existe\\A.JS', 'win32'), 'q:\\nao\\existe\\a.js');
 });
