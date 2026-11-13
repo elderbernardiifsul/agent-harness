@@ -212,7 +212,9 @@ test('SIGINT na espera sai da fila sem rodar', { skip: POSIX }, async t => {
   const ra = segura(p, 'a');
   await esperar(() => comecou(p, 'a'));
   const rb = segura(p, 'b');
-  await esperar(() => esperando(p.fila, 1));
+  let erro = '';
+  rb.processo.stderr.on('data', d => { erro += d; });
+  await esperar(() => /esperando a vez/.test(erro));
   rb.processo.kill('SIGINT');
   assert.equal((await rb.fim).codigo, 130);
   assert.equal(estadoDaFila(p.fila).entradas.length, 1);

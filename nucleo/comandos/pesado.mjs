@@ -91,25 +91,35 @@ export async function executar(args, amb) {
   const pausaMs = Number(amb.env.AH_FILA_PAUSA_MS) > 0 ? Number(amb.env.AH_FILA_PAUSA_MS) : PAUSA_PADRAO_MS;
   const worktree = topoDe(amb.cwd, amb.env) ?? amb.cwd;
   const texto = textoDe(comando);
-  const senha = await entrarNaFila(dir, {
+  let senha = null;
+  let filho = null;
+  let saindo = false;
+  // Os sinais são tratados desde antes de entrar na fila: um Ctrl-C no meio da entrada também solta a senha.
+  const entrada = entrarNaFila(dir, {
     pid: process.pid, inicio: inicioDoProcesso(process.pid), projeto: amb.config.projeto, worktree,
     comando: texto.length > LIMITE_DO_COMANDO ? `${texto.slice(0, LIMITE_DO_COMANDO - 1)}…` : texto,
     classe: classe.nome, vagas: classe.vagas, sessao: amb.sessaoId ?? null,
   });
-
-  let filho = null;
-  let saindo = false;
-  const aoSair = () => sairDaFilaSinc(dir, senha);
-  process.on('exit', aoSair);
+  const aoSair = () => { if (senha != null) sairDaFilaSinc(dir, senha); };
   const aoSinal = async sinal => {
     if (saindo) return;
     saindo = true;
-    amb.avisar(`ah pesado: ${sinal} recebido; ${filho ? 'matando a árvore do comando e ' : ''}soltando a vaga (senha ${senha})\n`);
+    try { await entrada; } catch { /* não entrou */ }
+    amb.avisar(`ah pesado: ${sinal} recebido; ${filho ? 'matando a árvore do comando e ' : ''}soltando a vaga${senha != null ? ` (senha ${senha})` : ''}\n`);
     if (filho) await matarArvore(filho);
-    try { await sairDaFila(dir, senha); } catch { /* sai no exit */ }
+    if (senha != null) { try { await sairDaFila(dir, senha); } catch { /* sai no exit */ } }
     process.exit(codigoDoSinal(sinal));
   };
   for (const s of SINAIS) process.on(s, aoSinal);
+  process.on('exit', aoSair);
+  try {
+    senha = await entrada;
+  } catch (e) {
+    for (const s of SINAIS) process.off(s, aoSinal);
+    process.off('exit', aoSair);
+    throw e;
+  }
+  if (saindo) return new Promise(() => {});
 
   try {
     let ultimoMotivo = null;
