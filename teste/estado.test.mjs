@@ -419,3 +419,42 @@ test('revisão 2, achado 2: o prazo tem teto: venceMs acima dele é recusado, e 
   fs.writeFileSync(path.join(pasta, 'dono.json'), donoDe('longa', { venceMs: 10 * 86400000, em: new Date(Date.now() - PRAZO_MAXIMO_MS - 1000).toISOString() }));
   assert.equal(await comTrava(d, 'x', () => 'entrou', { venceMs: 30000, esperaMs: 500 }), 'entrou');
 });
+
+test('revisão 2, achado 3: quem para entre o mkdir e o dono e volta numa pasta trocada não entra', async t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  const fora = path.join(d, 'fora-de-X');
+  const deX = donoDe('X');
+  let n = 0;
+  ganchosDeTeste.depoisDoMkdir = p => {
+    if (n++) return;
+    // P parou aqui mais que o teto: a pasta vazia dele venceu e saiu, X entrou, e W tirou o dono de X para conferir.
+    fs.rmdirSync(p);
+    fs.mkdirSync(p);
+    fs.writeFileSync(path.join(p, 'dono.json'), deX);
+    fs.renameSync(path.join(p, 'dono.json'), fora);
+  };
+  t.after(() => { ganchosDeTeste.depoisDoMkdir = null; });
+  let pEntrou = false;
+  await assert.rejects(comTrava(d, 'x', () => { pEntrou = true; }, { esperaMs: 100 }), e => e.travaPresa === true);
+  ganchosDeTeste.depoisDoMkdir = null;
+  assert.equal(pEntrou, false, 'P entrou com X dentro');
+  // P recolheu o próprio dono sem tirar a pasta: W devolve o de X
+  assert.deepEqual(fs.readdirSync(pasta), []);
+  fs.writeFileSync(path.join(pasta, 'dono.json'), fs.readFileSync(fora), { flag: 'wx' });
+  assert.deepEqual(fs.readdirSync(path.join(d, 'travas')), ['x']);
+});
+
+test('revisão 2, achado 3: a devolução espera o ocupante ilegítimo se recolher, em vez de descartar o dono', async t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  const deX = donoDe('X');
+  ganchosDeTeste.devolvendo = (p, tentativa) => {
+    if (tentativa === 0) fs.writeFileSync(path.join(p, 'dono.json'), donoDe('P'), { flag: 'wx' });
+    else if (tentativa === 2) fs.rmSync(path.join(p, 'dono.json'));
+  };
+  t.after(() => { ganchosDeTeste.devolvendo = null; });
+  await comTrava(d, 'x', () => trocarPelaDeOutro(pasta, deX), { venceMs: 50 });
+  ganchosDeTeste.devolvendo = null;
+  assert.equal(fs.readFileSync(path.join(pasta, 'dono.json'), 'utf8'), deX);
+});
