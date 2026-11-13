@@ -96,6 +96,11 @@ export async function executar(args, amb) {
     const raiz = acharRaiz(evento.cwd, amb);
     if (!raiz) return 0;
     ctx = { raiz, cwd: evento.cwd };
+    // `.harness` que é link simbólico traria configuração e núcleo de fora do projeto: cai na regra de quebra
+    // (recusa no antes, com `tools/ah doctor` liberado; o doctor diz como trocar o link pela pasta).
+    if (fs.lstatSync(path.join(raiz, '.harness')).isSymbolicLink()) {
+      throw new Error('.harness é um link simbólico; o harness não segue o link');
+    }
     const config = carregarConfig(raiz);
     const dirEstado = caminhoDoEstado(config.projeto, amb.env, process.platform, os.homedir());
     const resposta = await tratar(evento, { ...amb, raiz, config, dirEstado, cwd: evento.cwd });

@@ -207,12 +207,14 @@ test('sem ramos protegidos a proteção no servidor é aviso', () => {
   assert.match(p.ah(['doctor']).saida, /^aviso\s+Proteção no servidor: .*protegido/m);
 });
 
-test('C1: o doctor tem 23 itens, com "Harness no ramo base" antes de "Gancho responde" e os da fatia 2 depois dele', async () => {
+test('C1: o doctor tem 24 itens, com "Harness no ramo base" antes de "Gancho responde" e os da fatia 2 depois dele', async () => {
   const { VERIFICACOES } = await import('../nucleo/comandos/doctor.mjs');
   const nomes = VERIFICACOES.map(v => v.item);
   // 16 da fatia 1 e da tarefa 5, menos "Fila de pendentes" (virou "Comentários pendentes"), mais 5 da tarefa 14,
-  // mais "Fila de pesado" (fatia 3), "Adaptador do agente em uso" (fatia 4) e "Núcleo igual ao clone de origem" (fatia 5).
-  assert.equal(nomes.length, 23);
+  // mais "Fila de pesado" (fatia 3), "Adaptador do agente em uso" (fatia 4), "Núcleo igual ao clone de origem" (fatia 5)
+  // e ".harness é uma pasta do projeto" (pendências), logo antes da configuração.
+  assert.equal(nomes.length, 24);
+  assert.equal(nomes.indexOf('.harness/config.json válido'), nomes.indexOf('.harness é uma pasta do projeto') + 1);
   assert.equal(nomes.indexOf('Núcleo igual ao clone de origem'), nomes.indexOf('Cópia do núcleo (MANIFEST.json)') + 1);
   assert.ok(nomes.includes('Fila de pesado'));
   assert.equal(nomes.at(-1), 'Adaptador do agente em uso');
@@ -504,4 +506,35 @@ test('fatia 5: o núcleo é conferido contra o clone de origem registrado na má
   fs.rmSync(origem);
   assert.match(linha(), /^ok\s+Núcleo igual ao clone de origem \(sem clone registrado nesta máquina; não conferido\)$/);
   assert.equal(p.ah(['doctor']).codigo, 0);
+});
+
+test('.harness que é link simbólico: o gancho recusa com o motivo (o doctor passa) e o doctor falha com a saída', async t => {
+  const { ganchoPre } = await import('./apoio/repo.mjs');
+  const p = criarProjeto();
+  const fora = fs.mkdtempSync(path.join(os.tmpdir(), 'ah-harness-fora-'));
+  t.after(() => { p.limpar(); fs.rmSync(fora, { recursive: true, force: true }); });
+  fs.renameSync(path.join(p.raiz, '.harness'), path.join(fora, '.harness'));
+  fs.symlinkSync(path.join(fora, '.harness'), path.join(p.raiz, '.harness'), 'dir');
+
+  const r = ganchoPre(p, { command: 'git status' });
+  assert.equal(r.codigo, 2, r.saida + r.erro);
+  assert.match(r.erro, /^Recusado \(T0\): .*\.harness é um link simbólico/);
+  assert.match(r.erro, /Faça: rode tools\/ah doctor/);
+  assert.equal(ganchoPre(p, { command: 'tools/ah doctor' }).codigo, 0);
+
+  const d = JSON.parse(p.ah(['doctor', '--json']).saida);
+  const item = d.itens.find(i => i.item === '.harness é uma pasta do projeto');
+  assert.equal(item?.estado, 'falha', JSON.stringify(d.itens.map(i => i.item)));
+  assert.match(item.fazer, /link simbólico/);
+  assert.match(item.fazer, /troque o link pela pasta/);
+});
+
+test('.harness pasta comum: o item do doctor sai ok', () => {
+  const p = criarProjeto();
+  try {
+    const d = JSON.parse(p.ah(['doctor', '--json']).saida);
+    assert.equal(d.itens.find(i => i.item === '.harness é uma pasta do projeto')?.estado, 'ok');
+  } finally {
+    p.limpar();
+  }
 });
