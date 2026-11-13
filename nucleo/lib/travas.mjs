@@ -18,7 +18,7 @@
 // relativo com cwd desconhecido, caminho com variável, crase ou `~`, e programas que escrevem
 // arquivo fora da lista (um script, `npm`, `python -c`) não são avaliados.
 import path from 'node:path';
-import { comandosSimples, ErroDeShell } from './shell.mjs';
+import { comandosSimples, deuCerto, ErroDeShell } from './shell.mjs';
 import { recusa } from './recusa.mjs';
 import { dentroDe } from './caminhos.mjs';
 import { idCurto } from './sessao.mjs';
@@ -702,9 +702,8 @@ function nomeIlegivel(argv) {
 // ---------------------------------------------------------------- troca de ramo na mesma linha
 
 // `git checkout`/`git switch` antes de um push na mesma linha muda o ramo atual em que o push
-// roda. Devolve os ramos que podem ficar em uso (null = não sei), ou null se o comando não troca
-// de ramo. O ramo de antes sempre fica entre os possíveis: a troca pode falhar (`;`), e uma
-// palavra solta no checkout pode ser um arquivo.
+// roda. Devolve {ramos, solta}: os ramos que podem ficar em uso (null = não sei), e `solta` quando é
+// uma palavra solta no checkout, que pode ser um arquivo; ou null se o comando não troca de ramo.
 const TROCA_COM_VALOR = new Set(['-b', '-B', '-c', '-C', '--create', '--force-create', '--orphan', '--conflict', '--pathspec-from-file']);
 const TROCA_CRIA = new Set(['-b', '-B', '-c', '-C', '--create', '--force-create', '--orphan']);
 
@@ -715,7 +714,7 @@ function destinoDaTroca(sub, args) {
   for (let k = 0; k < args.length; k++) {
     const a = args[k];
     if (a === '--') { if (novo === undefined && sub === 'checkout') return null; break; }
-    if (a === '--detach' || (sub === 'switch' && a === '-d')) return [null];
+    if (a === '--detach' || (sub === 'switch' && a === '-d')) return { ramos: [null] };
     if (a === '-p' || a === '--patch' || a.startsWith('--pathspec-from-file')) return null;
     if (a === '-t' || a === '--track' || a.startsWith('--track=')) { comTrack = true; continue; }
     const igual = a.startsWith('--') ? a.indexOf('=') : -1;
@@ -726,38 +725,49 @@ function destinoDaTroca(sub, args) {
     if (a.startsWith('-') && a !== '-') continue;
     posicionais.push(a);
   }
-  const ler = r => (r == null || naoLiteral(r) || r === '-' || r.startsWith('@{') ? null : r);
-  if (novo !== undefined) return [ler(novo)];
+  const ler = r => (r == null || naoLiteral(r) || r === '-' || r.startsWith('@{') || r === 'HEAD' || r === '@' ? null : r);
+  if (novo !== undefined) return { ramos: [ler(novo)] };
   if (sub === 'checkout' && posicionais.length !== 1) return null; // nada, ou <árvore> <caminhos>
-  if (posicionais.length === 0) return [null];
+  if (posicionais.length === 0) return { ramos: [null] };
   const alvo = ler(posicionais[0]);
   // --track origin/main cria `main`; sem saber o remoto, os dois nomes contam.
-  return comTrack && alvo?.includes('/') ? [alvo, alvo.slice(alvo.indexOf('/') + 1)] : [alvo];
+  if (comTrack && alvo?.includes('/')) return { ramos: [alvo, alvo.slice(alvo.indexOf('/') + 1)] };
+  return { ramos: [alvo], solta: sub === 'checkout' };
 }
 
 const ANTES = Symbol('ramo de antes');
 
-// Acompanha as trocas de ramo feitas pelos comandos já lidos; `ramoAtual(cwd)` responde com elas.
+// Acompanha as trocas de ramo feitas pelos comandos já lidos; `ramoAtual(cwd, cmd)` responde com elas.
+// Uma troca que certamente deu certo antes de `cmd` (só `&&` entre as duas, ver deuCerto) e cujo destino
+// é ramo com certeza substitui os ramos possíveis; as outras (podem ter falhado, ou o checkout pode ter
+// sido de um arquivo) só somam possibilidades ao que já havia.
 function novasTrocas(ctx) {
   const porTopo = new Map();
   let tudoIncerto = false;
   return {
-    registrar(cmd) {
+    registrar(cmd, indice) {
       if (nomeDe(cmd.argv[0]) !== 'git') return;
       const g = subcomandoGit(cmd.argv, cmd.env);
       if (!g || (g.sub !== 'checkout' && g.sub !== 'switch')) return;
-      const destinos = destinoDaTroca(g.sub, g.args);
-      if (!destinos) return;
+      const destino = destinoDaTroca(g.sub, g.args);
+      if (!destino) return;
       const topo = cmd.cwd == null || g.incerto ? null : ctx.topoDe(cmd.cwd);
       if (topo == null) { tudoIncerto = true; return; }
-      porTopo.set(topo, [...(porTopo.get(topo) ?? [ANTES]), ...destinos]);
+      // A palavra solta do checkout é ramo quando é referência: o git prefere o ramo ao arquivo.
+      // Perguntado só se algum push depois precisar.
+      const [alvo] = destino.ramos;
+      let ehRamo = destino.solta ? undefined : true;
+      const certo = () => (ehRamo ??= alvo != null && typeof ctx.ehRef === 'function' && ctx.ehRef(cmd.cwd, alvo) === true);
+      porTopo.set(topo, [...(porTopo.get(topo) ?? []), { indice, ramos: destino.ramos, certo }]);
     },
     get vazio() { return !tudoIncerto && porTopo.size === 0; },
-    ramoAtual(cwd) {
+    ramoAtual(cwd, cmd) {
       if (tudoIncerto) return null;
-      const lista = porTopo.get(ctx.topoDe(cwd));
-      if (!lista) return ctx.ramoAtual(cwd);
-      const ramos = lista.map(r => (r === ANTES ? ctx.ramoAtual(cwd) : r));
+      const trocas = porTopo.get(ctx.topoDe(cwd));
+      if (!trocas) return ctx.ramoAtual(cwd);
+      let possiveis = [ANTES];
+      for (const t of trocas) possiveis = deuCerto(cmd, t.indice) && t.certo() ? [...t.ramos] : [...possiveis, ...t.ramos];
+      const ramos = possiveis.map(r => (r === ANTES ? ctx.ramoAtual(cwd) : r));
       if (ramos.includes(null)) return null;
       return ramos.find(r => ctx.config.git.protegidos.includes(r)) ?? ramos[0];
     },
@@ -821,7 +831,7 @@ export function avaliar(acao, ctx) {
   }
   let liberada;
   const trocas = novasTrocas(ctx);
-  for (const cmd of comandos) {
+  for (const [indice, cmd] of comandos.entries()) {
     let r = null;
     // Um cd que pode ter falhado antes de `;` deixa outros cwds possíveis: vale a recusa de qualquer um.
     const cwds = [cmd.cwd, ...(cmd.cwdsAlternativos ?? [])];
@@ -830,7 +840,7 @@ export function avaliar(acao, ctx) {
     } else if (nomeIlegivel(cmd.argv)) {
       if (PALAVRA_GIT.test(acao.comando)) r = recusaT0('o nome do comando vem de uma variável e o texto menciona git ou gh');
     } else {
-      const ctxDoComando = trocas.vazio ? ctx : { ...ctx, ramoAtual: c => trocas.ramoAtual(c) };
+      const ctxDoComando = trocas.vazio ? ctx : { ...ctx, ramoAtual: c => trocas.ramoAtual(c, cmd) };
       for (const cwd of cwds) {
         const umCmd = cwd === cmd.cwd ? cmd : { ...cmd, cwd };
         for (const trava of TRAVAS) { r = trava(umCmd, ctxDoComando); if (r) break; }
@@ -838,7 +848,7 @@ export function avaliar(acao, ctx) {
       }
     }
     for (const cwd of cwds) { if (r) break; r = travaT4Escritas(cmd, cwd, ctx); }
-    if (cmd.argv.length) trocas.registrar(cmd);
+    if (cmd.argv.length) trocas.registrar(cmd, indice);
     if (!r) continue;
     if (r.trava !== 'T0' && cmd.env?.AH_GUARD === 'off') { liberada ??= r.trava; continue; }
     return r;

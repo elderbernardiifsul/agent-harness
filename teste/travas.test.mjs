@@ -174,9 +174,29 @@ test('C2. o que não troca para ramo protegido continua passando na T5', () => {
   for (const c of ['git checkout -b x && git push -u origin x', 'git switch -c nova && git push', 'git checkout main && git -C /w push', 'git checkout main && git merge dev'])
     assert.equal(av(c).trava, 'T1', c);
 });
-test('C2. troca não afrouxa o ramo protegido que já estava em uso', () => {
-  assert.equal(avaliar({ tipo: 'comando', comando: 'git switch dev && git push', cwd: '/r' }, comRamo('main')).trava, 'T5');
-  assert.equal(avaliar({ tipo: 'comando', comando: 'git checkout src/a.js && git push', cwd: '/r' }, comRamo('main')).trava, 'T5');
+test('C2. troca que pode não ter acontecido não afrouxa o ramo protegido que já estava em uso', () => {
+  const emMain = c => avaliar({ tipo: 'comando', comando: c, cwd: '/r' }, comRamo('main'));
+  // A troca pode falhar (;, ||, segundo plano, negação) ou não ser troca (checkout de arquivo,
+  // corpo de função, status de outro comando): o ramo de antes continua possível.
+  for (const c of ['git switch dev; git push', 'git checkout src/a.js && git push', 'git switch dev || true && git push',
+    'git switch dev & git push', '! git switch dev && git push', 'git switch dev | cat && git push', 'f() { git switch dev; } && git push',
+    `bash -c 'exit 0; git switch dev' && git push`, `bash -c 'false || git switch dev' && git push`, 'setsid git switch dev && git push',
+    'xargs -r git switch dev && git push', 'coproc git switch dev && git push', 'git checkout nao-existe && git push',
+    'case x in y) git switch dev;; esac && git push', '{ git switch dev; true; } && git push', 'AH_GUARD=off git switch HEAD && git push'])
+    assert.equal(emMain(c).trava, 'T5', c);
+  // No worktree (sem T1): a troca para main deu certo; a para dev, depois do `;`, pode ter falhado.
+  assert.equal(av('git switch main && git switch dev; git push', '/w').trava, 'T5');
+});
+test('C2. troca que deu certo antes do push define o ramo do push (pendência 7)', () => {
+  // No worktree da frente a T1 não vale: o push roda na dev, último destino.
+  assert.ok(av('git switch main && git pull && git switch dev && git push', '/w').permite);
+  assert.ok(av(soTrocaLiberada('git switch main && git pull && git switch dev && git push')).permite);
+  const emMain = c => avaliar({ tipo: 'comando', comando: c, cwd: '/r' }, comRamo('main'));
+  for (const c of ['git switch dev && git push', 'git checkout dev && git push', '(git switch dev) && git push', `bash -c 'git switch dev' && git push`,
+    'git switch dev && { git pull; git push; }', 'git switch dev && bash -c "git pull; git push"', 'AH_GUARD=off git switch -c nova && git push'])
+    assert.ok(emMain(c).permite, c);
+  // E o último destino conhecido protegido recusa, mesmo vindo de um ramo livre.
+  assert.equal(av('git switch dev && AH_GUARD=off git switch main && git push', '/w').trava, 'T5');
 });
 
 // ---- onda final: I4 (formas de "tudo" no checkout principal)

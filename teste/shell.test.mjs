@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { comandosSimples, ErroDeShell } from '../nucleo/lib/shell.mjs';
+import { comandosSimples, deuCerto, ErroDeShell } from '../nucleo/lib/shell.mjs';
 
 const so = (t, cwd = '/r') => comandosSimples(t, cwd).map(c => c.argv.join(' '));
 const erro = e => e instanceof ErroDeShell && e.name === 'ErroDeShell';
@@ -455,4 +455,22 @@ test('escritas com git -C ou env -C: o redirecionamento vale no cwd do shell', (
     assert.equal(c.find(s => s.argv.length).escritas, undefined, t);
     assert.deepEqual(c.filter(s => s.escritas).map(s => [s.argv, s.cwd, s.escritas]), [[[], '/r', ['f']]], t);
   }
+});
+
+// ---- pendência 7: o que certamente deu certo antes de cada comando
+test('aposSucesso: só && encadeia; ;, ||, &, ! e corpo de função não', () => {
+  // Índices dos comandos anteriores que certamente deram certo para o último rodar.
+  const antes = t => { const cs = comandosSimples(t, '/r'); const u = cs.at(-1); return cs.slice(0, -1).map((_, i) => i).filter(i => deuCerto(u, i)); };
+  assert.deepEqual(antes('a && b && c'), [0, 1]);
+  assert.deepEqual(antes('a; b && c'), [1]);
+  assert.deepEqual(antes('a || b && c'), []);
+  assert.deepEqual(antes('a & b && c'), [1]);
+  assert.deepEqual(antes('! a && c'), []);
+  assert.deepEqual(antes('a | b && c'), [1]);
+  assert.deepEqual(antes('(a; b) && c'), [1]);
+  assert.deepEqual(antes(`bash -c 'a && b' && c`), [0, 1]);
+  assert.deepEqual(antes(`bash -c 'exit 0; a' && c`), []);
+  assert.deepEqual(antes('a && f() { b; }'), []);
+  assert.deepEqual(antes('a && { b; c; }'), [0]);
+  assert.deepEqual(antes('xargs a && c'), []);
 });
