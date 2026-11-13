@@ -123,7 +123,7 @@ Ramo `rev3-close`, a partir de `bb26d99`. Cada achado teve o teste escrito antes
 | `4a61c69` | 2 | fix: herança não passa frente em fechamento, e a marca do comentário vale só no mesmo estado |
 | `120e1da` | 3 | fix: handoff recusa frente com o fechamento parado |
 | `7fcd7a7` | 4 | test: uma prova para cada conferência entre as fases do close |
-| (este) | 5 | docs: limite da marca `fechando` no Windows e este registro |
+| `006a5c3` | 5 | docs: limite da marca fechando no Windows e registro da terceira revisão do close |
 
 ### Achado 1: comentário repetido quando a fase 3 não pega a trava (ou o close morre)
 
