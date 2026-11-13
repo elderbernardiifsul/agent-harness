@@ -42,7 +42,7 @@ tools/ah atualizar --de <clone> --simular
 tools/ah atualizar --de <clone>
 ```
 
-O primeiro só diz o que mudaria; o segundo troca `.harness/nucleo/` pela cópia do clone (montada ao lado e trocada de uma vez) e reaplica o trecho do harness no `AGENTS.md`. Configuração, extensões e estado (frentes, sessões, fila) ficam como estão. Arquivo do núcleo alterado à mão no projeto faz o `atualizar` recusar e listar o que se perderia (`--forcar` descarta); clone mais velho que a cópia instalada também recusa. Como o `init`, não faz commit: termina com os comandos do commit no ramo base. O `doctor` avisa, no item "Núcleo igual ao clone de origem", quando o clone registrado nesta máquina tem um núcleo diferente do instalado. Detalhes: `docs/referencia/comandos.md`, seção "atualizar".
+O primeiro só diz o que mudaria; o segundo troca `.harness/nucleo/` pela cópia do clone (montada ao lado e trocada de uma vez) e reaplica o trecho do harness no `AGENTS.md`. Configuração, extensões e estado (frentes, sessões, fila) ficam como estão. Arquivo do núcleo alterado à mão no projeto faz o `atualizar` recusar e listar o que se perderia (`--forcar` descarta); sem como conferir (manifesto antigo e clone sem o commit instalado), recusa também. Clone mais velho que a cópia instalada recusa: pela versão ou, com git, quando o commit do clone é anterior ao instalado. Como o `init`, não faz commit: termina com os comandos do commit no ramo base. O `doctor` avisa, no item "Núcleo igual ao clone de origem", quando o clone registrado nesta máquina tem um núcleo diferente do instalado. Detalhes: `docs/referencia/comandos.md`, seção "atualizar".
 
 ## Como preparar um projeto pelo agente
 
