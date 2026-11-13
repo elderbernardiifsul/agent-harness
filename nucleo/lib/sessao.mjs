@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ErroDeEstado, lerJson, gravarJson, validarNomeSeguro } from './estado.mjs';
+import { ErroDeUso } from './caminhos.mjs';
 
 // Nome da variável em que o Claude Code expõe o id da sessão (confirmar na sondagem).
 export const VARIAVEL_SESSAO_CLAUDE = 'CLAUDE_CODE_SESSION_ID';
@@ -147,4 +148,21 @@ export function listarSessoes(dirEstado) {
 export function apagarSessao(dirEstado, id) {
   fs.rmSync(arquivoDaSessao(dirEstado, id), { force: true });
   fs.rmSync(arquivoDoSinal(dirEstado, id), { force: true });
+}
+
+// A sessão pelo id curto (prefixo do id; o id inteiro vale mesmo que seja prefixo de outro). Nenhuma ou mais de
+// uma: ErroDeUso com a saída.
+export function resolverSessao(dirEstado, curto) {
+  const texto = String(curto ?? '');
+  const { sessoes } = listarSessoes(dirEstado);
+  const exata = sessoes.find(s => s.id === texto);
+  if (exata) return exata;
+  const achadas = texto ? sessoes.filter(s => String(s.id).startsWith(texto)) : [];
+  if (!achadas.length) {
+    throw new ErroDeUso(`Não achei sessão com o id ${texto.slice(0, 40) || '(vazio)'}.\nPróximo passo: confira o id em tools/ah board`);
+  }
+  if (achadas.length > 1) {
+    throw new ErroDeUso(`O id ${texto.slice(0, 40)} é de mais de uma sessão: ${achadas.map(s => s.id).join(', ')}.\nPróximo passo: use mais letras do id`);
+  }
+  return achadas[0];
 }

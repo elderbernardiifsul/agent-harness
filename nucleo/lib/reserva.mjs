@@ -201,7 +201,10 @@ function comoDesfez({ naFila, perdidos, semLeitura = [] }) {
   return `${base}, menos o responsável e o rótulo de ${cegos}, que não consegui reler para saber se outra frente os segura`;
 }
 
-export function reservar({ tickets, frente, login, sessao, rotulo, dirEstado = null, esperaMs = ESPERA_DA_RELEITURA_MS }, o = {}) {
+// `sessao` é a da dona (vai no marcador); `para` (o open --para do orquestrador) diz no texto para quem foi aberta.
+export const paraQuem = para => (para ? ` para a sessão ${idCurto(para)}` : '');
+
+export function reservar({ tickets, frente, login, sessao, para = null, rotulo, dirEstado = null, esperaMs = ESPERA_DA_RELEITURA_MS }, o = {}) {
   const lidos = new Map();
   for (const n of tickets) {
     const r = lerTicket(n, o);
@@ -245,7 +248,7 @@ export function reservar({ tickets, frente, login, sessao, rotulo, dirEstado = n
     ...camposDaFrente(frente, 'ativa', login, sessao),
     tickets: (frente.tickets ?? tickets).join(','), plano: frente.plano, abertaPor: frente.abertaPor, abertaEm: frente.abertaEm,
   });
-  const corpo = `Frente ${frente.id} (${frente.nome}) aberta por @${login}.\n\n${marcador}\n`;
+  const corpo = `Frente ${frente.id} (${frente.nome}) aberta por @${login}${paraQuem(para)}.\n\n${marcador}\n`;
   const tocados = [];
   const relidos = new Map();
   const desfazer = (motivoDoTicket, motivoDaRecusa, saida = SAIDA_SEM_REDE) => {
@@ -505,12 +508,12 @@ export function quemTemAFrente({ frente, login, sessao, rotulo, dirEstado }, o =
 // fila: comentário sem marcador (não muda o estado da frente) e sai de responsável. Quem falha sem perder relê:
 // se ainda segura a frente, comenta de novo a `passagem` (com os dados da frente) para ela voltar a passada.
 // Devolve {ok: true, logins} | {ok: false, vencedor?: {login}, motivo, como}.
-export function confirmarRetomada({ frente, login, sessao, rotulo, dirEstado, proprios = [], esperaMs = ESPERA_DA_RELEITURA_MS }, o = {}) {
+export function confirmarRetomada({ frente, login, sessao, para = null, rotulo, dirEstado, proprios = [], esperaMs = ESPERA_DA_RELEITURA_MS }, o = {}) {
   const tickets = frente.tickets ?? [];
   const reservaTickets = frente.reserva?.tickets ?? tickets;
   const antes = frente.reserva?.logins ?? [];
   const entra = !antes.includes(login);
-  const corpo = corpoDaMarcacao({ frente, tipo: 'retomada', texto: `Frente ${frente.id} (${frente.nome}) retomada por @${login}.`, login, sessao });
+  const corpo = corpoDaMarcacao({ frente, tipo: 'retomada', texto: `Frente ${frente.id} (${frente.nome}) retomada por @${login}${paraQuem(para)}.`, login, sessao });
   const meus = new Set(proprios);
   let semUrl = false;
   const comentados = [];
