@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { lerJson, gravarJson, comTrava, registrarEvento, lerEventos, identidadeDaMaquina, ganchosDeTeste } from '../nucleo/lib/estado.mjs';
 
 function temp(t) {
@@ -306,4 +307,61 @@ test('revisão: a trava vence pelo prazo do dono (venceMs no dono.json); sem ele
   // sem venceMs no dono, vale o de quem toma
   travar({});
   assert.equal(await comTrava(d, 'x', () => 'entrou', { venceMs: 30000, esperaMs: 500 }), 'entrou');
+});
+
+// Segunda revisão. Os casos que antes giravam sem fim (laço síncrono) rodam num processo à parte, com prazo:
+// uma regressão falha o teste em vez de parar a suíte.
+const ESTADO = new URL('../nucleo/lib/estado.mjs', import.meta.url).href;
+function isolado(d, codigo) {
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', `import fs from 'node:fs';
+import path from 'node:path';
+import * as estado from ${JSON.stringify(ESTADO)};
+const { comTrava, comTravaSinc } = estado;
+const D = ${JSON.stringify(d)};
+const velha = alvo => { const v = new Date(Date.now() - 600000); fs.utimesSync(alvo, v, v); };
+const presa = (fn, o) => { const t0 = Date.now(); try { return { entrou: fn === undefined ? null : comTravaSinc(D, 'x', fn, o) }; } catch (e) { return { ms: Date.now() - t0, presa: e.travaPresa === true, saida: e.saida ?? String(e) }; } };
+${codigo}`], { encoding: 'utf8', timeout: 5000 });
+  assert.equal(r.signal, null, `o processo não terminou em 5 s (laço?): ${r.stderr}`);
+  assert.equal(r.status, 0, r.stderr);
+  return JSON.parse(r.stdout.trim().split('\n').at(-1));
+}
+
+test('revisão 2, achado 1: arquivo estranho na pasta deixa a trava presa, sem laço; a recusa diz o que há e como limpar', t => {
+  const d = temp(t);
+  const pasta = path.join(d, 'travas', 'x');
+  const r = isolado(d, `
+const pasta = path.join(D, 'travas', 'x');
+comTravaSinc(D, 'x', () => fs.writeFileSync(path.join(pasta, '.dono.json.swp'), 'vim'), { venceMs: 50 });
+velha(pasta);
+console.log(JSON.stringify(presa(() => 'entrou', { venceMs: 50, esperaMs: 200 })));`);
+  assert.equal(r.presa, true, JSON.stringify(r));
+  assert.ok(r.ms < 2000, `esperou ${r.ms} ms`);
+  assert.match(r.saida, /\.dono\.json\.swp/);
+  assert.match(r.saida, /apague a pasta/);
+  assert.ok(r.saida.includes(pasta), r.saida);
+  assert.deepEqual(fs.readdirSync(pasta), ['.dono.json.swp']);
+});
+
+test('revisão 2, achado 1: dono.json que não é arquivo deixa a trava presa, sem laço', t => {
+  const d = temp(t);
+  const r = isolado(d, `
+const pasta = path.join(D, 'travas', 'x');
+fs.mkdirSync(path.join(pasta, 'dono.json'), { recursive: true });
+velha(path.join(pasta, 'dono.json')); velha(pasta);
+console.log(JSON.stringify(presa(() => 'entrou', { esperaMs: 200 })));`);
+  assert.equal(r.presa, true, JSON.stringify(r));
+  assert.match(r.saida, /dono\.json/);
+  assert.match(r.saida, /apague a pasta/);
+});
+
+test('revisão 2, achado 1: dono.json sem permissão de leitura conta como ilegível e vence pela data', { skip: process.getuid?.() === 0 && 'root lê sem permissão' }, t => {
+  const d = temp(t);
+  const r = isolado(d, `
+const pasta = path.join(D, 'travas', 'x');
+fs.mkdirSync(pasta, { recursive: true });
+fs.writeFileSync(path.join(pasta, 'dono.json'), '{}');
+fs.chmodSync(path.join(pasta, 'dono.json'), 0);
+velha(path.join(pasta, 'dono.json')); velha(pasta);
+console.log(JSON.stringify(presa(() => 'entrou', { esperaMs: 500 })));`);
+  assert.equal(r.entrou, 'entrou', JSON.stringify(r));
 });
