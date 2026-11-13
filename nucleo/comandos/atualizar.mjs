@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { ErroDeUso } from '../lib/caminhos.mjs';
-import { ErroDeEstado, gravarJson, lerJson, registrarEvento } from '../lib/estado.mjs';
+import { ErroDeEstado, comTrava, gravarJson, lerJson, registrarEvento } from '../lib/estado.mjs';
 import { git } from '../lib/git.mjs';
 import {
   MANIFESTO, ancestralEstrito, arquivosDaCopia, citar, commitDoClone, compararVersoes, diferenca, eClone, lerManifesto, listaDoCommit,
@@ -21,6 +21,9 @@ export const requisitos = { config: true, sessao: false };
 const RAIZ_DO_HARNESS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ARQUIVO_AGENTS = 'AGENTS.md';
 const MENSAGEM_DO_COMMIT = 'chore: atualiza o agent-harness';
+// A troca leva bem menos que isso; o segundo atualizar espera o primeiro terminar.
+const ESPERA_DA_TRAVA_MS = 30000;
+const PRAZO_DA_TRAVA_MS = 120000;
 const curto = c => (typeof c === 'string' ? c.slice(0, 7) : 'sem commit');
 const comoVersao = m => (typeof m?.versao === 'string' && /^\d+\.\d+\.\d+$/.test(m.versao) ? m.versao : null);
 const lista = (titulo, itens) => (itens.length ? `${titulo}:\n${itens.map(r => `  ${r}`).join('\n')}\n` : '');
@@ -190,6 +193,14 @@ export async function executar(args, amb) {
     try { st = fs.lstatSync(p); } catch { /* falta: tratado abaixo */ }
     if (st?.isSymbolicLink()) throw new ErroDeUso(`${path.relative(raiz, p)} é um link simbólico; não mexi nele\nPróximo passo: troque o link pela pasta e rode ah atualizar de novo`);
   }
+  // Sob a trava 'atualizar' do estado: dois atualizar no mesmo projeto não cruzam as renomeações nem apagam,
+  // como sobra, a cópia nova que o outro está montando. A simulação também espera, para não ler a troca pela metade.
+  return comTrava(amb.dirEstado, 'atualizar', async () => atualizarNoProjeto(o, amb, { aqui, raiz, dirHarness, dirNucleo }),
+    { esperaMs: ESPERA_DA_TRAVA_MS, venceMs: PRAZO_DA_TRAVA_MS });
+}
+
+// Confere, mostra e (sem --simular) troca o núcleo; roda com a trava 'atualizar' presa.
+function atualizarNoProjeto(o, amb, { aqui, raiz, dirHarness, dirNucleo }) {
   tratarSobras(dirHarness, dirNucleo, o.simular);
   if (!fs.existsSync(dirNucleo)) throw new ErroDeUso('o projeto não tem .harness/nucleo/\nPróximo passo: rode o init a partir do clone (node <clone>/nucleo/bin/ah.mjs init)');
 

@@ -305,3 +305,30 @@ test('o fim do atualizar diz como levar a atualização para o ramo base', t => 
   const r = clone.ah(p, ['atualizar']);
   assert.match(r.saida, /Falta levar a atualização para o ramo base dev \(as frentes partem dele\):\n {2}git add -- \.harness\/nucleo AGENTS\.md\n {2}git commit -m "chore: atualiza o agent-harness"\nDepois rode: tools\/ah doctor\n$/);
 });
+
+test('dois atualizar ao mesmo tempo: o segundo espera a trava "atualizar" do estado antes de mexer no núcleo', async t => {
+  const { p, clone } = cenario(t);
+  const { comTrava } = await import('../nucleo/lib/estado.mjs');
+  const { spawn } = await import('node:child_process');
+  const whoami = path.join(nucleo(p), 'comandos', 'whoami.mjs');
+  const antes = fs.readFileSync(whoami, 'utf8');
+  let soltouEm = 0;
+  let filho;
+  await comTrava(dirDoTeste(p), 'atualizar', async () => {
+    filho = new Promise(resolve => {
+      const c = spawn(process.execPath, [path.join(clone.raiz, 'nucleo', 'bin', 'ah.mjs'), 'atualizar'], { cwd: p.raiz, env: p.env });
+      let erro = '';
+      c.stderr.on('data', d => { erro += d; });
+      c.on('close', codigo => resolve({ codigo, erro, fim: Date.now() }));
+    });
+    await new Promise(r => setTimeout(r, 800));
+    // Com a trava presa por outro, nada mudou: nem o núcleo nem as pastas de troca.
+    assert.equal(fs.readFileSync(whoami, 'utf8'), antes);
+    assert.deepEqual(fs.readdirSync(path.join(p.raiz, '.harness')).filter(n => n.startsWith('nucleo.')), []);
+    soltouEm = Date.now();
+  });
+  const r = await filho;
+  assert.equal(r.codigo, 0, r.erro);
+  assert.ok(r.fim >= soltouEm);
+  assert.notEqual(fs.readFileSync(whoami, 'utf8'), antes);
+});
