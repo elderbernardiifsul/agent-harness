@@ -1,8 +1,8 @@
-# Vários agentes no mesmo repositório
+# Coordenação de vários agentes num mesmo repositório
 
 Material de apoio · Programação Agêntica · IFSul · professor elderbernardi · aulas de 13/11/2026 e seguinte.
 
-Leia antes ou depois da aula. Em cada questão há um quadro **Pare e proponha**: antes de ler a balança e a solução, escreva a sua proposta (três linhas bastam). Se você ler a solução primeiro, perde o exercício.
+Leia antes ou depois da aula. Em cada questão há um quadro **Pare e proponha**: antes de ler a balança e a solução, escreva a sua proposta (três linhas bastam). A leitura da solução antes da proposta anula o exercício.
 
 A solução apresentada em cada questão, o `agent-harness`, é **uma** alternativa entre várias: a que o professor escolheu para o projeto dele. Ela entra como mais uma linha da balança, para comparar com a sua.
 
@@ -10,12 +10,12 @@ Os exemplos usam um projeto fictício, a `loja` (repositório `exemplo/loja`), e
 
 ## Sumário
 
-1. O mínimo de git e GitHub para acompanhar (e o vocabulário do agente)
-2. O problema, contado como história
+1. Fundamentos de git e GitHub e vocabulário do agente
+2. Problema geral: três sessões no mesmo repositório
 3. As questões (13), cada uma com: situação, pare e proponha, balança, quanto custa não resolver, o que o harness faz, como aplicar, limites, trabalho final
-4. Uma alternativa inteira: o agent-harness, da visão geral ao primeiro ciclo
-5. Para quem usa OpenCode ou Codex
-6. Como isto ajuda no trabalho final: decisões do harness × cenários
+4. Visão geral do agent-harness e primeiro ciclo
+5. Uso com OpenCode e Codex
+6. Trabalho final: decisões do harness × cenários
 7. Exercícios
 8. Gabarito comentado
 9. Glossário
@@ -24,11 +24,11 @@ Estado do harness descrito aqui: conferido no código com as fatias 3 e 4 pronta
 
 ---
 
-## 1. O mínimo de git e GitHub para acompanhar
+## 1. Fundamentos de git e GitHub
 
-Se você nunca trabalhou com ramo e pull request, leia esta seção com calma. O resto do material depende dela.
+Leia esta seção com atenção se ainda não trabalhou com ramo e pull request; o restante do material depende dela.
 
-### Uma pessoa só, do ticket ao merge
+### Fluxo de trabalho individual: do ticket ao merge
 
 Ana mantém a `loja`. Os passos dela para consertar um defeito:
 
@@ -63,7 +63,7 @@ export const total = itens => itens.reduce((s, i) => s + i.preco, 0) - desconto;
 >>>>>>> cupom
 ```
 
-Alguém precisa ler as duas, decidir e gravar. Isso é um **conflito de merge**. Ele não é erro de ninguém; é o custo de duas pessoas mexerem no mesmo lugar.
+Alguém precisa ler as duas, decidir e gravar. Essa situação se chama **conflito de merge** e decorre de duas alterações no mesmo trecho.
 
 ### Ramos de integração e de produção
 
@@ -71,9 +71,9 @@ Em muitos projetos, a `main` é o que está publicado (**produção**: o que os 
 
 ### Pasta de trabalho (checkout)
 
-A pasta onde os arquivos aparecem e você edita. Numa pasta, só um ramo está em uso por vez: `git switch outro-ramo` troca os arquivos da pasta inteira. Guarde isto: é a raiz de metade dos problemas deste material.
+A pasta onde os arquivos aparecem e você edita. Numa pasta, só um ramo está em uso por vez: `git switch outro-ramo` troca os arquivos da pasta inteira. Essa restrição está na origem de vários problemas tratados neste material.
 
-### O agente e a conversa
+### Vocabulário do agente de código
 
 - **Agente de código.** Programa que usa um modelo de linguagem para ler, editar e rodar comandos no projeto (Claude Code, OpenCode, Codex).
 - **Conversa (sessão).** Um terminal com o agente aberto, do primeiro pedido até fechar. Ana pode ter três ao mesmo tempo.
@@ -84,7 +84,7 @@ A pasta onde os arquivos aparecem e você edita. Numa pasta, só um ramo está e
 
 ---
 
-## 2. O problema, contado como história
+## 2. Problema geral: três sessões no mesmo repositório
 
 Ana descobriu que pode abrir três terminais e deixar um agente de código trabalhando em cada um: um no carrinho, um no cupom, um no frete. Os três estão na mesma pasta da `loja`.
 
@@ -94,12 +94,12 @@ Ana descobriu que pode abrir três terminais e deixar um agente de código traba
 - Carla, em casa, pega o mesmo ticket do frete. Às 11h, há duas metades de solução.
 - Às 18h, a sessão do cupom trava. No dia seguinte, ninguém sabe o que ficou feito.
 
-Nenhum desses problemas é de um agente sozinho. Eles aparecem porque há **vários atores escrevendo no mesmo lugar ao mesmo tempo**: várias conversas do mesmo agente, a mesma conversa antes e depois de limpar, agentes diferentes, pessoas diferentes em máquinas diferentes, e um agente e uma pessoa na mesma pasta. É o que acontece em qualquer sistema concorrente: escrita no mesmo lugar, disputa por um recurso, estado compartilhado que se corrompe, alguém que morre segurando uma tarefa, mensagem que não chega.
+Esses problemas decorrem de **vários atores escrevendo no mesmo lugar ao mesmo tempo**: várias conversas do mesmo agente, a mesma conversa antes e depois de limpar, agentes diferentes, pessoas diferentes em máquinas diferentes, e um agente e uma pessoa na mesma pasta. Os mesmos problemas ocorrem em qualquer sistema concorrente: escrita no mesmo lugar, disputa por um recurso, estado compartilhado que se corrompe, alguém que morre segurando uma tarefa, mensagem que não chega.
 
-Por que "escrever um prompt melhor" não resolve:
+Limites de uma instrução mais bem escrita (prompt):
 
 1. Uma instrução não vê o que os outros estão fazendo. "Não mexa no trabalho da outra conversa" só funciona se o agente souber onde está esse trabalho e se a outra conversa está viva.
-2. Disputa não se resolve com cuidado. Duas pessoas que conferem "ninguém pegou" no mesmo segundo veem as duas que está livre.
+2. A atenção individual não resolve disputas. Duas pessoas que conferem "ninguém pegou" no mesmo segundo veem as duas que está livre.
 3. Instrução falha em silêncio. O agente esquece, interpreta, ou usa uma forma que ninguém escreveu.
 4. Parte do problema nem passa pelo agente: o comando que a pessoa digita no terminal.
 
@@ -113,7 +113,7 @@ Formato de cada uma: **situação**, **pare e proponha**, **balança** (custo de
 
 Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, infraestrutura, disciplina); "custo de não ter" é o estrago quando ela falta; "—" quer dizer nada além do que as outras linhas já dizem. "Não resolver custa" é o preço de deixar o problema como está.
 
-### Questão 1. Quem é esta sessão?
+### Questão 1. Identidade da sessão e continuidade do trabalho
 
 **Situação.** Ana pede "comece o carrinho", trabalha uma hora e limpa a conversa. A conversa nova não sabe do carrinho e começa a editar no mesmo lugar. Em outro terminal, uma conversa de ontem é retomada e acha que o carrinho ainda é dela.
 
@@ -131,7 +131,7 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 
 **Não resolver custa:** trabalho sem dono depois de cada limpeza, ou com dois donos; retrabalho.
 
-**O que o harness faz.** Fica perto de "id da conversa mais vínculo": um nome por conversa que não depende da pessoa lembrar. Paga com isto: na dúvida, solta um trabalho que era da conversa.
+**O que o harness faz.** Fica perto de "id da conversa mais vínculo": um nome por conversa que não depende da pessoa lembrar. Custo: na dúvida, solta um trabalho que era da conversa.
 
 - **Sessão** é a conversa de um agente, identificada pelo id que o agente fornece. No Claude Code, o agente entrega esse id ao harness a cada ação (e o deixa na variável `CLAUDE_CODE_SESSION_ID`). Num agente que o harness ainda não sabe ler, `AH_SESSAO=<nome>` diz quem é. **Pronto.**
 - **Frente** é um trabalho com nome (o carrinho), um ID curto (`as-1`) e, como se verá na questão 2, um lugar próprio. Cada sessão tem no máximo uma frente.
@@ -159,7 +159,7 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 
 **Trabalho final.** Cenário 5: o harness decidiu guardar fora do agente só quem a sessão é e qual o trabalho dela, e injetar isso num resumo curto. É memória ou só estado? Enunciado §4: o modelo da sessão só é gravado quando o agente informa, e o Claude Code informa às vezes.
 
-### Questão 2. Cada um no seu lugar?
+### Questão 2. Isolamento do diretório de trabalho
 
 **Situação.** Três agentes na mesma pasta. O do carrinho edita `src/total.js`; o do cupom roda `git add -A` (adiciona tudo o que mudou) e leva junto o arquivo pela metade; o do frete roda `git switch main` para conferir uma coisa, e os outros dois passam a editar o ramo errado.
 
@@ -177,7 +177,7 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 
 **Não resolver custa:** commit que leva junto o trabalho pela metade de outro; horas de trabalho no ramo errado, difíceis de rastrear.
 
-**O que o harness faz.** Junta "uma cópia por sessão" com "um ramo por trabalho", sem copiar o histórico. Paga com isto: uma pasta a mais por trabalho, com a sua cópia das dependências, e o conflito fica todo para o merge.
+**O que o harness faz.** Junta "uma cópia por sessão" com "um ramo por trabalho", sem copiar o histórico. Custo: uma pasta a mais por trabalho, com a sua cópia das dependências, e o conflito fica todo para o merge.
 
 - `tools/ah open carrinho` cria o ramo `feat/carrinho` a partir da `dev` e um **worktree** próprio: uma segunda pasta de trabalho do mesmo repositório, com o seu ramo, fora da pasta do projeto. **Pronto.**
   ```
@@ -199,7 +199,7 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 
 **Trabalho final.** Cenário 3: a hipótese "cada um com o seu agente acelera o começo e complica a integração" pode ser medida contando onde os conflitos apareceram. O worktree reduz o atropelo durante o trabalho e concentra o conflito no merge.
 
-### Questão 3. Quem faz o quê: onde anotar?
+### Questão 3. Registro de quem faz o quê
 
 **Situação.** O grupo cria `QUADRO.md` no repositório. Cada agente escreve "estou no carrinho" ao começar. Uma semana depois, metade dos commits é atualização do quadro, os merges dão conflito nele e cada agente lê o arquivo inteiro antes de trabalhar.
 
@@ -217,7 +217,7 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 
 **Não resolver custa:** ninguém sabe quem faz o quê; cada um pergunta, ou adivinha.
 
-**O que o harness faz.** Junta "arquivo" (só que fora do git) com "tickets entre máquinas", um para cada alcance. Paga com isto: outra máquina não vê o quadro desta.
+**O que o harness faz.** Junta "arquivo" (só que fora do git) com "tickets entre máquinas", um para cada alcance. Custo: outra máquina não vê o quadro desta.
 
 - **Estado por máquina, fora do git** (no Linux, em `~/.local/state/agent-harness/<projeto>`; `AH_ESTADO` troca). Um arquivo JSON por sessão e por frente. Cada um é gravado primeiro num arquivo temporário e depois trocado de nome de uma vez, para nunca ficar pela metade; só uma sessão escreve por vez (exclusão mútua). Um `eventos.jsonl` guarda, numa linha por evento, o que aconteceu, e só cresce. **Pronto.**
 - **No git, só o histórico:** uma linha por frente fechada em `docs/agents/historico-das-frentes.md`, commitada pelo `close`. **Pronto.**
@@ -235,7 +235,7 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 
 **Trabalho final.** Enunciado §4: o registro da disciplina é histórico (vai para o git, com data); o "quem faz o quê agora" do grupo não precisa ir. Cenário 3: "o que o `AGENTS.md` compartilhado virou".
 
-### Questão 4. Duas pessoas, o mesmo ticket
+### Questão 4. Reserva de tarefas e desempate
 
 **Situação.** Ana e Carla, cada uma em casa, olham os tickets às 9h e pegam o #2, "frete grátis acima de 200". Às 11h, há duas metades de solução.
 
@@ -252,7 +252,7 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 
 **Não resolver custa:** duas metades de solução; a manhã de uma das duas jogada fora.
 
-**O que o harness faz.** Fica perto de "nome no ticket", feito pelo programa, com "quem chegar primeiro" decidido pelo relógio do servidor, não pelo de cada máquina. Paga com isto: rede obrigatória, e o GitHub vira o banco de coordenação.
+**O que o harness faz.** Fica perto de "nome no ticket", feito pelo programa, com "quem chegar primeiro" decidido pelo relógio do servidor, não pelo de cada máquina. Custo: rede obrigatória, e o GitHub vira o banco de coordenação.
 
 - `tools/ah open frete --tickets 2` reserva **antes** de criar ramo ou pasta: põe a pessoa como responsável no ticket, o rótulo (etiqueta colorida do ticket) `em-andamento` e um comentário cuja última linha é um marcador que o programa lê:
   ```
@@ -274,7 +274,7 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 
 **Trabalho final.** Cenário 3: quantas vezes o grupo duplicou trabalho. Enunciado §3: no estudo, duas pessoas na mesma tarefa de jeitos diferentes é um dado; o que é defeito no trabalho de produção pode ser método no experimento.
 
-### Questão 5. Uma regra escrita basta?
+### Questão 5. Regras pedidas e regras impostas
 
 **Situação.** O arquivo de instruções diz "nunca envie para a `main`". No meio de uma tarefa longa, o agente roda `git push origin main` "para publicar a correção". Outra vez, roda `git checkout main && git push`; ninguém tinha escrito essa forma.
 
@@ -292,7 +292,7 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 
 **Não resolver custa:** um envio para produção que ninguém revisou, descoberto depois.
 
-**O que o harness faz.** Junta "gancho que lê o comando" com "proteção de ramo no servidor": a trava local avisa antes e diz a saída; a barreira de verdade fica no servidor. Paga com isto: a trava lê texto, e sempre há forma que escapa.
+**O que o harness faz.** Junta "gancho que lê o comando" com "proteção de ramo no servidor": a trava local avisa antes e diz a saída; a barreira efetiva fica no servidor. Custo: a trava lê texto, e sempre há forma que escapa.
 
 - **Gancho** é um programa que o agente chama antes de executar uma ferramenta. O do harness lê o comando como o terminal leria (entende comandos encadeados com `&&` e `;`, comandos dentro de comandos, como `bash -c "…"`, e troca de pasta com `cd`) e devolve "permite" ou "recusa, com motivo e próximo passo". **Pronto.**
 - **Trava** é uma regra do gancho que recusa. As do harness:
@@ -310,7 +310,7 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 - **De volta à questão 2:** T1, T2 e T3 guardam a pasta principal; T4 guarda a pasta e o ramo da frente de outra sessão viva (pasta de frente passada, órfã ou de dona morta não é protegida: aí vale o `takeover`). T1 e T3 valem só na pasta principal: no worktree da própria frente, `rebase`, `stash` e `reset` são livres.
 - **Gancho que quebra recusa.** Mesmo quebrado, deixa passar uma chamada a `tools/ah` (para rodar o `doctor`) e a edição de `.harness/config.json`.
 - **Desvio de emergência:** `AH_GUARD=off` no começo do próprio comando, só com ordem do executivo, libera T1 a T6 naquele comando e fica registrado. Nunca libera a T0. Na edição de arquivo (T4) não há liberação: o caminho é pedir à dona ou o `takeover`.
-- **A barreira de verdade fica no servidor:** o `init` configura proteção de ramo no GitHub para `stage` e `main`. As travas locais avisam antes e dão a saída certa; não substituem a proteção.
+- **A barreira efetiva fica no servidor:** o `init` configura proteção de ramo no GitHub para `stage` e `main`. As travas locais avisam antes e dão a saída certa; não substituem a proteção.
 - **Regra geral:** o harness sugere e registra; só recusa o que protege o trabalho dos outros e a máquina. Método (fazer plano, escrever teste antes) nunca é motivo de recusa.
 
 **Como aplicar.** Dá para ver a trava sem agente, entregando ao gancho o evento que o Claude Code mandaria:
@@ -360,17 +360,17 @@ Faça: escreva o comando por extenso, sem variável, crase nem aspas abertas (gi
 
 No ensaio com o Claude Code de verdade, o agente recebeu as recusas com o motivo literal e não tentou contornar.
 
-**Limites, ditos com honestidade.**
+**Limites das travas.**
 
-> **As travas pegam engano, não má-fé.** Elas leem o texto do comando antes de ele rodar; não acompanham o que um programa faz por conta própria. Passam, mesmo na pasta de outra sessão viva: `python -c "…"`, `find <pasta> -delete`, `… | xargs rm`, `rsync`, um script ou um `npm` que escreve arquivo. Na pasta principal, passam `find . | xargs git add`, apelidos do git e `gh api …/merge`. A lista completa está em `docs/referencia/comandos.md`, seção "Limites".
+> **Escopo: engano do agente; a má-fé fica fora.** As travas leem o texto do comando antes de ele rodar; não acompanham o que um programa faz por conta própria. Passam, mesmo na pasta de outra sessão viva: `python -c "…"`, `find <pasta> -delete`, `… | xargs rm`, `rsync`, um script ou um `npm` que escreve arquivo. Na pasta principal, passam `find . | xargs git add`, apelidos do git e `gh api …/merge`. A lista completa está em `docs/referencia/comandos.md`, seção "Limites".
 >
-> Na balança: **resolver** de verdade pede caixa de areia (contêiner, usuário sem permissão), que custa infraestrutura e atrapalha o trabalho normal. **Não resolver** custa pouco enquanto o risco é o agente se enganar, e muito se o risco é alguém (ou uma skill de terceiros) agindo de má-fé. Por isso a barreira de verdade fica no servidor.
+> Na balança: **resolver** de verdade pede caixa de areia (contêiner, usuário sem permissão), que custa infraestrutura e atrapalha o trabalho normal. **Não resolver** custa pouco enquanto o risco é o agente se enganar, e muito se o risco é alguém (ou uma skill de terceiros) agindo de má-fé. Por esse motivo, a barreira efetiva fica no servidor.
 
 Há também recusa demais: a T1 recusa `git switch main && git pull && git switch dev`, mesmo voltando para a `dev` no fim. `AH_GUARD=off` é acordo de confiança: o agente pode digitar o prefixo sem ordem; o registro é a contrapartida. Proteção de ramo não existe em repositório privado de conta gratuita do GitHub. No Windows nativo as travas de comando não valem (use WSL2).
 
 **Trabalho final.** Cenário 9: transformar um método em código dentro de um harness. O harness traçou uma fronteira (proteger o trabalho alheio vira trava; método fica recomendação). Vocês podem adotá-la ou contestá-la. Cenário 1: `AH_GUARD=off` é aprovação humana antes da ação, mas só para a exceção. Cenário 4: a lista de formas que escapam é um catálogo de falso negativo.
 
-### Questão 6. A sessão que morre no meio
+### Questão 6. Sessão interrompida e passagem do trabalho
 
 **Situação.** A sessão de Ana trava às 16h com o carrinho pela metade. No dia seguinte, o quadro ainda diz "carrinho: Ana, ativa". Carla quer continuar. Ana, no notebook, quer retomar o que deixou no computador do laboratório.
 
@@ -387,7 +387,7 @@ Há também recusa demais: a T1 recusa `git switch main && git pull && git switc
 
 **Não resolver custa:** trabalho parado e sem dono; quem continua começa do zero.
 
-**O que o harness faz.** Junta três linhas: prazo (sinal de vida), passagem planejada (`handoff`) e tomada só com confirmação humana (`takeover`). Paga com isto: uma sessão morta parece viva por até duas horas.
+**O que o harness faz.** Junta três linhas: prazo (sinal de vida), passagem planejada (`handoff`) e tomada só com confirmação humana (`takeover`). Custo: uma sessão morta parece viva por até duas horas.
 
 - **Sessão viva:** o processo registrado existe **e** o sinal de vida (um arquivo tocado pelos ganchos) tem menos de 120 min (configurável em `sessoes.prazoDoSinalMin`). Frente ativa com dona morta aparece como `órfã` no quadro. **Pronto.**
 - **Passagem de bastão:**
@@ -430,7 +430,7 @@ Há também recusa demais: a T1 recusa `git switch main && git pull && git switc
 
 **Não resolver custa:** retrabalho descoberto tarde, na hora do merge.
 
-**O que o harness faz.** Fica com "aviso calculado" mais "declarar antes", e rejeita a trava por arquivo. Paga com isto: o aviso não impede nada. Aviso, nunca recusa. A sobreposição é calculada pelo que cada frente ativa já mudou em relação à base (commits do ramo e mudanças não commitadas) e aparece no quadro e no resumo. No `open`, `--caminhos` diz o que a frente nova pretende tocar. **Pronto.**
+**O que o harness faz.** Fica com "aviso calculado" mais "declarar antes", e rejeita a trava por arquivo. Custo: o aviso não impede nada. Aviso, nunca recusa. A sobreposição é calculada pelo que cada frente ativa já mudou em relação à base (commits do ramo e mudanças não commitadas) e aparece no quadro e no resumo. No `open`, `--caminhos` diz o que a frente nova pretende tocar. **Pronto.**
 
 ```
 $ tools/ah open cupom --caminhos 'src/**'
@@ -471,7 +471,7 @@ Sessões vivas: ana-term (executor, carrinho); carla-te (executor, cupom)
 
 **Não resolver custa:** editor, sessões e banco mortos de uma vez; trabalho não salvo perdido.
 
-**O que o harness faz.** Fica com a fila por máquina, e deixa a limpeza a cargo de cada teste. Paga com isto: espera, e configuração de quem conhece o projeto.
+**O que o harness faz.** Fica com a fila por máquina, e deixa a limpeza a cargo de cada teste. Custo: espera, e configuração de quem conhece o projeto.
 
 - `tools/ah pesado -- <comando>` espera a vez numa **fila da máquina** (a mesma para todos os projetos com o harness), roda o comando, repassa a saída e devolve o código dele. **Pronto** (fatia 3; não ensaiado com agente real nem em Windows ou macOS).
 - **Vagas e memória são da máquina**, num `config.json` da fila, criado com os padrões na primeira chamada: 2 vagas e 4096 MB livres para um comando rodar ao lado de outro.
@@ -501,7 +501,7 @@ Sessões vivas: ana-term (executor, carrinho); carla-te (executor, cupom)
 
 **Trabalho final.** Enunciado §4: rodar código de terceiros em ambiente descartável também protege disso.
 
-### Questão 9. Rede que cai
+### Questão 9. Queda de rede
 
 **Situação.** Ana fecha a frente sem internet. O `close` precisa comentar no ticket e tirar o rótulo; o GitHub não responde.
 
@@ -521,7 +521,7 @@ Sessões vivas: ana-term (executor, carrinho); carla-te (executor, cupom)
 
 **Limites.** "Pelo menos uma vez" aceita comentário duplicado como mal menor. A distinção entre falha passageira e permanente depende do texto da mensagem do `gh`.
 
-### Questão 10. Um grupo, três agentes
+### Questão 10. Regra comum para agentes diferentes
 
 **Situação.** No grupo, uma pessoa usa Claude Code, outra OpenCode, a terceira Codex. A regra "não envie para a `main`" precisa valer para as três.
 
@@ -538,7 +538,7 @@ Sessões vivas: ana-term (executor, carrinho); carla-te (executor, cupom)
 
 **Não resolver custa:** a regra vale para uma pessoa do grupo e não para as outras.
 
-**O que o harness faz.** Fica com "núcleo comum e ponte fina", e deixa a ponte dos outros agentes para o próprio agente escrever. Paga com isto: hoje, só o Claude Code tem ponte pronta.
+**O que o harness faz.** Fica com "núcleo comum e ponte fina", e deixa a ponte dos outros agentes para o próprio agente escrever. Custo: hoje, só o Claude Code tem ponte pronta.
 
 - **Contrato de quatro eventos**: começo de sessão, sinal de vida, antes de ferramenta, fim de sessão. O adaptador de cada agente só traduz. **Pronto.**
 - **Adaptador do Claude Code**, ensaiado com o agente real (versão 2.1.319). **Pronto.**
@@ -569,7 +569,7 @@ Sessões vivas: ana-term (executor, carrinho); carla-te (executor, cupom)
 
 **Trabalho final.** Cenário 6 (especificação quando o pedido muda); enunciado §4 ("horas e gasto com modelos": o harness não mede gasto; registre à mão).
 
-### Questão 12. "Pronto": o que prova?
+### Questão 12. Critério de "pronto" e prova
 
 **Situação.** O agente diz "pronto, todos os testes passam". A pessoa integra. No dia seguinte, outra sessão descobre que duas reservas em ordem cruzada desistem dos dois lados.
 
@@ -590,14 +590,14 @@ Sessões vivas: ana-term (executor, carrinho); carla-te (executor, cupom)
 **O que o harness faz e o que o método fez.**
 
 - `tools/ah doctor` confere a preparação em 22 itens, mais um ("Adaptador do agente em uso") quando o agente se identifica (Node, git, `gh`, configuração, ganchos, proteção dos ramos, estado, fila de pesado) e ensaia recusas de verdade (uma T5 e uma T1). **Pronto.**
-- **Ensaio com o agente de verdade.** Os testes do harness simulam o agente: entregam ao gancho eventos escritos à mão. Todos passavam. No ensaio com o Claude Code de verdade, apareceu um defeito que eles não pegavam: no `/clear`, o agente avisa o **fim** da conversa velha **antes** de avisar o **começo** da nova. O harness tratava todo fim como fim; quando o começo chegava, não havia mais conversa viva para herdar, e a frente ficava órfã. O conserto: um fim por `/clear` ou por retomada não encerra a sessão; ela fica esperando a continuação. O reensaio com o agente real (Claude Code 2.1.319, 13/11) conferiu: o agente mandou o fim com o motivo `clear`, depois o começo com a origem `clear` e um id novo, no mesmo processo, e a conversa nova herdou a frente. E o segundo ensaio achou outro defeito: retomar (`/resume`) uma conversa que já tinha frente deixava o executor com duas frentes, quando a regra é uma só. Lição: **teste simulado prova a lógica; só o ensaio com o agente real prova o que supomos sobre o agente.** (Fonte: `docs/referencia/ensaio-claude-code.md`, seções da fatia 2 e "Reensaio do `/clear`".)
-- **O agente afirma o que não fez.** No mesmo reensaio, com um pedido vago, o modelo pequeno não chamou ferramenta nenhuma e respondeu que o `git reset --hard` "descartou" as alterações. Nada tinha rodado. Para ver uma recusa com o agente, peça "rode exatamente este comando: …" e confira no registro do harness (`tools/ah board`, `eventos.jsonl`) que ela aconteceu. É a mesma regra do enunciado §8: vale o que o registro mostra, não o que o agente diz.
+- **Ensaio com o agente de verdade.** Os testes do harness simulam o agente: entregam ao gancho eventos escritos à mão. Todos passavam. No ensaio com o Claude Code de verdade, apareceu um defeito que eles não pegavam: no `/clear`, o agente avisa o **fim** da conversa velha **antes** de avisar o **começo** da nova. O harness tratava todo fim como fim; quando o começo chegava, não havia mais conversa viva para herdar, e a frente ficava órfã. O conserto: um fim por `/clear` ou por retomada não encerra a sessão; ela fica esperando a continuação. O reensaio com o agente real (Claude Code 2.1.319, 13/11) conferiu: o agente mandou o fim com o motivo `clear`, depois o começo com a origem `clear` e um id novo, no mesmo processo, e a conversa nova herdou a frente. E o segundo ensaio achou outro defeito: retomar (`/resume`) uma conversa que já tinha frente deixava o executor com duas frentes, quando a regra é uma só. Conclusão: **os testes simulados verificam a lógica; o ensaio com o agente real verifica as suposições sobre o agente.** (Fonte: `docs/referencia/ensaio-claude-code.md`, seções da fatia 2 e "Reensaio do `/clear`".)
+- **Afirmação sem execução.** No mesmo reensaio, com um pedido vago, o modelo pequeno não chamou ferramenta nenhuma e respondeu que o `git reset --hard` "descartou" as alterações. Nada tinha rodado. Para ver uma recusa com o agente, peça "rode exatamente este comando: …" e confira no registro do harness (`tools/ah board`, `eventos.jsonl`) que ela aconteceu. É a mesma regra do enunciado §8: vale o que o registro mostra, não o que o agente diz.
 - Na construção do harness, cada tarefa passou por revisão independente (outro agente, com o diff e o plano, sem o raciocínio do implementador). Em cinco tarefas seguidas a revisão pediu conserto; o defeito das reservas cruzadas foi achado assim, não pelos testes de quem implementou.
-- Teste contra um falso prova o falso: o `gh` falso dos testes aceitava rótulos que o real recusaria.
+- Os testes contra um `gh` falso verificam só o comportamento do falso: o `gh` falso dos testes aceitava rótulos que o real recusaria.
 
 **Trabalho final.** Enunciado §8: "o trabalho fica insuficiente se o artigo afirma o que o registro não mostra". "Pronto com comando e saída" é a mesma regra, aplicada ao código.
 
-### Questão 13. Fechar o trabalho e publicar
+### Questão 13. Fechamento do trabalho e publicação
 
 **Situação.** A sessão termina, apaga a pasta do trabalho e o ramo. Um commit não tinha sido integrado; um arquivo de configuração local, ignorado pelo git, sumiu junto. Em outro dia, o agente leva a `dev` para a `main` "para publicar".
 
@@ -635,7 +635,7 @@ Falta: git push origin dev
 
 ---
 
-## 4. Uma alternativa inteira: o agent-harness
+## 4. Visão geral do agent-harness e primeiro ciclo
 
 ### Visão geral
 
@@ -646,9 +646,9 @@ Falta: git push origin dev
 - **O que não resolve.** Método e escolha de modelo (nunca recusa por isso; questão 11), medida de horas e gasto, agentes sem adaptador (Codex e OpenCode: o agente escreve o seu pelo roteiro de `docs/agentes/`; questão 10), má-fé (as travas pegam engano; questão 5).
 - **A regra do autor.** O harness sugere e registra; só recusa o que protege o trabalho dos outros e a máquina.
 
-Ele é uma das linhas da balança, não a resposta. As propostas que a turma fez em aula continuam valendo como alternativas para o trabalho final (seção 6).
+O harness é uma das linhas da balança, uma alternativa entre outras. As propostas que a turma fez em aula continuam valendo como alternativas para o trabalho final (seção 6).
 
-### Do zero ao primeiro ciclo
+### Instalação e primeiro ciclo
 
 O ciclo de uma frente:
 
@@ -763,7 +763,7 @@ Ajuda: `tools/ah --help` lista os comandos; `tools/ah <comando> --help` mostra o
 
 ---
 
-## 5. Para quem usa OpenCode ou Codex
+## 5. Uso com OpenCode e Codex
 
 Não há adaptador pronto para OpenCode nem para Codex, por decisão do autor: o agente que chega ao repositório segue um roteiro, escreve o próprio adaptador, roda os testes de contrato e prova com o agente de verdade. O roteiro existe (fatia 4), mas **não foi ensaiado** com o Codex nem com o OpenCode; tratem o resultado como experimento e registrem o que aconteceu.
 
@@ -799,7 +799,7 @@ O adaptador se escreve **no clone**, não no projeto: o módulo `nucleo/adaptado
 
 ---
 
-## 6. Como isto ajuda no trabalho final: decisões do harness × cenários
+## 6. Trabalho final: decisões do harness × cenários
 
 Cada linha liga uma decisão tomada no desenho do harness a um dos cenários de `cenarios.md` (ou a uma seção do enunciado) e diz o que o grupo pode aproveitar, adotando a decisão ou contestando-a.
 
@@ -858,7 +858,7 @@ Os três primeiros são de nivelamento; façam antes da aula 2. O gabarito está
 
 **4.** (a) passa: caminho explícito. (b) T2. (c) passa: `dev` é livre. (d) T5. (e) T1. (f) T3. (g) T1, já na troca de ramo (sem ela, a T5 recusaria o push, porque o gancho acompanha a troca de ramo na mesma linha). (h) passa: limite declarado da T2 (o `xargs` recebe os caminhos em tempo de execução). Lição: (h) mostra a diferença entre "o que a trava promete" e "o que ela consegue ler"; até a véspera da aula, (e) e (f) também passavam. Confiram sempre no código: `tools/ah --help` e `docs/referencia/comandos.md`.
 
-**5.** Exemplos: um script `publicar.sh` que roda `git push origin main` por dentro; `gh api` direto na API de merge; um apelido do git. O que ainda impede é a proteção de ramo no servidor (PR obrigatório), que não lê o comando: olha o que chega. Por isso o harness diz que a barreira de verdade fica no servidor, e que em repositório privado de conta gratuita só a trava local protege.
+**5.** Exemplos: um script `publicar.sh` que roda `git push origin main` por dentro; `gh api` direto na API de merge; um apelido do git. O que ainda impede é a proteção de ramo no servidor (PR obrigatório), que não lê o comando: olha o que chega. Por isso o harness diz que a barreira efetiva fica no servidor, e que em repositório privado de conta gratuita só a trava local protege.
 
 **6.** Com "vence quem comentou primeiro **em cada ticket**", A vence no #1 e B vence no #2; se cada um desistir quando perde em algum ticket, os dois desistem e ninguém fica com nada. Foi o caso achado na revisão da construção. Uma regra que garante vencedor: uma ordem global (por exemplo, a menor posição de comentário entre todos os tickets, com desempate pelo ID da frente), de modo que as duas máquinas, lendo o mesmo servidor, cheguem à mesma conclusão. O harness de hoje não faz isso: aceita que as duas desistam e abram de novo, porque o erro que ele não admite é as duas ficarem com o mesmo ticket. Discuta: qual dos dois erros custa mais para o seu grupo?
 
