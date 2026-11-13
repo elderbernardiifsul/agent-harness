@@ -327,8 +327,8 @@ function switchTrocaRamo(args, base) {
 }
 
 // `git checkout` troca de ramo: -b, -B, --orphan, --detach, `-`, ou um único posicional (sem `--`)
-// que não é a base, não existe como caminho e é uma referência. Sem `ehRef` e `existe` no ctx,
-// o posicional solto não recusa.
+// que não é a base e é uma referência, mesmo que também exista como caminho (o git prefere o ramo).
+// Sem `ehRef` no ctx, o posicional solto não recusa.
 function checkoutTrocaRamo(args, cwd, ctx) {
   const { opcoes, posicionais, comTraco } = lerArgs(args, CHECKOUT_CURTAS, CHECKOUT_LONGAS);
   if (opcoes.some(o => o === '-b' || o === '-B' || ehLonga(o, '--orphan', 4) || ehLonga(o, '--detach', 4))) return true;
@@ -336,10 +336,8 @@ function checkoutTrocaRamo(args, cwd, ctx) {
   const [alvo] = posicionais;
   if (alvo === '-') return true;
   if (alvo === ctx.config.git.base || naoLiteral(alvo)) return false;
-  if (typeof ctx.ehRef !== 'function' || typeof ctx.existe !== 'function') return false;
-  const pasta = cwd ?? ctx.raiz;
-  if (ctx.existe(path.resolve(pasta, alvo))) return false;
-  return ctx.ehRef(pasta, alvo) === true;
+  if (typeof ctx.ehRef !== 'function') return false;
+  return ctx.ehRef(cwd ?? ctx.raiz, alvo) === true;
 }
 
 function travaT1(cmd, ctx) {
@@ -451,9 +449,57 @@ function frenteDoCaminho(alvo, base, ctx, arvore = false) {
   else if (base == null) return null;
   else bruto = `${base}${path.sep}${alvo}`;
   const normalizar = typeof ctx.normalizar === 'function' ? ctx.normalizar : x => x;
+  if (CURINGA.test(bruto)) {
+    const f = frenteDoCuringa(path.resolve(bruto), normalizar, ctx, arvore);
+    return f ? { frente: f, caminho: path.resolve(bruto) } : null;
+  }
   const n = normalizar(bruto);
   const f = ctx.frentes.find(fr => fr.worktree && (dentroDe(n, fr.worktree) || (arvore && dentroDe(fr.worktree, n))) && ctx.viva(fr.dona));
   return f ? { frente: f, caminho: path.resolve(bruto) } : null;
+}
+
+// Curinga do shell (`*`, `?`, `[`) num caminho.
+const CURINGA = /[*?[]/;
+
+// Expressão de um componente com curinga; `**` casa qualquer sequência de componentes.
+function regexDoComponente(c) {
+  let r = '';
+  for (let i = 0; i < c.length; i++) {
+    const ch = c[i];
+    if (ch === '*') r += '.*';
+    else if (ch === '?') r += '.';
+    else if (ch === '[') {
+      const fim = c.indexOf(']', i + 2);
+      if (fim < 0) { r += '\\['; continue; }
+      let classe = c.slice(i + 1, fim);
+      if (classe.startsWith('!')) classe = `^${classe.slice(1)}`;
+      r += `[${classe.replace(/\\/g, '\\\\')}]`;
+      i = fim;
+    } else r += ch.replace(/[.+^${}()|\\]/g, '\\$&');
+  }
+  return new RegExp(`^${r}$`, process.platform === 'win32' ? 'i' : '');
+}
+
+// A frente viva alheia cujo worktree o caminho com curinga pode atingir: compara pelo prefixo até o
+// primeiro componente com curinga e casa o resto componente a componente contra o worktree. Recusa
+// quando o que casa é o worktree ou algo dentro dele, e, com `arvore`, também uma pasta acima dele.
+function frenteDoCuringa(bruto, normalizar, ctx, arvore) {
+  const partes = bruto.split(/[\\/]+/);
+  const k = partes.findIndex(p => CURINGA.test(p));
+  const prefixo = normalizar(partes.slice(0, k).join(path.sep) + (k === 1 ? path.sep : ''));
+  const padrao = partes.slice(k).filter(p => p !== '');
+  return ctx.frentes.find(fr => {
+    if (!fr.worktree || !ctx.viva(fr.dona)) return false;
+    if (dentroDe(prefixo, fr.worktree)) return true;
+    if (!dentroDe(fr.worktree, prefixo)) return false;
+    const wt = path.relative(prefixo, fr.worktree).split(/[\\/]+/).filter(p => p !== '');
+    for (let i = 0; i < padrao.length; i++) {
+      if (padrao[i] === '**') return true;
+      if (i >= wt.length) return true; // casa algo dentro do worktree
+      if (!regexDoComponente(padrao[i]).test(wt[i])) return false;
+    }
+    return padrao.length === wt.length || arvore;
+  });
 }
 
 function primeiraRecusa(alvos, base, ctx, arvore = false) {
@@ -497,8 +543,8 @@ function t4Git(cmd, ctx) {
     const f = ctx.frentes.find(fr => fr.ramo && nomes.includes(fr.ramo) && ctx.viva(fr.dona));
     if (!f) return null;
     const curto = idCurto(f.dona);
-    return recusa('T4', `o ramo ${f.ramo} é da frente ${f.id} ${f.nome}, da sessão ${curto}, que está viva`,
-      `escreva só no worktree da sua frente; para mexer em ${f.nome}, peça à sessão ${curto} (ah handoff) ou, se ela morrer, ah takeover ${f.nome}`);
+    return recusa('T4', `o ramo ${f.ramo} é da frente ${f.id} ${f.nome}, da sessão ${curto}, que está viva; apagar, renomear ou mover o ramo tira o trabalho dela do lugar`,
+      `deixe o ramo ${f.ramo} como está; para mexer nele, peça à sessão ${curto} (ah handoff) ou, se ela morrer, ah takeover ${f.nome}`);
   }
   if (g.sub === 'worktree') {
     const [acao, ...resto] = g.args;

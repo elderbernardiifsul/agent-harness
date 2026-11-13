@@ -262,11 +262,16 @@ test('T1: sem ehRef nem existe no ctx (contexto antigo), checkout de nome solto 
   assert.equal(avaliar({ tipo: 'comando', comando: 'git switch main', cwd: '/r' }, antigo).trava, 'T1');
   assert.equal(avaliar({ tipo: 'comando', comando: 'git checkout -b x', cwd: '/r' }, antigo).trava, 'T1');
 });
-test('T1: o caminho e a pasta que chegam a existe e ehRef', () => {
+test('T1: a pasta que chega a ehRef', () => {
   const vistos = [];
-  const c = { ...ctx, existe: p => { vistos.push(['existe', p]); return false; }, ehRef: (d, n) => { vistos.push(['ehRef', d, n]); return true; } };
+  const c = { ...ctx, ehRef: (d, n) => { vistos.push(['ehRef', d, n]); return true; } };
   assert.equal(avaliar({ tipo: 'comando', comando: 'git checkout x', cwd: '/r/src' }, c).trava, 'T1');
-  assert.deepEqual(vistos, [['existe', '/r/src/x'], ['ehRef', '/r/src', 'x']]);
+  assert.deepEqual(vistos, [['ehRef', '/r/src', 'x']]);
+});
+test('T1: nome que é ramo e caminho ao mesmo tempo recusa', () => {
+  const c = { ...ctx, existe: () => true };
+  assert.equal(avaliar({ tipo: 'comando', comando: 'git checkout main', cwd: '/r' }, c).trava, 'T1');
+  assert.ok(avaliar({ tipo: 'comando', comando: 'git checkout arquivo.txt', cwd: '/r' }, c).permite, 'só caminho passa');
 });
 test('T3: formas abreviadas e combinadas', () => {
   for (const c of ['git reset --ha', 'git reset --me', 'git reset --ke HEAD', 'git clean -ffdx', 'git clean -df', 'git clean --fo', 'git checkout --force dev',
@@ -343,6 +348,8 @@ test('T4 pega o worktree alheio por link simbólico e por ..', { skip: process.p
   assert.equal(avaliar({ tipo: 'comando', comando: 'git add a.js', cwd: path.join(tmp, 'atalho', 'frete') }, c).trava, 'T4');
   assert.equal(avaliar({ tipo: 'comando', comando: `touch '${tmp}/wt/frete/a\\..\\..\\x'`, cwd: '/r' }, c).trava, 'T4');
   assert.ok(avaliar({ tipo: 'comando', comando: `touch ${tmp}/atalho/x/b.js`, cwd: '/r' }, c).permite);
+  assert.equal(avaliar({ tipo: 'comando', comando: `rm -rf ${tmp}/atalho/*`, cwd: '/r' }, c).trava, 'T4', 'curinga pelo link');
+  assert.ok(avaliar({ tipo: 'comando', comando: `rm -rf ${tmp}/atalho/x*`, cwd: '/r' }, c).permite);
 });
 
 // ---- Consertos da revisão da T4
@@ -360,4 +367,25 @@ test('T4: leituras do git no worktree alheio passam', () => {
   for (const c of ['git -C /wt/frete stash', 'git -C /wt/frete stash pop', 'git -C /wt/frete tag v1', 'git -C /wt/frete tag -d v1', 'git -C /wt/frete notes add -m x',
     'git -C /wt/frete checkout x'])
     assert.equal(av4(c).trava, 'T4', c);
+});
+
+// ---- Onda final: curinga do shell no alvo da T4
+test('T4: curinga que pode casar o worktree alheio recusa', () => {
+  for (const c of ['rm -rf /wt/*', 'rm -rf /wt/fr?te', 'rm -rf /wt/[f]rete', 'rm -rf /wt/f*', 'rm -rf /*', 'rm -rf /w*', 'rm /wt/frete/*.js',
+    'rm -rf /wt/*/src', 'touch /wt/fr*/a', 'mv /wt/f* /x', 'rm -rf /wt/*/x/y', 'touch /wt/*'])
+    assert.equal(av4(c).trava, 'T4', c);
+  assert.equal(avaliar({ tipo: 'comando', comando: 'rm -rf *', cwd: '/wt' }, ctx4).trava, 'T4');
+  assert.equal(av4('cd /wt && rm -rf *').trava, 'T4');
+  assert.equal(av4('cd /wt && rm -rf ./f*').trava, 'T4');
+});
+test('T4: curinga que não casa nenhum worktree alheio vivo passa', () => {
+  for (const c of ['rm -rf /wt/x*', 'rm -rf /wt/fr?t', 'rm -rf /wt/[a-e]rete', 'rm -rf /outra/*', 'rm -rf /wt/frete?', 'rm -rf /wt2/*'])
+    assert.ok(av4(c).permite, c);
+  assert.ok(avaliar({ tipo: 'comando', comando: 'rm -rf /wt/*', cwd: '/r' }, { ...ctx4, viva: () => false }).permite, 'dona morta');
+});
+
+test('T4: recusa própria para git branch sobre o ramo de frente alheia', () => {
+  assert.equal(textoDaRecusa(av4('git branch -D feat/frete')),
+    'Recusado (T4): o ramo feat/frete é da frente cd-1 frete, da sessão outra, que está viva; apagar, renomear ou mover o ramo tira o trabalho dela do lugar\n'
+    + 'Faça: deixe o ramo feat/frete como está; para mexer nele, peça à sessão outra (ah handoff) ou, se ela morrer, ah takeover frete');
 });

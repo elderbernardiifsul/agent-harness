@@ -61,7 +61,7 @@ function baseDoPrPeloGh(env, timeoutMs) {
 
 // `nome` é uma referência que o `git checkout <nome>` usaria para trocar de ramo: um commit
 // pelo nome (ramo, etiqueta) ou um ramo do remoto com esse nome (o checkout cria o local).
-// Só é chamado num `git checkout` de um posicional solto que não é caminho existente.
+// Só é chamado num `git checkout` de um posicional solto (mesmo que seja também um caminho existente).
 function ehRefPeloGit(env, remoto) {
   return (cwd, nome) => {
     if (typeof nome !== 'string' || nome === '' || nome.startsWith('-')) return false;
