@@ -75,7 +75,7 @@ export default {
       if (ctx.config.fecharLanca) throw new Error('antesDeFechar quebrado');
       return null;
     },
-    depoisDeFechar(ctx) { registrar(ctx, `depoisDeFechar ${ctx.frente.nome}`); },
+    depoisDeFechar(ctx) { registrar(ctx, `depoisDeFechar ${ctx.frente.nome}${ctx.aberturaDesfeita ? ' (abertura desfeita)' : ''}`); },
     aoPassar(ctx) {
       registrar(ctx, `aoPassar ${ctx.frente.nome}`);
       if (ctx.config.passarLanca) throw new Error('aoPassar quebrado');

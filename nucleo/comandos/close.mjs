@@ -49,6 +49,10 @@ const mesmoCaminho = (a, b) => {
   try { return fs.realpathSync(a) === fs.realpathSync(b); } catch { return path.resolve(a) === path.resolve(b); }
 };
 
+const recusaDaExtensao = (d, frente) => recusa(d.falhou
+  ? `a extensão ${d.extensao} falhou em antesDeFechar: ${d.motivo}`
+  : `a extensão ${d.extensao} não deixa fechar a frente ${frente.id} ${frente.nome}: ${d.motivo}`, d.saida);
+
 function listaCortada(itens, rotulo) {
   const linhas = itens.slice(0, MAX_LISTA).map(i => `    ${i}`);
   if (itens.length > MAX_LISTA) linhas.push(`    ... e mais ${itens.length - MAX_LISTA} ${rotulo}`);
@@ -114,6 +118,9 @@ export async function executar(args, amb) {
         throw recusa(`A frente ${frente.id} ${frente.nome} está sendo aberta agora (sessão ${frente.dona ?? 'sem dona'}${frente.processo ? `, processo ${frente.processo.pid}` : ''}).`,
           `espere esse ah open terminar (ah board mostra quando ela fica ativa) e, se ainda quiser, rode ah close ${frente.nome}`);
       }
+      // As extensões também conferem a abertura desfeita (podem ter gravado na frente no meio do open).
+      const daExtensao = await recusaAntesDeFechar(amb, { frente, dentroDaTrava: true, aberturaDesfeita: true });
+      if (daExtensao) throw recusaDaExtensao(daExtensao, frente);
       const oGh = { cwd: raiz, env, avisar: amb.avisar };
       const login = loginAtual(oGh) ?? frente.abertaPor ?? 'local';
       const r = desfazerAbertura({ frente, login, sessao: amb.sessaoId, rotulo: cfg.github.rotuloDeReserva, dirEstado }, oGh);
@@ -128,6 +135,7 @@ export async function executar(args, amb) {
         if (s && (s.frente?.nome ?? s.frente) === frente.nome) gravarSessao(dirEstado, { ...s, frente: null });
       }
       registrarEvento(dirEstado, { tipo: 'abertura-desfeita', sessao: amb.sessaoId, id: frente.id, nome: frente.nome, frente: frente.nome, tickets: r.tickets });
+      await reagir('depoisDeFechar', amb, { frente, dentroDaTrava: true, soLocal: false, aberturaDesfeita: true });
       const sobras = [];
       if (existeRamo(raiz, frente.ramo, { env })) sobras.push(`git branch -D ${frente.ramo}`);
       if (typeof frente.worktree === 'string' && fs.existsSync(frente.worktree)) sobras.unshift(`git worktree remove ${frente.worktree}`);
@@ -230,11 +238,7 @@ export async function executar(args, amb) {
     // As extensões conferem o que é delas (antesDeFechar) antes de qualquer mudança; a que recusa (ou falha) para
     // o close aqui. O que ela gravou na frente volta para o objeto que o close grava adiante.
     const daExtensao = await recusaAntesDeFechar(amb, { frente, dentroDaTrava: true });
-    if (daExtensao) {
-      throw recusa(daExtensao.falhou
-        ? `a extensão ${daExtensao.extensao} falhou em antesDeFechar: ${daExtensao.motivo}`
-        : `a extensão ${daExtensao.extensao} não deixa fechar a frente ${frente.id} ${frente.nome}: ${daExtensao.motivo}`, daExtensao.saida);
-    }
+    if (daExtensao) throw recusaDaExtensao(daExtensao, frente);
     try {
       const relida = lerFrente(dirEstado, frente.nome);
       if (relida?.extensoes !== undefined) frente.extensoes = relida.extensoes;
