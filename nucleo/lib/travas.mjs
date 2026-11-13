@@ -15,7 +15,8 @@
 // (`-c alias.x=push`), `gh api` com endpoint em variável ou pelo GraphQL (a rota REST de merge do PR
 // é avaliada), `push.default` e `remote.*.push` da
 // configuração, `git add` com glob do shell que cobre tudo sem ser `*` solto
-// (`*.*`, `[a-z]*`) e caminhos que chegam por `xargs` ou `--pathspec-from-file`. Na T4: caminho
+// (`*.*`, `[a-z]*`) e caminhos que chegam por `--pathspec-from-file` (os do `xargs` recusam
+// como ilegíveis na T2). Na T4: caminho
 // relativo com cwd desconhecido, caminho com variável, crase ou `~`, e programas que escrevem
 // arquivo fora da lista (um script, `npm`, `python -c`) não são avaliados.
 import path from 'node:path';
@@ -135,13 +136,16 @@ function travaT2(cmd, ctx) {
   const g = subcomandoGit(cmd.argv, cmd.env);
   if (!g || (g.sub !== 'add' && g.sub !== 'stage' && g.sub !== 'commit')) return null;
   const cwd = g.incerto ? null : cmd.cwd;
-  const pega = (g.sub === 'commit' ? commitPegaTudo : addPegaTudo)(g.args, cwd, ctx.raiz, cmd.literais);
+  let pega = (g.sub === 'commit' ? commitPegaTudo : addPegaTudo)(g.args, cwd, ctx.raiz, cmd.literais);
+  // Pelo xargs, chegam mais caminhos pela entrada, que a trava não lê.
+  if (cmd.xargs && pega !== 'tudo') pega = 'ilegivel';
   if (!pega) return null;
   if (cwd != null && ctx.topoDe(cwd) !== ctx.raiz) return null;
   const onde = cwd == null ? 'em uma pasta que não consegui determinar' : 'no checkout principal';
   const sub = g.sub === 'commit' ? 'git commit' : 'git add';
   if (pega === 'ilegivel') {
-    return recusa('T2', `não consegui ler os caminhos do ${sub} ${onde} (variável ou substituição de comando); ele pode levar junto o trabalho de outras frentes`,
+    const porque = cmd.xargs ? 'vêm da entrada do xargs' : 'variável ou substituição de comando';
+    return recusa('T2', `não consegui ler os caminhos do ${sub} ${onde} (${porque}); ele pode levar junto o trabalho de outras frentes`,
       `escreva os caminhos por extenso (${sub} -- <caminhos>), ou trabalhe no worktree da frente`);
   }
   const forma = g.sub !== 'commit' ? 'git add com tudo (-A, ., -u, *, a raiz)' : 'git commit -a (ou com a raiz como caminho)';

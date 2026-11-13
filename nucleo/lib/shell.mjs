@@ -1033,8 +1033,8 @@ class Leitor {
     // Devolve o que certamente deu certo se o comando deu (ele mesmo, pelo índice na saída).
     const comEscritas = (argv, cwd, env) => {
       let i;
-      const literais = literaisDe(itens);
-      if (escritas.length && cwd !== ctx.cwd) { soEscritas(); i = this.emitir(argv, cwd, ctx, env, [], literais); } else i = this.emitir(argv, cwd, ctx, env, escritas, literais);
+      const extras = { literais: literaisDe(itens), xargs: viaXargs };
+      if (escritas.length && cwd !== ctx.cwd) { soEscritas(); i = this.emitir(argv, cwd, ctx, env, [], extras); } else i = this.emitir(argv, cwd, ctx, env, escritas, extras);
       return semSucesso ? null : { i };
     };
     const env = { ...envLocal };
@@ -1042,6 +1042,7 @@ class Leitor {
     let original = itens;
     // `xargs -r` pode não rodar o comando e dar 0; `setsid` pode devolver antes de o comando terminar.
     let semSucesso = false;
+    let viaXargs = false; // o xargs acrescenta argumentos lidos da entrada
     for (;;) {
       if (!itens.length) { itens = original; break; }
       const nome = nomeDoComando(itens[0]);
@@ -1089,7 +1090,7 @@ class Leitor {
         k = pularOpcoes(itens, 1, new Set(['s', 'k']), new Set(['--signal', '--kill-after']));
         if (k < itens.length) k++; // duração
       } else if (nome === 'xargs') {
-        semSucesso = true;
+        semSucesso = viaXargs = true;
         k = pularOpcoes(itens, 1, new Set(['I', 'L', 'n', 'P', 's', 'd', 'E', 'a']),
           new Set(['--arg-file', '--delimiter', '--max-args', '--max-procs', '--max-chars', '--process-slot-var', '--max-lines']));
         if (k >= itens.length) { itens = [{ s: 'echo', exp: false }]; continue; }
@@ -1194,7 +1195,7 @@ class Leitor {
 
   // Cada comando leva a cópia do ambiente conhecido; o teto evita que milhares
   // de atribuições vezes milhares de comandos esgotem a memória.
-  emitir(argv, cwd, ctx, env, escritas, literais) {
+  emitir(argv, cwd, ctx, env, escritas, { literais, xargs } = {}) {
     const completo = { ...ctx.herdado, ...env };
     this.entradasDeAmbiente += Object.keys(completo).length + 1;
     if (this.entradasDeAmbiente > LIMITE_ENTRADAS_DE_AMBIENTE) throw new ErroDeShell('texto grande demais para ler (ambiente × comandos)', null);
@@ -1203,6 +1204,7 @@ class Leitor {
     if (ctx.alternativos.length && cwd === ctx.cwd) saida.cwdsAlternativos = [...ctx.alternativos];
     if (escritas?.length) saida.escritas = [...escritas];
     if (literais?.length) saida.literais = literais;
+    if (xargs) saida.xargs = true;
     if (ctx.garantidos) saida.aposSucesso = ctx.garantidos;
     this.saida.push(saida);
     return this.saida.length - 1;
@@ -1424,8 +1426,9 @@ function novoCwd(nome, itens, cwd) {
  * redirecionamentos que escrevem (relativos ao `cwd` do comando); um comando só de
  * redirecionamento (`> f`, ou o de um composto, `eval`, `bash -c`) sai com `argv: []`.
  * `literais` são os argumentos com `$` ou crase que vieram entre aspas simples ou escapados (texto, não
- * expansão). `aposSucesso` diz quais comandos anteriores certamente deram certo para este rodar (ver deuCerto).
- * @returns {Array<{argv: string[], cwd: string|null, env: Record<string, string>, cwdsAlternativos?: Array<string|null>, escritas?: string[], literais?: string[], aposSucesso?: object}>}
+ * expansão). `xargs` diz que o comando roda pelo xargs, com mais argumentos vindos da entrada.
+ * `aposSucesso` diz quais comandos anteriores certamente deram certo para este rodar (ver deuCerto).
+ * @returns {Array<{argv: string[], cwd: string|null, env: Record<string, string>, cwdsAlternativos?: Array<string|null>, escritas?: string[], literais?: string[], xargs?: true, aposSucesso?: object}>}
  */
 export function comandosSimples(texto, cwd) {
   if (typeof texto !== 'string') throw new TypeError('comandosSimples: o texto precisa ser string');

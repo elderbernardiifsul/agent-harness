@@ -489,3 +489,18 @@ test('T5: gh api …/pulls/<n>/merge com PUT é avaliado como gh pr merge (pend�
     'gh api repos/{owner}/{repo}/pulls/8', 'gh api -X PATCH repos/{owner}/{repo}/pulls/8 -f title=x', 'gh api repos/{owner}/{repo}/pulls/8/merge --jq .merged'])
     assert.ok(av(c).permite, c);
 });
+
+// ---- pendência 12: caminhos que chegam pelo xargs
+test('T2: xargs git add/commit no checkout principal tem caminhos que não dá para ler (pendência 12)', () => {
+  for (const c of ['git ls-files -m | xargs git add', 'xargs -0 git add < lista.txt', `find . -name '*.js' -print0 | xargs -0 git add --`,
+    'xargs -I{} git add {}', 'xargs git commit -m x', 'xargs git stage', 'xargs -r -n 10 git add', 'cat lista | xargs git -C /r add']) {
+    const r = av(c);
+    assert.equal(r.trava, 'T2', c);
+    assert.match(r.motivo, /xargs/, c);
+    assert.ok(r.saida, c);
+  }
+  assert.match(av('xargs git add -A').motivo, /git add com tudo/);
+  for (const c of ['xargs git status', 'git ls-files -m | xargs git diff --', 'xargs grep x', 'xargs echo git add'])
+    assert.ok(av(c).permite, c);
+  assert.ok(av('git ls-files -m | xargs git add', '/w').permite, 'no worktree da frente');
+});
