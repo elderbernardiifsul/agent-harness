@@ -1,6 +1,6 @@
 # Comandos do harness
 
-Referência dos comandos das fatias 1 a 3. Todos rodam como `tools/ah <comando>` dentro do projeto (o `init` roda a partir do clone do agent-harness). Os exemplos usam o projeto fictício `loja`, as pessoas `ana-souza` (sigla `as`) e `carla-dias` (sigla `cd`), os tickets `#1` a `#9` e as sessões `sessao-teste-0001`, `sessao-b-0002` e `sessao-c-0003`. As saídas foram copiadas de um projeto descartável; `<worktrees>` é a pasta dos worktrees das frentes.
+Referência dos comandos das fatias 1 a 5 (da 5, por enquanto só o `atualizar`). Todos rodam como `tools/ah <comando>` dentro do projeto (o `init` roda a partir do clone do agent-harness). Os exemplos usam o projeto fictício `loja`, as pessoas `ana-souza` (sigla `as`) e `carla-dias` (sigla `cd`), os tickets `#1` a `#9` e as sessões `sessao-teste-0001`, `sessao-b-0002` e `sessao-c-0003`. As saídas foram copiadas de um projeto descartável; `<worktrees>` é a pasta dos worktrees das frentes.
 
 Toda recusa tem a mesma forma: o motivo em uma linha e o próximo passo concreto. Recusa de comando de linha de comando sai com código 1 (`Recusado: motivo` / `Faça: …`) e também vai para os eventos (`recusa-de-comando`); recusa de trava, no gancho do agente, sai com código 2 (`Recusado (Tn): motivo` / `Faça: …`).
 
@@ -42,7 +42,7 @@ Exigem sessão: `open`, `nota`, `whoami`, `papel`, `handoff`, `takeover` e `clos
 ah init [--projeto <nome>] [--sigla <sigla>] [--agentes claude-code] [--teste "<comando>"] [--sem-protecao] [--sobrescrever]
 ```
 
-Instala o harness no projeto atual a partir do clone do agent-harness: copia o núcleo para `.harness/nucleo/` (inclusive o modelo dos ganchos, em `.harness/nucleo/modelos/claude-code/`), grava `.harness/config.json`, cria `tools/ah` e `tools/ah.cmd`, os documentos de `docs/agents/`, os ganchos do agente em `.claude/settings.json` (acrescentando aos que já existem, sem apagar nada) e a CI em `.github/workflows/ah-ci.yml`. Sem `--projeto`, o nome vem da pasta; sem `--sigla`, o `init` propõe uma a partir do login do `gh`.
+Instala o harness no projeto atual a partir do clone do agent-harness: copia o núcleo para `.harness/nucleo/` (inclusive o modelo dos ganchos, em `.harness/nucleo/modelos/claude-code/`), grava `.harness/config.json`, cria `tools/ah` e `tools/ah.cmd`, os documentos de `docs/agents/`, os ganchos do agente em `.claude/settings.json` (acrescentando aos que já existem, sem apagar nada) e a CI em `.github/workflows/ah-ci.yml`. Sem `--projeto`, o nome vem da pasta; sem `--sigla`, o `init` propõe uma a partir do login do `gh`. O `.harness/nucleo/MANIFEST.json` guarda a versão, o commit do clone, a data e o sha256 de cada arquivo copiado (é assim que o `atualizar` reconhece arquivo do núcleo alterado à mão), e o caminho do clone fica em `<estado>/loja/origem.json`, fora do git (o `doctor` compara o núcleo com ele).
 
 - `--teste "<comando>"` liga a CI: o comando entra no arquivo entre aspas simples. Só vale quando a configuração ainda não existe; depois, edite `ci.comandoDeTeste` em `.harness/config.json` e rode `ah init` de novo. Sem a opção, a CI nasce desligada.
 - Antes de proteger um ramo, o `init` consulta a proteção no servidor e não altera ramo que já está protegido ("já está protegido no servidor; não alterei"). `--sem-protecao` pula essa etapa.
@@ -92,13 +92,77 @@ CI criada desligada: defina ci.comandoDeTeste em .harness/config.json e rode ah 
 
 (A última linha sai na saída de erro; o número de arquivos do núcleo muda de versão para versão.) O commit do harness vai **no ramo base**: as frentes nascem dele, e um worktree sem `tools/ah` não tem gancho nem trava. O `init` só manda `git switch <base>` quando o checkout está em outro ramo. Se o harness já foi commitado em outro ramo (a `main`, por exemplo), o `init` repetido manda `git switch dev` e `git merge main`. Com tudo no ramo base, ele termina com `Agora rode: tools/ah doctor`.
 
+## atualizar
+
+```
+ah atualizar [--de <clone>] [--simular] [--forcar]
+```
+
+Troca a cópia do núcleo (`.harness/nucleo/`) pela de um clone mais novo do agent-harness e diz o que mudou. Roda a partir do clone, como o `init` (`node <clone>/nucleo/bin/ah.mjs atualizar`, na pasta do projeto), ou da cópia instalada com `--de` (`tools/ah atualizar --de <clone>`): nesse caso quem faz a troca é o `atualizar` do clone, chamado na mesma pasta, e a saída e o código são os dele. Não exige sessão.
+
+- **O que troca:** o mesmo conjunto que o `init` copia para `.harness/nucleo/` (núcleo, `docs/agentes/`, `docs/referencia/` e os modelos dos ganchos e do trecho do `AGENTS.md`), mais o `MANIFEST.json` novo. A cópia nova é montada ao lado (`.harness/nucleo.novo-<pid>-<hora>`) e trocada por renomeação; se a troca falha no meio, a cópia antiga volta. Arquivo que só existia na cópia antiga sai.
+- **`AGENTS.md`:** reaplica o trecho entre marcas com as mesmas garantias do `init` (o resto do arquivo fica; marcas incompletas ou repetidas não reescrevem o que existe; link simbólico não é tocado; o fim de linha é mantido).
+- **O que não toca:** `.harness/config.json`, `.harness/extensoes/`, o estado (frentes, sessões, fila de pesado; só acrescenta o evento e grava o clone em `origem.json`), `tools/ah`, `tools/ah.cmd`, `docs/agents/`, `.claude/settings.json` e a CI. Se `tools/ah`, `tools/ah.cmd` ou os ganchos do `.claude/settings.json` diferem do que o `init` do clone gravaria, o `atualizar` lista em "Fora do núcleo, diferentes do que o init deste clone grava (não mexi)" e manda rodar o `init` do clone.
+- **Alterado à mão:** arquivo do núcleo cujo conteúdo difere do sha256 do manifesto, que sumiu ou que sobra recusa a atualização (a mudança se perderia). Com um manifesto anterior à fatia 5, sem a lista, vale o que o `git status` mostra como não commitado em `.harness/nucleo/`. `--forcar` descarta a mudança e diz o que descartou.
+- **Versão:** clone com versão menor que a instalada recusa (`--forcar` volta para ela); menor que `harnessMinimo` da configuração recusa sempre. Mesma versão com conteúdo diferente atualiza.
+- `--simular` faz as mesmas conferências e diz o que mudaria; não grava nada, nem o evento. Com algo que impede, mostra a recusa e sai com 1, como a execução sairia.
+- Nada a mudar: `Nada a atualizar: .harness/nucleo/ já é o do clone (<versão> (<commit>)).`, código 0, sem gravar.
+- Sobra de uma troca interrompida: `.harness/nucleo.novo-*` sai na próxima chamada, e `.harness/nucleo.velho-*` também, se `.harness/nucleo/` está no lugar; sem ele, o `atualizar` recusa e diz o `mv` que devolve a cópia antiga.
+- Como o `init`, não faz commit: termina com os comandos exatos (`git add -- .harness/nucleo AGENTS.md` e `git commit -m "chore: atualiza o agent-harness"`, no ramo base).
+- Os worktrees das frentes guardam a cópia do ramo de onde nasceram, mas o `tools/ah` de qualquer worktree roda a do checkout principal: a atualização vale para todas as frentes assim que é feita, sem commit.
+
+Recusas e o que fazer:
+
+| Recusa | Faça |
+|---|---|
+| `não sei de onde atualizar: este é o núcleo instalado no projeto, não o clone` | `tools/ah atualizar --de <clone>` (a recusa traz o clone registrado nesta máquina, se houver) |
+| `<caminho> não é um clone do agent-harness` | passe em `--de` a pasta do clone, a que tem `nucleo/` e `modelos/` |
+| `N arquivo(s) de .harness/nucleo/ alterado(s) à mão` (a lista sai antes, na saída de erro) | leve a mudança para o clone (ou para `.harness/extensoes/`) e repita, ou repita com `--forcar` |
+| `o clone tem a versão X, mais velha que a instalada (Y)` | atualize o clone (`git pull` nele), ou repita com `--forcar` |
+| `o clone tem a versão X e o projeto pede Y ou mais nova (harnessMinimo)` | atualize o clone e repita |
+| `uma atualização parou no meio` | `mv .harness/nucleo.velho-… .harness/nucleo` e repita |
+| `.harness/nucleo é um link simbólico` | troque o link pela pasta e repita |
+| `Este é o próprio clone do agent-harness` | rode da pasta do projeto |
+
+Exemplo, com um clone que trouxe um arquivo novo e mudou outro:
+
+```
+$ tools/ah atualizar --de ~/agent-harness --simular
+Atualizaria .harness/nucleo/ de 0.1.0 (b1ce02f) para 0.1.0 (6e1d2a9):
+  Novos:
+    lib/novidade.mjs
+  Alterados:
+    comandos/whoami.mjs
+Simulação: nada foi gravado.
+$ tools/ah atualizar --de ~/agent-harness
+Atualizei .harness/nucleo/ de 0.1.0 (b1ce02f) para 0.1.0 (6e1d2a9):
+  Novos:
+    lib/novidade.mjs
+  Alterados:
+    comandos/whoami.mjs
+Falta levar a atualização para o ramo base dev (as frentes partem dele):
+  git add -- .harness/nucleo AGENTS.md
+  git commit -m "chore: atualiza o agent-harness"
+Depois rode: tools/ah doctor
+```
+
+Com um arquivo do núcleo mexido no projeto:
+
+```
+$ tools/ah atualizar --de ~/agent-harness
+Arquivos do núcleo alterados à mão no projeto:
+  comandos/board.mjs (mudou)
+Recusado: 1 arquivo(s) de .harness/nucleo/ alterado(s) à mão; a atualização apagaria a mudança
+Faça: leve a mudança para o clone do agent-harness (ou para .harness/extensoes/) e repita, ou repita com --forcar para descartá-la
+```
+
 ## doctor
 
 ```
 ah doctor [--json]
 ```
 
-Confere se o projeto está bem preparado, com 22 verificações (a última só aparece quando um agente se identifica): Node 22 ou mais novo; git presente; shell POSIX; `.harness/config.json` válido; cópia do núcleo (`MANIFEST.json`); arquivos de estado legíveis (inclusive o esquema: registro gravado por um harness mais novo falha com "atualize o harness"); sigla sem choque; `gh` presente e autenticado; ramo base e ramos protegidos; ganchos do Claude Code instalados; harness no ramo base (`tools/ah` e `.harness/config.json` commitados na `dev`); gancho responde (o `doctor` ensaia uma recusa T5 de verdade); hora de início do processo; gancho recusa troca de ramo (ensaia uma recusa T1); ganchos vigiam a edição (o seletor do `PreToolUse` pega `Edit`, `Write` e `NotebookEdit`, sem o que a T4 não vê a edição); comentários pendentes; frentes órfãs; proteção no servidor (uma linha por ramo protegido); CI com comando de teste; frentes com worktree (inclusive as em abertura parada); fila de pesado (configuração da máquina legível, estado de versão conhecida, senhas de processo morto); adaptador do agente em uso. Cada item sai como `ok`, `aviso` (algo a melhorar, com o que fazer) ou `FALHOU` (algo que impede o uso). Código 0 se não houver falha; avisos não mudam o código. `--json` imprime `{"itens":[{"item","estado","fazer"}],"falhas","avisos"}`.
+Confere se o projeto está bem preparado, com 23 verificações (a última só aparece quando um agente se identifica): Node 22 ou mais novo; git presente; shell POSIX; `.harness/config.json` válido; cópia do núcleo (`MANIFEST.json`); núcleo igual ao clone de origem; arquivos de estado legíveis (inclusive o esquema: registro gravado por um harness mais novo falha com "atualize o harness"); sigla sem choque; `gh` presente e autenticado; ramo base e ramos protegidos; ganchos do Claude Code instalados; harness no ramo base (`tools/ah` e `.harness/config.json` commitados na `dev`); gancho responde (o `doctor` ensaia uma recusa T5 de verdade); hora de início do processo; gancho recusa troca de ramo (ensaia uma recusa T1); ganchos vigiam a edição (o seletor do `PreToolUse` pega `Edit`, `Write` e `NotebookEdit`, sem o que a T4 não vê a edição); comentários pendentes; frentes órfãs; proteção no servidor (uma linha por ramo protegido); CI com comando de teste; frentes com worktree (inclusive as em abertura parada); fila de pesado (configuração da máquina legível, estado de versão conhecida, senhas de processo morto); adaptador do agente em uso. Cada item sai como `ok`, `aviso` (algo a melhorar, com o que fazer) ou `FALHOU` (algo que impede o uso). Código 0 se não houver falha; avisos não mudam o código. `--json` imprime `{"itens":[{"item","estado","fazer"}],"falhas","avisos"}`.
 
 ```
 $ tools/ah doctor
@@ -129,6 +193,8 @@ Os itens novos da fatia 2:
 | Frentes com worktree | um aviso por frente (ativa ou passada, o mesmo filtro do `sweep`) cujo worktree sumiu e por registro em abertura parada; um arquivo de frente ilegível não esconde as outras; falha, com o que fazer, se a pasta `frentes/` não se lê | `ah close <nome>` (ou recrie o worktree); `ah open <nome>` para terminar a abertura, ou `ah close <nome>` para desistir |
 
 Item da fatia 3: **Fila de pesado** falha quando o `config.json` ou o `fila.json` da pasta da fila não se lê ou tem versão que este harness não conhece (`corrija o arquivo (ou apague-o para voltar aos padrões)`; `atualize o harness deste projeto`), e avisa das senhas de processo morto (`saem sozinhas na próxima chamada de ah pesado`).
+
+Item da fatia 5: **Núcleo igual ao clone de origem** compara a lista de sha256 do `MANIFEST.json` com o clone registrado em `<estado>/loja/origem.json` (gravado pelo `init` e pelo `atualizar`; é da máquina, não do git). Sai `ok` quando são iguais; `ok` com "(sem clone registrado nesta máquina; não conferido)" quando não há registro (projeto preparado em outra máquina, por exemplo); `aviso` quando o clone difere (`rode tools/ah atualizar --de <clone> (--simular mostra o que muda)`), quando o clone registrado sumiu e quando o manifesto é anterior à lista. A comparação é pelo conteúdo, não pelo commit: um commit no clone que só mexe nos testes não acusa nada.
 
 Exemplos de falha: `FALHOU  .harness/config.json válido: não há .harness/config.json; rode ah init`; `FALHOU  Arquivos de estado legíveis: <estado>/loja/sessoes/sessao-ruim-0009.json ilegível; apague ou conserte o arquivo`; `FALHOU  Harness no ramo base: tools/ah e .harness/config.json não estão no ramo dev, de onde as frentes partem; faça o commit do harness em dev: git switch dev e o git add/git commit que o ah init mostrou (se o commit já está em outro ramo: git switch dev && git merge <esse ramo>)`.
 
@@ -634,6 +700,7 @@ O gancho e os comandos acrescentam uma linha JSON a `<estado>/eventos.jsonl` a c
 | `liberacao` | `sessao`, `trava`, `comando` | gancho (`AH_GUARD=off`) |
 | `recusa-de-comando` | `comando`, `sessao`, `motivo` | todo comando que recusa |
 | `pesado` | `sessao`, `senha`, `classe`, `esperaMs`, `duracaoMs`, `codigo` | `pesado`, ao terminar o comando |
+| `atualizacao` | `sessao` (ou `null` no terminal), `de` e `para` (versões), `deCommit`, `paraCommit`, `novos`, `alterados`, `removidos` (contagens), `forcado` | `atualizar` |
 | `papel` | `sessao`, `papel`, `anterior` | `papel` |
 | `nota` | `sessao`, `frente` | `nota` |
 | `abertura` | `sessao` (a dona), `frente`, `id`, `tickets` | `open` |

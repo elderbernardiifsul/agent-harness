@@ -63,7 +63,7 @@ node ~/projetos/agent-harness/nucleo/bin/ah.mjs init --projeto loja --sigla as -
 git switch dev                                         # Switched to branch 'dev'
 git add -- .harness tools/ah tools/ah.cmd AGENTS.md docs/agents/sessoes-paralelas.md docs/agents/historico-das-frentes.md .claude/settings.json .github/workflows/ah-ci.yml
 git commit -qm "chore: instala o agent-harness"
-tools/ah doctor        # 21 itens (o 22º, "Adaptador do agente em uso", só sai dentro de um agente); espere: 0 falha(s), 4 aviso(s) (sigla, gh, proteção no servidor e CI)
+tools/ah doctor        # 22 itens (o 23º, "Adaptador do agente em uso", só sai dentro de um agente); espere: 0 falha(s), 4 aviso(s) (sigla, gh, proteção no servidor e CI)
 ```
 
 **3. Recusas** (slide 30):
@@ -154,7 +154,7 @@ Ensaiado em 12/11/2026 à noite (commits `5f146ed` e `bcfd668`) e em 13/11 com a
 
 ## Conferir antes da aula
 
-- `tools/ah --help` (no clone do harness: `node ~/projetos/agent-harness/nucleo/bin/ah.mjs --help`): devem aparecer 13 comandos, `pesado` e `sweep` entre eles. Continuam em construção só a atualização do harness instalado e `board --numeros` (slide 39). A fila de pesado e a T6 estão prontas, mas não foram ensaiadas com agente real nem em Windows ou macOS; o roteiro de adaptação (`docs/agentes/`) não foi ensaiado com o Codex nem com o OpenCode (slides 29 e 42).
+- `tools/ah --help` (no clone do harness: `node ~/projetos/agent-harness/nucleo/bin/ah.mjs --help`): devem aparecer 14 comandos, `atualizar`, `pesado` e `sweep` entre eles. A atualização do harness instalado (`atualizar`) está pronta, mas não foi ensaiada com agente real; continua em construção só `board --numeros` (slide 39). A fila de pesado e a T6 estão prontas, mas não foram ensaiadas com agente real nem em Windows ou macOS; o roteiro de adaptação (`docs/agentes/`) não foi ensaiado com o Codex nem com o OpenCode (slides 29 e 42).
 - `docs/referencia/ensaio-claude-code.md`, seção "Reensaio do `/clear`": o conserto do `/clear` (slide 40) foi conferido com o Claude Code 2.1.319 real em 13/11. O mesmo reensaio achou outro defeito (`/resume` interativo de uma conversa que já tinha frente deixava o executor com duas frentes); confira lá se já foi consertado e, se não, diga isso à turma.
 
 Conferir antes da aula: `tools/ah --help`.

@@ -2,7 +2,7 @@
 
 Harness de programação com vários agentes: várias sessões de agentes trabalham ao mesmo tempo no mesmo repositório, cada uma na sua frente, com ramos, travas e estado local coordenados por comandos. Requer Node 22 ou mais novo e não tem dependências.
 
-> Fatias 1 a 4 entregues; a 5 está em construção, e a interface ainda muda.
+> Fatias 1 a 4 entregues; da 5, a atualização do harness instalado (`ah atualizar`) está pronta, sem ensaio com agente real. O resto da 5 está em construção, e a interface ainda muda.
 
 ## O que a fatia 1 entrega
 
@@ -32,6 +32,17 @@ Builds e testes ponta a ponta de várias sessões ao mesmo tempo esgotam a memó
 ## Outros agentes (fatia 4)
 
 Só o Claude Code tem adaptador; os do Codex e do OpenCode não vêm prontos, por decisão do autor (seção 15 de `docs/superpowers/specs/2026-11-12-nucleo-design.md`): o agente que chega ao projeto escreve o dele seguindo o roteiro em `docs/agentes/` (o contrato dos quatro eventos, o adaptador do Claude Code como exemplo, o passo a passo e como provar). Os testes de contrato que todo adaptador precisa passar rodam com `AH_ADAPTADOR=<agente> node --test teste/contrato-adaptadores.test.mjs`. O `AGENTS.md` que o `init` instala aponta para o roteiro (`.harness/nucleo/docs/agentes/README.md`), e o `doctor` diz, no item "Adaptador do agente em uso", quando o agente em uso não tem adaptador e as travas automáticas não valem. O roteiro não foi ensaiado com o Codex nem com o OpenCode.
+
+## Atualizar o harness instalado (fatia 5)
+
+Com o clone do agent-harness atualizado (`git pull` nele), na pasta do projeto:
+
+```
+tools/ah atualizar --de <clone> --simular
+tools/ah atualizar --de <clone>
+```
+
+O primeiro só diz o que mudaria; o segundo troca `.harness/nucleo/` pela cópia do clone (montada ao lado e trocada de uma vez) e reaplica o trecho do harness no `AGENTS.md`. Configuração, extensões e estado (frentes, sessões, fila) ficam como estão. Arquivo do núcleo alterado à mão no projeto faz o `atualizar` recusar e listar o que se perderia (`--forcar` descarta); clone mais velho que a cópia instalada também recusa. Como o `init`, não faz commit: termina com os comandos do commit no ramo base. O `doctor` avisa, no item "Núcleo igual ao clone de origem", quando o clone registrado nesta máquina tem um núcleo diferente do instalado. Detalhes: `docs/referencia/comandos.md`, seção "atualizar".
 
 ## Como preparar um projeto pelo agente
 
@@ -72,6 +83,6 @@ Testes: `node --test teste/`.
 
 As fatias 3 (trabalho pesado) e 4 (outros agentes, conforme a seção 15 do desenho: roteiro de adaptação em vez de adaptadores prontos) estão entregues.
 
-- Fatia 5, abertura: extensões do projeto em `.harness/extensoes/` com exemplo e guia, `atualizar`, `deps` e números de uso.
+- Fatia 5, abertura: o `atualizar` está entregue (plano em `docs/superpowers/plans/2026-11-13-nucleo-fatia-5.md`); faltam as extensões do projeto em `.harness/extensoes/` com exemplo e guia, `deps` e números de uso.
 
 A ordem e o escopo ainda podem mudar.

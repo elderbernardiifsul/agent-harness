@@ -20,7 +20,7 @@ Os exemplos usam um projeto fictício, a `loja` (repositório `exemplo/loja`), e
 8. Gabarito comentado
 9. Glossário
 
-Estado do harness descrito aqui: conferido no código com as fatias 3 e 4 prontas (referência em `docs/referencia/comandos.md` no clone). Fatia 3: a fila de trabalho pesado (`pesado`) e a trava T6, sem ensaio com agente real nem em Windows ou macOS. Fatia 4: o roteiro de adaptação para outros agentes (`docs/agentes/`), com testes de contrato, não ensaiado com o Codex nem com o OpenCode; só o Claude Code tem adaptador. Peças marcadas **em construção** estão só no desenho: a atualização do harness instalado e os números de uso (`board --numeros`), da fatia 5. Para conferir o que existe na sua cópia: `tools/ah --help`.
+Estado do harness descrito aqui: conferido no código com as fatias 3 e 4 prontas (referência em `docs/referencia/comandos.md` no clone). Fatia 3: a fila de trabalho pesado (`pesado`) e a trava T6, sem ensaio com agente real nem em Windows ou macOS. Fatia 4: o roteiro de adaptação para outros agentes (`docs/agentes/`), com testes de contrato, não ensaiado com o Codex nem com o OpenCode; só o Claude Code tem adaptador. Fatia 5: a atualização do harness instalado (`tools/ah atualizar --de <clone>`), pronta, não ensaiada com agente real. Peças marcadas **em construção** estão só no desenho: os números de uso (`board --numeros`), da fatia 5. Para conferir o que existe na sua cópia: `tools/ah --help`.
 
 ---
 
@@ -589,7 +589,7 @@ Sessões vivas: ana-term (executor, carrinho); carla-te (executor, cupom)
 
 **O que o harness faz e o que o método fez.**
 
-- `tools/ah doctor` confere a preparação em 21 itens, mais um ("Adaptador do agente em uso") quando o agente se identifica (Node, git, `gh`, configuração, ganchos, proteção dos ramos, estado, fila de pesado) e ensaia recusas de verdade (uma T5 e uma T1). **Pronto.**
+- `tools/ah doctor` confere a preparação em 22 itens, mais um ("Adaptador do agente em uso") quando o agente se identifica (Node, git, `gh`, configuração, ganchos, proteção dos ramos, estado, fila de pesado) e ensaia recusas de verdade (uma T5 e uma T1). **Pronto.**
 - **Ensaio com o agente de verdade.** Os testes do harness simulam o agente: entregam ao gancho eventos escritos à mão. Todos passavam. No ensaio com o Claude Code de verdade, apareceu um defeito que eles não pegavam: no `/clear`, o agente avisa o **fim** da conversa velha **antes** de avisar o **começo** da nova. O harness tratava todo fim como fim; quando o começo chegava, não havia mais conversa viva para herdar, e a frente ficava órfã. O conserto: um fim por `/clear` ou por retomada não encerra a sessão; ela fica esperando a continuação. O reensaio com o agente real (Claude Code 2.1.319, 13/11) conferiu: o agente mandou o fim com o motivo `clear`, depois o começo com a origem `clear` e um id novo, no mesmo processo, e a conversa nova herdou a frente. E o segundo ensaio achou outro defeito: retomar (`/resume`) uma conversa que já tinha frente deixava o executor com duas frentes, quando a regra é uma só. Lição: **teste simulado prova a lógica; só o ensaio com o agente real prova o que supomos sobre o agente.** (Fonte: `docs/referencia/ensaio-claude-code.md`, seções da fatia 2 e "Reensaio do `/clear`".)
 - **O agente afirma o que não fez.** No mesmo reensaio, com um pedido vago, o modelo pequeno não chamou ferramenta nenhuma e respondeu que o `git reset --hard` "descartou" as alterações. Nada tinha rodado. Para ver uma recusa com o agente, peça "rode exatamente este comando: …" e confira no registro do harness (`tools/ah board`, `eventos.jsonl`) que ela aconteceu. É a mesma regra do enunciado §8: vale o que o registro mostra, não o que o agente diz.
 - Na construção do harness, cada tarefa passou por revisão independente (outro agente, com o diff e o plano, sem o raciocínio do implementador). Em cinco tarefas seguidas a revisão pediu conserto; o defeito das reservas cruzadas foi achado assim, não pelos testes de quem implementou.
@@ -703,6 +703,7 @@ ok      git presente
 ok      Shell POSIX
 ok      .harness/config.json válido
 ok      Cópia do núcleo (MANIFEST.json)
+ok      Núcleo igual ao clone de origem
 ok      Arquivos de estado legíveis
 ok      Sigla sem choque
 ok      gh presente e autenticado
@@ -724,7 +725,7 @@ ok      Adaptador do agente em uso (claude-code)
 0 falha(s), 1 aviso(s).
 ```
 
-(São 22 itens. O último só aparece quando um agente se identifica, como aqui, em que o próprio agente rodou o `doctor`; num terminal comum, saem 21. Uma linha de proteção por ramo protegido. Sem `gh`, saem avisos no lugar delas e no da sigla; avisos não mudam o código de saída.)
+(São 23 itens. O último só aparece quando um agente se identifica, como aqui, em que o próprio agente rodou o `doctor`; num terminal comum, saem 22. Uma linha de proteção por ramo protegido. Sem `gh`, saem avisos no lugar delas e no da sigla; avisos não mudam o código de saída.)
 
 **4. Abrir a frente.** Dentro do agente, a sessão vem do gancho. À mão, num terminal, diga quem é com `AH_SESSAO`:
 
