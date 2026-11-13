@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { ErroDeUso } from './caminhos.mjs';
 
 // Executa o git com lista de argumentos (sem shell). Nunca lança. Processo que não rodou
 // ou que morreu por sinal (status nulo, inclusive pelo `timeoutMs`) sai com código 127.
@@ -46,6 +47,21 @@ export function operacaoEmAndamento(wt, env) {
     const r = git(['rev-parse', '--git-path', arquivo], { cwd: wt, env });
     if (r.codigo !== 0) continue;
     if (fs.existsSync(path.resolve(wt, r.saida.trim()))) return nome;
+  }
+  return null;
+}
+
+// Operação em andamento ou worktree fora do ramo da frente: a recusa (com `comando` na saída) ou null.
+// A operação vem antes: com conflito, mandar commitar as alterações concluiria a operação com os marcadores.
+export function recusaDoWorktree(frente, wt, env, comando) {
+  const op = operacaoEmAndamento(wt, env);
+  if (op) {
+    return new ErroDeUso(`O worktree ${wt} tem um ${op} em andamento.\nPróximo passo: termine ou aborte a operação no worktree (${SAIDA_DA_OPERACAO[op]}) e rode ${comando} de novo`);
+  }
+  const ramo = ramoAtual(wt, env);
+  if (ramo !== frente.ramo) {
+    return new ErroDeUso(`O worktree ${wt} está fora do ramo ${frente.ramo} (${ramo ? `no ramo ${ramo}` : 'HEAD solto'}).\n`
+      + `Próximo passo: volte ao ramo da frente (git -C ${wt} switch ${frente.ramo}), trazendo para ele os commits que fez fora (git cherry-pick ou git merge), e rode ${comando} de novo`);
   }
   return null;
 }

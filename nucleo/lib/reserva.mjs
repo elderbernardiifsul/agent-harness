@@ -6,7 +6,7 @@
 // ticket (o número do comentário): fica só quem tem o primeiro marcador em todos os seus tickets.
 import { createHash } from 'node:crypto';
 import { comentar, criarRotulo, editarTicket, gh } from './github.mjs';
-import { ENVIADO, NA_FILA, PERDIDO, comentarOuEnfileirar, editarOuEnfileirar } from './pendentes.mjs';
+import { ENVIADO, NA_FILA, PERDIDO, comentarOuEnfileirar, editarOuEnfileirar, enfileirar } from './pendentes.mjs';
 import { idCurto } from './sessao.mjs';
 
 const ORDEM = ['id', 'nome', 'ramo', 'estado', 'login', 'sessao', 'tickets', 'plano', 'abertaPor', 'abertaEm'];
@@ -334,21 +334,33 @@ export function corpoDaMarcacao({ frente, tipo, texto, login, sessao }) {
   return `${texto}\n\n${montarMarcador(tipo, camposCompletos(frente, estado, login, sessao))}\n`;
 }
 
-export function marcarTickets({ frente, tipo, texto, login, sessao, rotulo, dirEstado, reatribuir = false }, o = {}) {
+// `soNaFila`: não fala com o GitHub; só põe as operações na fila, na ordem (para quem está sob a trava `frentes`
+// e manda a fila depois de soltá-la). Devolve também o `corpo` e os `args` da edição, para achá-los na fila.
+export function marcarTickets({ frente, tipo, texto, login, sessao, rotulo, dirEstado, reatribuir = false, soNaFila = false }, o = {}) {
   const corpo = corpoDaMarcacao({ frente, tipo, texto, login, sessao });
   const evento = { sessao, frente: frente.nome };
   const r = { comentariosNaFila: [], comentariosPerdidos: [], edicoesNaFila: [], edicoesPerdidas: [] };
+  const comentarUm = n => (soNaFila
+    ? (enfileirar(dirEstado, { tipo: 'comentario', ticket: n, corpo }), NA_FILA)
+    : comentarOuEnfileirar(dirEstado, n, corpo, { ...o, evento }));
+  const editarUm = (n, args) => (soNaFila
+    ? (enfileirar(dirEstado, { tipo: 'edicao', ticket: n, args }), NA_FILA)
+    : editarOuEnfileirar(dirEstado, n, args, { ...o, evento }));
   let logins = [...(frente.reserva?.logins ?? [])];
-  for (const n of frente.tickets ?? []) {
-    anotar(comentarOuEnfileirar(dirEstado, n, corpo, { ...o, evento }), n, r.comentariosNaFila, r.comentariosPerdidos);
-  }
+  for (const n of frente.tickets ?? []) anotar(comentarUm(n), n, r.comentariosNaFila, r.comentariosPerdidos);
+  let args = null;
   if (reatribuir && !logins.includes(login)) {
-    for (const n of frente.reserva?.tickets ?? frente.tickets ?? []) {
-      anotar(editarOuEnfileirar(dirEstado, n, ['--add-assignee', login, '--add-label', rotulo], { ...o, evento }), n, r.edicoesNaFila, r.edicoesPerdidas);
-    }
+    args = ['--add-assignee', login, '--add-label', rotulo];
+    for (const n of frente.reserva?.tickets ?? frente.tickets ?? []) anotar(editarUm(n, args), n, r.edicoesNaFila, r.edicoesPerdidas);
     logins = [...logins, login];
   }
-  return { logins, ...r };
+  return { logins, corpo, args, ...r };
+}
+
+// Avisos do que a marcação dos tickets deixou na fila (os perdidos já foram avisados com o comando à mão).
+export function avisarDaMarcacao(r, avisar) {
+  for (const n of r.comentariosNaFila) avisar(`Aviso: não consegui comentar no ticket #${n}; o comentário ficou na fila; sai no próximo comando com rede.\n`);
+  for (const n of r.edicoesNaFila) avisar(`Aviso: não consegui pôr o responsável no ticket #${n}; a edição ficou na fila; sai no próximo comando com rede.\n`);
 }
 
 // Fechamento: comentário com o resumo e marcador `fechamento` (livre); tira responsáveis e rótulo da reserva.

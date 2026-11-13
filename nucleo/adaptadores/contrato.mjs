@@ -158,6 +158,12 @@ async function inicio(evento, amb) {
     });
     avisos.push(`Sua frente ${foco.id} ${foco.nome} está com a sessão ${idCurto(foco.dona)}.`);
   }
+  // Frente que outra sessão assumiu desta (ah takeover, que já tirou o foco daqui): o resumo diz quem a tem.
+  for (const f of frentes) {
+    if (f !== foco && f.estado === 'ativa' && f.tomadaDe === id && f.dona != null && f.dona !== id) {
+      avisos.push(`Sua frente ${f.id} ${f.nome} está com a sessão ${idCurto(f.dona)} (ah takeover).`);
+    }
+  }
   const minha = typeof sessao.frente === 'string' ? frentes.find(f => f.nome === sessao.frente && f.dona === id) : null;
   const situacao = { semDona: frentesSemDona(frentes, sessao.frente, amb), sobreposicoes: sobreposicoesDaSessao(minha, frentes, amb), avisos };
   const contexto = montarResumo({ sessao, frentes, config: amb.config, baseLimpa: baseLimpa(amb), situacao });

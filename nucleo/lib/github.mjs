@@ -1,4 +1,7 @@
 import { spawnSync } from 'node:child_process';
+import os from 'node:os';
+import { arquivoDaMaquina } from './caminhos.mjs';
+import { lerJson } from './estado.mjs';
 
 const TEMPO_LIMITE_MS = 15000;
 
@@ -89,4 +92,11 @@ export function consultarProtecao(ramo, o = {}) {
 
 export function protecaoDoRamo(ramo, o = {}) {
   return consultarProtecao(ramo, o).estado;
+}
+
+// Login de quem age: o do gh; sem rede, o da máquina; por fim o de quem abriu a frente.
+export function loginDeQuemAge(amb, frente) {
+  const maquina = lerJson(arquivoDaMaquina(amb.env, process.platform, os.homedir()), null);
+  return loginAtual({ cwd: amb.raiz, env: amb.env })
+    ?? (typeof maquina?.login === 'string' ? maquina.login : null) ?? frente.abertaPor ?? 'local';
 }

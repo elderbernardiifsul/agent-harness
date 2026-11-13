@@ -4,13 +4,12 @@ import path from 'node:path';
 import { ErroDeUso, arquivoDaMaquina, dirWorktrees } from '../lib/caminhos.mjs';
 import { comTrava, lerJson, registrarEvento } from '../lib/estado.mjs';
 import { frentesDa, gravarFrente, lerFrente, listarFrentes, listarFrentesTolerante, nomeValido, novaFrente, proximoId, removerFrente, siglaValida } from '../lib/frente.mjs';
-import { existeRamo, git } from '../lib/git.mjs';
+import { existeRamo, git, recusaDoWorktree } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
 import { reenviarComAviso, reenviarPendentes, temDoTicket } from '../lib/pendentes.mjs';
-import { acharPassagem, ativaDaSessao, confirmarRetomada, desfazerReserva, marcarTickets, paraQuem, quemTemAFrente, reservar } from '../lib/reserva.mjs';
+import { acharPassagem, ativaDaSessao, avisarDaMarcacao, confirmarRetomada, desfazerReserva, marcarTickets, paraQuem, quemTemAFrente, reservar } from '../lib/reserva.mjs';
 import { arquivosDaFrente, caminhosEmComum, tocaOsCaminhos } from '../lib/sobreposicao.mjs';
 import { ESQUEMA_DO_ESTADO, gravarSessao, idCurto, lerSessao, listarSessoes, registrarSessao, resolverSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
-import { avisarDaMarcacao, recusaDoWorktree } from './handoff.mjs';
 import { aberturaEmCurso, inicioDoProcesso, pidDeComando, vidaDaSessao } from '../lib/vida.mjs';
 
 export const descricao = 'abre uma frente de trabalho: ramo, worktree, registro e reserva dos tickets';

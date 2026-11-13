@@ -1,12 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
-import { ErroDeUso, arquivoDaMaquina } from '../lib/caminhos.mjs';
-import { comTrava, lerJson, registrarEvento } from '../lib/estado.mjs';
+import { ErroDeUso } from '../lib/caminhos.mjs';
+import { comTrava, registrarEvento } from '../lib/estado.mjs';
 import { frentesDa, gravarFrente, lerFrente, listarFrentes, listarFrentesTolerante, nomeValido } from '../lib/frente.mjs';
-import { SAIDA_DA_OPERACAO, git, operacaoEmAndamento, ramoAtual } from '../lib/git.mjs';
-import { loginAtual } from '../lib/github.mjs';
+import { git, recusaDoWorktree } from '../lib/git.mjs';
+import { loginDeQuemAge } from '../lib/github.mjs';
 import { enfileirar, pendentesDoTicket, reenviarComAviso } from '../lib/pendentes.mjs';
-import { corpoDaMarcacao } from '../lib/reserva.mjs';
+import { avisarDaMarcacao, corpoDaMarcacao } from '../lib/reserva.mjs';
 import { gravarSessao, idCurto, lerSessao, tocarSinal } from '../lib/sessao.mjs';
 
 export const descricao = 'passa a frente adiante sem fechá-la: empurra o ramo, comenta a passagem e solta a frente';
@@ -39,35 +38,7 @@ function lerOpcoes(args) {
   return o;
 }
 
-// Login de quem age: o do gh; sem rede, o da máquina; por fim o de quem abriu.
-export function loginDeQuemAge(amb, frente) {
-  const maquina = lerJson(arquivoDaMaquina(amb.env, process.platform, os.homedir()), null);
-  return loginAtual({ cwd: amb.raiz, env: amb.env })
-    ?? (typeof maquina?.login === 'string' ? maquina.login : null) ?? frente.abertaPor ?? 'local';
-}
-
-// Avisos do que a marcação dos tickets deixou na fila (os perdidos já foram avisados com o comando à mão).
-export function avisarDaMarcacao(r, avisar) {
-  for (const n of r.comentariosNaFila) avisar(`Aviso: não consegui comentar no ticket #${n}; o comentário ficou na fila; sai no próximo comando com rede.\n`);
-  for (const n of r.edicoesNaFila) avisar(`Aviso: não consegui pôr o responsável no ticket #${n}; a edição ficou na fila; sai no próximo comando com rede.\n`);
-}
-
 const temRemoto = (amb, remoto) => git(['remote'], { cwd: amb.raiz, env: amb.env }).saida.split('\n').includes(remoto);
-
-// Operação em andamento ou worktree fora do ramo da frente: a recusa (com `comando` na saída) ou null.
-// A operação vem antes: com conflito, mandar commitar as alterações concluiria a operação com os marcadores.
-export function recusaDoWorktree(frente, wt, env, comando) {
-  const op = operacaoEmAndamento(wt, env);
-  if (op) {
-    return recusa(`O worktree ${wt} tem um ${op} em andamento.`, `termine ou aborte a operação no worktree (${SAIDA_DA_OPERACAO[op]}) e rode ${comando} de novo`);
-  }
-  const ramo = ramoAtual(wt, env);
-  if (ramo !== frente.ramo) {
-    return recusa(`O worktree ${wt} está fora do ramo ${frente.ramo} (${ramo ? `no ramo ${ramo}` : 'HEAD solto'}).`,
-      `volte ao ramo da frente (git -C ${wt} switch ${frente.ramo}), trazendo para ele os commits que fez fora (git cherry-pick ou git merge), e rode ${comando} de novo`);
-  }
-  return null;
-}
 
 // Recusas que dependem do worktree; devolve o commit do topo do ramo.
 function conferirWorktree(frente, env) {
