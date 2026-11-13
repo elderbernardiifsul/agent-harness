@@ -199,11 +199,12 @@ test('sessão antiga retomada depois do takeover não recupera a frente', async 
   assert.equal(lerFrenteDoTeste(p, 'carrinho').dona, 'sessao-teste-0001');
 });
 
-test('sessão antiga retomada depois do takeover: o T4 protege a nova dona', { todo: 'T4 na tarefa 13' }, async t => {
+test('sessão antiga retomada depois do takeover: o T4 protege a nova dona', async t => {
   const { p, novo } = await retomadaDaAntiga(t);
   const wt = lerFrenteDoTeste(p, 'carrinho').worktree;
   const e = await tratar({ tipo: 'antes', sessao: A, cwd: p.raiz, acao: { tipo: 'edicao', arquivo: path.join(wt, 'a.txt') } }, { ...amb(p), pid: novo.pid });
   assert.equal(e.decisao, 'recusa');
+  assert.match(e.mensagem, /^Recusado \(T4\): .* da sessão sessao-t, que está viva/);
 });
 
 // ---- Consertos da revisão, rodada 1

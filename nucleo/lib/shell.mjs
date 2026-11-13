@@ -208,6 +208,15 @@ function tokenizar(texto, i, modo, prof) {
   return { tokens, fim: i };
 }
 
+// Destino de um redirecionamento que escreve em arquivo, ou null: `>`, `>>`, `>|`, `<>`, `&>`, `&>>`
+// e `>&` quando o destino não é número de descritor nem `-`.
+const REDIR_QUE_ESCREVE = new Set(['>', '>>', '>|', '<>', '&>', '&>>']);
+function escritaDe(r, alvo) {
+  if (REDIR_QUE_ESCREVE.has(r.valor)) return alvo.texto;
+  if (r.valor === '>&' && !/^(\d+-?|-)$/.test(alvo.texto)) return alvo.texto;
+  return null;
+}
+
 function lerOperador(texto, i, candidatos) {
   for (const c of candidatos) if (texto.startsWith(c, i)) return c;
   return texto[i];
@@ -798,11 +807,12 @@ class Leitor {
     if (livre(t, '{')) {
       cur.i++;
       this.entrar(t.pos);
+      const antes = this.marcar(ctx);
       this.lerLista(cur, ctx, x => livre(x, '}'));
       if (!livre(cur.tokens[cur.i], '}')) throw new ErroDeShell('chave sem fechar', t.pos);
       cur.i++;
       this.sair();
-      this.lerRedirecionamentos(cur, ctx);
+      this.lerRedirecionamentos(cur, ctx, antes);
       return null;
     }
     if (livre(t, '}')) throw new ErroDeShell('chave } sem {', t.pos);
@@ -845,17 +855,24 @@ class Leitor {
     return null;
   }
 
-  lerRedirecionamentos(cur, ctx) {
+  // Redirecionamentos depois de um comando composto; os que escrevem saem num comando só de
+  // redirecionamento (`argv: []`) no cwd `marca` (o de antes do composto).
+  lerRedirecionamentos(cur, ctx, marca = this.marcar(ctx)) {
+    const escritas = [];
     while (cur.tokens[cur.i]?.tipo === 'redir') {
       const r = cur.tokens[cur.i];
       const alvo = cur.tokens[cur.i + 1];
       if (alvo?.tipo !== 'palavra') throw new ErroDeShell(`redirecionamento "${r.valor}" sem destino`, r.pos);
       for (const s of [...(r.subs ?? []), ...alvo.subs]) this.lerSub(s, ctx);
+      const e = escritaDe(r, alvo);
+      if (e != null) escritas.push(e);
       cur.i += 2;
     }
+    if (escritas.length) this.emitirEscritas(escritas, marca, ctx, {});
   }
 
   lerCase(cur, ctx) {
+    const antes = this.marcar(ctx);
     const inicio = cur.tokens[cur.i];
     cur.i++;
     const sujeito = cur.tokens[cur.i];
@@ -883,7 +900,7 @@ class Leitor {
       if (ehOp(cur.tokens[cur.i], ';;', ';&', ';;&')) cur.i++;
     }
     this.sair();
-    this.lerRedirecionamentos(cur, ctx);
+    this.lerRedirecionamentos(cur, ctx, antes);
     return null;
   }
 
@@ -907,6 +924,7 @@ class Leitor {
     const primeiro = cur.i;
     const palavras = [];
     const entradas = [];
+    const escritas = [];
     const subs = [];
     for (;;) {
       const t = cur.tokens[cur.i];
@@ -919,6 +937,8 @@ class Leitor {
         subs.push(...(t.subs ?? []), ...alvo.subs);
         if (t.valor === '<<' || t.valor === '<<-') entradas.push(t.corpo ?? '');
         if (t.valor === '<<<') entradas.push(alvo.texto);
+        const e = escritaDe(t, alvo);
+        if (e != null) escritas.push(e);
         cur.i += 2;
         continue;
       }
@@ -941,16 +961,27 @@ class Leitor {
       definir(envLocal, a.nome, a.valor);
     }
     const itens = palavras.slice(k).flatMap(p => expandirChaves(p, this.orcamentoDeChaves).map(s => ({ s, exp: p.expande })));
-    if (!itens.length) return null;
+    if (!itens.length) {
+      // Só atribuição ou só redirecionamento (`> f`): o arquivo é criado mesmo assim.
+      if (escritas.length) this.emitirEscritas(escritas, this.marcar(ctx), ctx, envLocal);
+      return null;
+    }
     // Os tokens já lidos não servem mais: soltá-los poupa memória numa cadeia
     // de eval, em que cada nível relê o texto inteiro.
     for (let j = primeiro; j < cur.i; j++) cur.tokens[j] = undefined;
     palavras.length = 0;
-    return this.resolver(itens, envLocal, ctx, entradas);
+    return this.resolver(itens, envLocal, ctx, entradas, escritas);
   }
 
   // Tira os envoltórios e trata os comandos que mudam o estado ou leem shell.
-  resolver(itens, envLocal, ctx, entradas) {
+  // `escritas` são os destinos de redirecionamento do comando: valem no cwd do shell (ctx.cwd), não no
+  // de `git -C`/`env -C`; saem no próprio comando quando o cwd é o mesmo, senão num comando só deles.
+  resolver(itens, envLocal, ctx, entradas, escritas = []) {
+    const marca = this.marcar(ctx);
+    const soEscritas = () => { if (escritas.length) this.emitirEscritas(escritas, marca, ctx, envLocal); };
+    const comEscritas = (argv, cwd, env) => {
+      if (escritas.length && cwd !== ctx.cwd) { soEscritas(); this.emitir(argv, cwd, ctx, env); } else this.emitir(argv, cwd, ctx, env, escritas);
+    };
     const env = { ...envLocal };
     let cwd = ctx.cwd;
     let original = itens;
@@ -1021,10 +1052,11 @@ class Leitor {
         this.desfazer(ctx, m);
       };
       if (texto !== undefined) {
+        soEscritas();
         if (texto !== null) filho(texto);
         return null;
       }
-      this.emitir(argv, cwd, ctx, env);
+      comEscritas(argv, cwd, env);
       for (const e of entradas) filho(e);
       return { shellLendoEntrada: !argv.slice(1).some(a => !a.startsWith('-') && !a.startsWith('+')) };
     }
@@ -1035,7 +1067,8 @@ class Leitor {
         if ((argv[k] === '-c' || argv[k] === '--command') && k + 1 < argv.length) texto = argv[k + 1];
         else if (argv[k].startsWith('--command=')) texto = argv[k].slice('--command='.length);
       }
-      if (texto == null) { this.emitir(argv, cwd, ctx, env); return null; }
+      if (texto == null) { comEscritas(argv, cwd, env); return null; }
+      soEscritas();
       const m = this.marcar(ctx);
       this.herdar(ctx, env);
       this.lerTexto(texto, ctx, null);
@@ -1047,6 +1080,7 @@ class Leitor {
       const texto = argv.slice(1).join(' ');
       itens.length = 0;
       argv.length = 0;
+      soEscritas();
       if (!texto.trim()) return null;
       const herdado = ctx.herdado;
       this.herdar(ctx, env);
@@ -1055,7 +1089,7 @@ class Leitor {
       return null;
     }
     if (nome === 'trap') {
-      this.emitir(argv, cwd, ctx, env);
+      comEscritas(argv, cwd, env);
       const k = pularOpcoes(itens, 1, new Set());
       if (itens.length - k >= 2) {
         const m = this.marcar(ctx);
@@ -1066,10 +1100,10 @@ class Leitor {
     }
     if (nome === 'git') {
       const r = tirarDashC(itens, cwd);
-      this.emitir(r.argv, r.cwd, ctx, env);
+      comEscritas(r.argv, r.cwd, env);
       return null;
     }
-    this.emitir(argv, cwd, ctx, env);
+    comEscritas(argv, cwd, env);
 
     const ehCd = nome === 'cd' || nome === 'pushd' || nome === 'popd';
     if (ehCd) {
@@ -1092,14 +1126,23 @@ class Leitor {
 
   // Cada comando leva a cópia do ambiente conhecido; o teto evita que milhares
   // de atribuições vezes milhares de comandos esgotem a memória.
-  emitir(argv, cwd, ctx, env) {
+  emitir(argv, cwd, ctx, env, escritas) {
     const completo = { ...ctx.herdado, ...env };
     this.entradasDeAmbiente += Object.keys(completo).length + 1;
     if (this.entradasDeAmbiente > LIMITE_ENTRADAS_DE_AMBIENTE) throw new ErroDeShell('texto grande demais para ler (ambiente × comandos)', null);
     const saida = { argv, cwd, env: completo };
     // Os alternativos valem para o cwd da lista; com git -C ou env -C o cwd é outro.
     if (ctx.alternativos.length && cwd === ctx.cwd) saida.cwdsAlternativos = [...ctx.alternativos];
+    if (escritas?.length) saida.escritas = [...escritas];
     this.saida.push(saida);
+  }
+
+  // Comando só de redirecionamento (`argv: []`), no cwd e com os alternativos de `marca`.
+  emitirEscritas(escritas, marca, ctx, env) {
+    const m = this.marcar(ctx);
+    this.desfazer(ctx, marca);
+    this.emitir([], marca.cwd, ctx, env, escritas);
+    this.desfazer(ctx, m);
   }
 }
 
@@ -1296,8 +1339,10 @@ function novoCwd(nome, itens, cwd) {
 
 /**
  * Comandos simples de um texto de shell, na ordem em que rodariam.
- * Não executa nada. `cwd` null quer dizer "desconhecido".
- * @returns {Array<{argv: string[], cwd: string|null, env: Record<string, string>}>}
+ * Não executa nada. `cwd` null quer dizer "desconhecido". `escritas` são os destinos dos
+ * redirecionamentos que escrevem (relativos ao `cwd` do comando); um comando só de
+ * redirecionamento (`> f`, ou o de um composto, `eval`, `bash -c`) sai com `argv: []`.
+ * @returns {Array<{argv: string[], cwd: string|null, env: Record<string, string>, cwdsAlternativos?: Array<string|null>, escritas?: string[]}>}
  */
 export function comandosSimples(texto, cwd) {
   if (typeof texto !== 'string') throw new TypeError('comandosSimples: o texto precisa ser string');

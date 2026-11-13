@@ -361,7 +361,8 @@ test('texto que um pipeline entrega a um shell é lido', () => {
 
 // Construções compostas.
 test('chaves, if, while, for e case', () => {
-  assert.deepEqual(so('{ git a; git b; } > log'), ['git a', 'git b']);
+  assert.deepEqual(so('{ git a; git b; } > log'), ['git a', 'git b', '']); // o último é o comando só de redirecionamento (escritas)
+  assert.deepEqual(comandosSimples('while x; do y; done > out', '/r').at(-1).escritas, ['out']);
   assert.deepEqual(so('if git a; then git b; elif git c; then :; else git d; fi'), ['git a', 'git b', 'git c', ':', 'git d']);
   assert.deepEqual(so('while git a; do git b; done'), ['git a', 'git b']);
   assert.deepEqual(so('for x in a $(git a) b; do git b; done'), ['git a', 'git b']);
@@ -428,4 +429,30 @@ test('aninhamento fundo vira ErroDeShell, não estouro de pilha', () => {
   assert.throws(() => comandosSimples('( '.repeat(5000) + 'x' + ' )'.repeat(5000), '/r'), erro);
   assert.throws(() => comandosSimples('eval '.repeat(300) + 'git push', '/r'), erro);
   assert.deepEqual(so('eval '.repeat(20) + 'git push'), ['git push']);
+});
+
+// ---- fatia 2: escritas (destinos de redirecionamento, para a T4)
+test('escritas traz os destinos de redirecionamento', () => {
+  assert.deepEqual(comandosSimples('echo a > x.txt 2>&1 >> y.txt', '/r')[0].escritas, ['x.txt', 'y.txt']);
+  const [s] = comandosSimples('> z.txt', '/r'); assert.deepEqual([s.argv, s.escritas], [[], ['z.txt']]);
+  assert.equal(comandosSimples('cat < a.txt', '/r')[0].escritas, undefined);
+});
+test('escritas: todos os operadores que escrevem; >& com número ou - não é arquivo', () => {
+  assert.deepEqual(comandosSimples('a >| b 3<> c &> d &>> e 2>&f >&2 >&- 1>&3-', '/r')[0].escritas, ['b', 'c', 'd', 'e', 'f']);
+  assert.equal(comandosSimples('a <<< x <&3 <<EOF\nx\nEOF', '/r')[0].escritas, undefined);
+});
+test('escritas de comando composto, de eval e de bash -c saem num comando só de redirecionamento, no cwd de fora', () => {
+  const c = comandosSimples('cd /a && ( cd /b; x ) > f1; { y; } > f2', '/r');
+  assert.deepEqual(c.filter(s => s.escritas).map(s => [s.argv, s.cwd, s.escritas]), [[[], '/a', ['f1']], [[], '/a', ['f2']]]);
+  for (const t of ["eval 'x' > f", "bash -c 'cd /b; x' > f", "su -c 'x' > f"]) {
+    const e = comandosSimples(t, '/r').filter(s => s.escritas);
+    assert.deepEqual(e.map(s => [s.argv, s.cwd, s.escritas]), [[[], '/r', ['f']]], t);
+  }
+});
+test('escritas com git -C ou env -C: o redirecionamento vale no cwd do shell', () => {
+  for (const t of ['git -C /b status > f', 'env -C /b x > f']) {
+    const c = comandosSimples(t, '/r');
+    assert.equal(c.find(s => s.argv.length).escritas, undefined, t);
+    assert.deepEqual(c.filter(s => s.escritas).map(s => [s.argv, s.cwd, s.escritas]), [[[], '/r', ['f']]], t);
+  }
 });

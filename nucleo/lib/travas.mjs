@@ -5,15 +5,21 @@
 //   T1  troca de ramo no checkout principal
 //   T2  git add/commit que pega tudo, no checkout principal
 //   T3  reset, clean, checkout/restore em massa, stash e rebase no checkout principal
+//   T4  escrita no worktree (ou no ramo) da frente de outra sessão viva: git, comandos que
+//       escrevem arquivo, redirecionamentos e edição de arquivo
 //   T5  push e merge de PR em ramo protegido
 //
 // Limites conhecidos (a trava enxerga a mais, não a tudo): apelidos do git
 // (`-c alias.x=push`), `gh api` direto, `push.default` e `remote.*.push` da
 // configuração, `git add` com glob do shell que cobre tudo sem ser `*` solto
-// (`*.*`, `[a-z]*`) e caminhos que chegam por `xargs` ou `--pathspec-from-file`.
+// (`*.*`, `[a-z]*`) e caminhos que chegam por `xargs` ou `--pathspec-from-file`. Na T4: caminho
+// relativo com cwd desconhecido, caminho com variável, crase ou `~`, e programas que escrevem
+// arquivo fora da lista (um script, `npm`, `python -c`) não são avaliados.
 import path from 'node:path';
 import { comandosSimples, ErroDeShell } from './shell.mjs';
 import { recusa } from './recusa.mjs';
+import { dentroDe } from './caminhos.mjs';
+import { idCurto } from './sessao.mjs';
 
 const PALAVRA_GIT = /(?<![A-Za-z0-9_])(git|gh)(?![A-Za-z0-9_])/i;
 
@@ -422,6 +428,172 @@ function travaT3(cmd, ctx) {
     'faça isso no worktree da sua frente; no checkout principal, guarde por caminho (git add <caminhos> e git commit) ou combine com a dona das mudanças');
 }
 
+// ---------------------------------------------------------------- T4
+
+// `ctx.frentes`: as ativas de outras sessões ({id, nome, ramo, worktree normalizado, dona});
+// `ctx.viva(id)`; `ctx.normalizar(p)` (caminho real, o mesmo do worktree).
+
+function recusaT4(caminho, f) {
+  const curto = idCurto(f.dona);
+  return recusa('T4', `${caminho} está no worktree da frente ${f.id} ${f.nome}, da sessão ${curto}, que está viva`,
+    `escreva só no worktree da sua frente; para mexer em ${f.nome}, peça à sessão ${curto} (ah handoff) ou, se ela morrer, ah takeover ${f.nome}`);
+}
+
+const temFrentes = ctx => Array.isArray(ctx.frentes) && ctx.frentes.length > 0 && typeof ctx.viva === 'function';
+
+// A frente viva de outra sessão em cujo worktree `alvo` (relativo a `base`) cai, ou null.
+// Caminho com variável, crase ou `~`, ou relativo com base desconhecida, não é avaliado.
+function frenteDoCaminho(alvo, base, ctx) {
+  if (typeof alvo !== 'string' || alvo === '' || /[$`]/.test(alvo) || alvo.startsWith('~')) return null;
+  let bruto;
+  if (path.isAbsolute(alvo)) bruto = alvo;
+  else if (base == null) return null;
+  else bruto = `${base}${path.sep}${alvo}`;
+  const normalizar = typeof ctx.normalizar === 'function' ? ctx.normalizar : x => x;
+  const n = normalizar(bruto);
+  const f = ctx.frentes.find(fr => fr.worktree && dentroDe(n, fr.worktree) && ctx.viva(fr.dona));
+  return f ? { frente: f, caminho: path.resolve(bruto) } : null;
+}
+
+function primeiraRecusa(alvos, base, ctx) {
+  for (const a of alvos) {
+    const achado = frenteDoCaminho(a, base, ctx);
+    if (achado) return recusaT4(achado.caminho, achado.frente);
+  }
+  return null;
+}
+
+const GIT_ESCRITA = new Set(['add', 'stage', 'commit', 'reset', 'checkout', 'switch', 'restore', 'rebase', 'merge', 'pull', 'push', 'stash', 'clean',
+  'cherry-pick', 'revert', 'am', 'apply', 'mv', 'rm', 'tag', 'notes']);
+const BRANCH_CURTAS = new Set(['u', 't']);
+const BRANCH_LONGAS = new Set(['--set-upstream-to', '--contains', '--no-contains', '--merged', '--no-merged', '--points-at', '--sort', '--format', '--color', '--track']);
+const BRANCH_MEXE = o => ['-d', '-D', '-m', '-M', '-f'].includes(o) || ehLonga(o, '--delete', 5) || ehLonga(o, '--move', 4) || ehLonga(o, '--force', 4);
+const nomeDoRamo = r => r.replace(/^refs\/heads\//, '');
+
+function t4Git(cmd, ctx) {
+  const g = subcomandoGit(cmd.argv, cmd.env);
+  if (!g) return null;
+  const cwd = g.incerto ? null : cmd.cwd;
+  if (g.sub === 'branch') {
+    const { opcoes, posicionais, depois } = lerArgs(g.args, BRANCH_CURTAS, BRANCH_LONGAS);
+    if (!opcoes.some(BRANCH_MEXE)) return null;
+    const nomes = [...posicionais, ...depois].map(nomeDoRamo);
+    const f = ctx.frentes.find(fr => fr.ramo && nomes.includes(fr.ramo) && ctx.viva(fr.dona));
+    if (!f) return null;
+    const curto = idCurto(f.dona);
+    return recusa('T4', `o ramo ${f.ramo} é da frente ${f.id} ${f.nome}, da sessão ${curto}, que está viva`,
+      `escreva só no worktree da sua frente; para mexer em ${f.nome}, peça à sessão ${curto} (ah handoff) ou, se ela morrer, ah takeover ${f.nome}`);
+  }
+  if (g.sub === 'worktree') {
+    const [acao, ...resto] = g.args;
+    if (acao !== 'remove' && acao !== 'move') return null;
+    const { posicionais, depois } = lerArgs(resto);
+    return primeiraRecusa([...posicionais, ...depois], cwd, ctx);
+  }
+  if (GIT_ESCRITA.has(g.sub) && cwd != null) return primeiraRecusa([cwd], null, ctx);
+  return null;
+}
+
+// Posicionais (o que não é opção) de um comando comum; `comValor` são as opções cujo valor vem no seguinte.
+function posicionaisDe(args, comValor = new Set()) {
+  const pos = [];
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    if (a === '--') { pos.push(...args.slice(k + 1)); break; }
+    if (a.startsWith('-') && a.length > 1) { if (comValor.has(a)) k++; continue; }
+    pos.push(a);
+  }
+  return pos;
+}
+
+// Destino de `-t <pasta>` / `--target-directory=<pasta>` (cp, mv, install, ln).
+function pastaAlvo(args) {
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    if (a === '--') break;
+    if (a === '-t' || a === '--target-directory') return args[k + 1] ?? null;
+    if (a.startsWith('--target-directory=')) return a.slice('--target-directory='.length);
+    if (/^-[^-]*t/.test(a) && !a.startsWith('--')) {
+      const resto = a.slice(a.indexOf('t') + 1);
+      return resto || (args[k + 1] ?? null);
+    }
+  }
+  return null;
+}
+
+// Arquivos que `sed -i` / `perl -i` reescrevem: os posicionais depois do script (o primeiro
+// posicional é o script, salvo se veio por -e/-f, ou -e/-E no perl). null sem -i.
+function arquivosNoLugar(args, perl) {
+  let noLugar = false;
+  let script = false;
+  const pos = [];
+  const valorCurto = perl ? new Set(['e', 'E', 'I', 'M', 'm', 'x', 'C', 'd', 'D', 'l', '0']) : new Set(['e', 'f', 'l']);
+  const comScript = perl ? new Set(['e', 'E']) : new Set(['e', 'f']);
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    if (a === '--') { pos.push(...args.slice(k + 1)); break; }
+    if (a.startsWith('--')) {
+      if (ehLonga(a, '--in-place', 4)) noLugar = true;
+      else if (!perl && (ehLonga(a, '--expression', 3) || ehLonga(a, '--file', 3))) { script = true; if (!a.includes('=')) k++; }
+      else if (!perl && ehLonga(a, '--line-length', 3) && !a.includes('=')) k++;
+      continue;
+    }
+    if (a.startsWith('-') && a.length > 1) {
+      for (let i = 1; i < a.length; i++) {
+        const c = a[i];
+        if (c === 'i') { noLugar = true; break; } // o resto é o sufixo do backup
+        if (valorCurto.has(c)) {
+          if (comScript.has(c)) script = true;
+          // perl -l e -0 têm valor opcional e sempre junto
+          if (i === a.length - 1 && !(perl && (c === 'l' || c === '0'))) k++;
+          break;
+        }
+      }
+      continue;
+    }
+    pos.push(a);
+  }
+  if (!noLugar) return null;
+  return script ? pos : pos.slice(1);
+}
+
+const ESCREVE_TODO_POSICIONAL = new Set(['rm', 'rmdir', 'touch', 'mkdir', 'tee', 'truncate', 'chmod', 'chown', 'mv']);
+const ESCREVE_O_ULTIMO = new Set(['cp', 'install', 'ln']);
+
+// Caminhos em que o comando escreve, pelos argumentos; [] quando não escreve ou não sei.
+function caminhosEscritos(cmd) {
+  const nome = nomeDe(cmd.argv[0]);
+  const args = cmd.argv.slice(1);
+  if (ESCREVE_TODO_POSICIONAL.has(nome) || ESCREVE_O_ULTIMO.has(nome)) {
+    const comValor = nome === 'truncate' ? new Set(['-s', '-r']) : nome === 'mkdir' ? new Set(['-m']) : nome === 'install' ? new Set(['-m', '-o', '-g', '-S']) : new Set();
+    const pasta = nome === 'cp' || nome === 'mv' || nome === 'install' || nome === 'ln' ? pastaAlvo(args) : null;
+    if (pasta) comValor.add('-t');
+    const pos = posicionaisDe(args, comValor);
+    const lista = ESCREVE_O_ULTIMO.has(nome) ? (pasta ? [] : pos.slice(-1)) : pos;
+    return pasta ? [...lista, pasta] : lista;
+  }
+  if (nome === 'sed' || nome === 'perl') return arquivosNoLugar(args, nome === 'perl') ?? [];
+  if (nome === 'dd') return args.filter(a => a.startsWith('of=')).map(a => a.slice(3));
+  return [];
+}
+
+function travaT4(cmd, ctx) {
+  if (!temFrentes(ctx)) return null;
+  if (nomeDe(cmd.argv[0]) === 'git') return t4Git(cmd, ctx);
+  return primeiraRecusa(caminhosEscritos(cmd), cmd.cwd, ctx);
+}
+
+// Destinos de redirecionamento: valem para qualquer comando, mesmo o só de redirecionamento.
+function travaT4Escritas(cmd, cwd, ctx) {
+  if (!temFrentes(ctx) || !cmd.escritas?.length) return null;
+  return primeiraRecusa(cmd.escritas, cwd, ctx);
+}
+
+function travaT4Edicao(acao, ctx) {
+  if (!temFrentes(ctx)) return null;
+  return primeiraRecusa([acao.arquivo], acao.cwd ?? ctx.raiz, ctx);
+}
+
 // ---------------------------------------------------------------- T0
 
 function recusaT0(motivo) {
@@ -501,10 +673,10 @@ function novasTrocas(ctx) {
 
 // ---------------------------------------------------------------- entrada
 
-const TRAVAS = [travaT1, travaT2, travaT3, travaT5];
+const TRAVAS = [travaT1, travaT2, travaT3, travaT4, travaT5];
 
 export function avaliar(acao, ctx) {
-  if (acao?.tipo === 'edicao') return { permite: true };
+  if (acao?.tipo === 'edicao') return travaT4Edicao(acao, ctx) ?? { permite: true };
   if (acao?.tipo !== 'comando') throw new TypeError(`avaliar: tipo de ação desconhecido: ${acao?.tipo}`);
   let comandos;
   try {
@@ -516,20 +688,23 @@ export function avaliar(acao, ctx) {
   let liberada;
   const trocas = novasTrocas(ctx);
   for (const cmd of comandos) {
-    if (cmd.argv.length === 0) continue;
     let r = null;
-    if (nomeIlegivel(cmd.argv)) {
+    // Um cd que pode ter falhado antes de `;` deixa outros cwds possíveis: vale a recusa de qualquer um.
+    const cwds = [cmd.cwd, ...(cmd.cwdsAlternativos ?? [])];
+    if (cmd.argv.length === 0) {
+      // Só redirecionamento (`> f`): só os destinos contam.
+    } else if (nomeIlegivel(cmd.argv)) {
       if (PALAVRA_GIT.test(acao.comando)) r = recusaT0('o nome do comando vem de uma variável e o texto menciona git ou gh');
     } else {
       const ctxDoComando = trocas.vazio ? ctx : { ...ctx, ramoAtual: c => trocas.ramoAtual(c) };
-      // Um cd que pode ter falhado antes de `;` deixa outros cwds possíveis: vale a recusa de qualquer um.
-      for (const cwd of [cmd.cwd, ...(cmd.cwdsAlternativos ?? [])]) {
+      for (const cwd of cwds) {
         const umCmd = cwd === cmd.cwd ? cmd : { ...cmd, cwd };
         for (const trava of TRAVAS) { r = trava(umCmd, ctxDoComando); if (r) break; }
         if (r) break;
       }
     }
-    trocas.registrar(cmd);
+    for (const cwd of cwds) { if (r) break; r = travaT4Escritas(cmd, cwd, ctx); }
+    if (cmd.argv.length) trocas.registrar(cmd);
     if (!r) continue;
     if (r.trava !== 'T0' && cmd.env?.AH_GUARD === 'off') { liberada ??= r.trava; continue; }
     return r;

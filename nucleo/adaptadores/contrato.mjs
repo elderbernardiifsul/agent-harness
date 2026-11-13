@@ -7,6 +7,7 @@
 //   {tipo: 'fim', sessao}                                                        -> {}
 //
 // `acao` é {tipo: 'comando', comando} | {tipo: 'edicao', arquivo} | {tipo: 'outra'}.
+// As travas recebem também a sessão, as frentes ativas das outras e a vida das donas (T4).
 // `amb` é o do despacho (raiz, config, dirEstado, env), mais, opcionais, `topoDe`,
 // `ramoAtual`, `baseDoPr`, `tempoDoGhMs`, `ehRef`, `existeCaminho` (para as travas), `pid` (padrão: o pid do agente,
 // `AH_PID_AGENTE` ou o processo pai do gancho), `inicioDoProcesso`, `existe`, `agora` e
@@ -23,8 +24,9 @@ import { registrarSessao, tocarSinal, encerrarSessao, lerSessao, gravarSessao, i
 import { listarFrentesTolerante } from '../lib/frente.mjs';
 import { continuarSessao } from '../lib/heranca.mjs';
 import {
-  aberturaParada, pidDoAgente, processoExiste, inicioDoProcesso as inicioPadrao, descartarPidMorto, vidaDaSessao,
+  aberturaParada, pidDoAgente, processoExiste, inicioDoProcesso as inicioPadrao, descartarPidMorto, vidaDaSessao, vidaDaDona,
 } from '../lib/vida.mjs';
+import { normalizarCaminho } from '../lib/caminhos.mjs';
 import { montarResumo } from '../lib/resumo.mjs';
 import { git, topoDe, ramoAtual, limpo } from '../lib/git.mjs';
 import { gh } from '../lib/github.mjs';
@@ -63,8 +65,40 @@ function ehRefPeloGit(env, remoto) {
   };
 }
 
-function contextoDasTravas(amb) {
+// Para a T4: as frentes ativas de outras sessões (worktree já normalizado) e a vida das donas, com
+// memória por id dentro do evento. Arquivo de frente ilegível é pulado e registrado (não pode travar
+// toda ferramenta do agente); registro ilegível da dona conta como viva (na dúvida, protege).
+function frentesDeOutras(sessao, amb) {
+  const { frentes, ilegiveis } = listarFrentesTolerante(amb.dirEstado);
+  if (ilegiveis.length) {
+    registrarEvento(amb.dirEstado, {
+      tipo: 'estado-ilegivel', sessao, caminhos: ilegiveis.map(nome => path.join(amb.dirEstado, 'frentes', `${nome}.json`)),
+    });
+  }
+  return frentes
+    .filter(f => f.estado === 'ativa' && f.dona != null && f.dona !== sessao && typeof f.worktree === 'string' && f.worktree !== '')
+    .map(f => ({ id: f.id, nome: f.nome, ramo: f.ramo, worktree: normalizarCaminho(f.worktree), dona: f.dona }));
+}
+
+function vidaDasDonas(amb) {
+  const memoria = new Map();
+  return id => {
+    if (!memoria.has(id)) {
+      const opcoes = { config: amb.config, existe: existeDe(amb), inicio: inicioDe(amb) };
+      if (amb.agora !== undefined) opcoes.agora = amb.agora;
+      const estado = vidaDaDona(amb.dirEstado, id, opcoes)?.estado;
+      memoria.set(id, estado === 'viva' || estado === 'ilegivel');
+    }
+    return memoria.get(id);
+  };
+}
+
+function contextoDasTravas(amb, sessao) {
   return {
+    sessao,
+    frentes: frentesDeOutras(sessao, amb),
+    viva: vidaDasDonas(amb),
+    normalizar: c => normalizarCaminho(c),
     config: amb.config,
     raiz: amb.raiz,
     topoDe: amb.topoDe ?? (c => topoDe(c, amb.env)),
@@ -235,7 +269,7 @@ async function antes(evento, amb) {
   try { await manterVivo(evento, amb, { esperaMs: ESPERA_DA_TRAVA_NO_ANTES_MS }); } catch { /* segue para as travas */ }
   const { acao } = evento;
   if (acao?.tipo === 'outra') return { decisao: 'permite' };
-  const r = avaliar({ ...acao, cwd: evento.cwd ?? null }, contextoDasTravas(amb));
+  const r = avaliar({ ...acao, cwd: evento.cwd ?? null }, contextoDasTravas(amb, evento.sessao));
   const comando = acao.tipo === 'comando' ? cortar(acao.comando, LIMITE_COMANDO_NO_EVENTO) : undefined;
   if (!r.permite) {
     registrarEvento(amb.dirEstado, { tipo: 'recusa', sessao: evento.sessao, trava: r.trava, comando });

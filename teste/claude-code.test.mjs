@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { criarProjeto, criarRepo, gravado, ganchoPre, gravar, dirDoTeste } from './apoio/repo.mjs';
 import { traduzirEntrada, traduzirSaida, ErroDeEntrada } from '../nucleo/adaptadores/claude-code.mjs';
 import { lerEventos } from '../nucleo/lib/estado.mjs';
+import { processoVivo } from './apoio/processo.mjs';
 
 const ID = '00000000-0000-4000-8000-000000000001';
 const DIR_GRAVADOS = path.join(path.dirname(fileURLToPath(import.meta.url)), 'eventos-gravados', 'claude-code');
@@ -323,4 +324,43 @@ test('ah gancho: ramo que só existe no remoto também conta como troca de ramo 
   }
   assert.match(ganchoPre(q, { command: 'git checkout so-no-remoto' }).erro, /Recusado \(T1\)/);
   assert.equal(ganchoPre(q, { command: 'git checkout -- -x' }).codigo, 0);
+});
+
+// ---- T4 pelo gancho
+const eventosDe = q => fs.readFileSync(path.join(dirDoTeste(q), 'eventos.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
+
+test('gancho: a sessão B não edita no worktree da sessão A, viva; edita no próprio', t => {
+  const q = criarProjeto();
+  t.after(() => q.limpar());
+  const proc = processoVivo();
+  t.after(() => proc.matar());
+  assert.equal(q.ah(['open', 'carrinho'], { env: { AH_SESSAO: 'sessao-a-0001', AH_PID_AGENTE: String(proc.pid) } }).codigo, 0);
+  assert.equal(q.ah(['open', 'frete'], { env: { AH_SESSAO: ID } }).codigo, 0);
+  const wt = nome => JSON.parse(fs.readFileSync(path.join(dirDoTeste(q), 'frentes', `${nome}.json`), 'utf8')).worktree;
+  const r = ganchoPre(q, { file_path: path.join(wt('carrinho'), 'a.txt') }, 'Edit', { env: { AH_SESSAO: ID } });
+  assert.equal(r.codigo, 2);
+  assert.match(r.erro, /Recusado \(T4\): .*carrinho.*sessao-a/);
+  assert.equal(ganchoPre(q, { command: `rm -f ${path.join(wt('carrinho'), 'a.txt')}` }).codigo, 2);
+  assert.equal(ganchoPre(q, { file_path: path.join(wt('frete'), 'a.txt') }, 'Edit', { env: { AH_SESSAO: ID } }).codigo, 0);
+  assert.equal(ganchoPre(q, { file_path: path.join(q.raiz, 'a.txt') }, 'Edit').codigo, 0);
+  assert.ok(eventosDe(q).some(e => e.tipo === 'recusa' && e.trava === 'T4'));
+});
+
+test('arquivo de frente ilegível não trava o gancho: a edição comum passa e o evento registra', t => {
+  const q = criarProjeto();
+  t.after(() => q.limpar());
+  fs.mkdirSync(path.join(dirDoTeste(q), 'frentes'), { recursive: true });
+  fs.writeFileSync(path.join(dirDoTeste(q), 'frentes', 'x.json'), '{');
+  assert.equal(ganchoPre(q, { file_path: path.join(q.raiz, 'a.txt') }, 'Edit').codigo, 0);
+  assert.equal(ganchoPre(q, { command: 'rm -f a.txt' }).codigo, 0);
+  assert.ok(eventosDe(q).some(e => e.tipo === 'estado-ilegivel'));
+});
+
+test('registro ilegível da dona conta como viva para a T4 (na dúvida, protege)', t => {
+  const q = criarProjeto();
+  t.after(() => q.limpar());
+  assert.equal(q.ah(['open', 'carrinho'], { env: { AH_SESSAO: 'sessao-a-0001' } }).codigo, 0);
+  fs.writeFileSync(path.join(dirDoTeste(q), 'sessoes', 'sessao-a-0001.json'), '{');
+  const wt = JSON.parse(fs.readFileSync(path.join(dirDoTeste(q), 'frentes', 'carrinho.json'), 'utf8')).worktree;
+  assert.match(ganchoPre(q, { file_path: path.join(wt, 'a.txt') }, 'Edit').erro, /Recusado \(T4\)/);
 });

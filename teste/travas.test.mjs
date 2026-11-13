@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { avaliar } from '../nucleo/lib/travas.mjs';
 import { recusa, textoDaRecusa } from '../nucleo/lib/recusa.mjs';
 import { aplicarPadroes } from '../nucleo/lib/config.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { normalizarCaminho } from '../nucleo/lib/caminhos.mjs';
 
 const ctx = {
   config: aplicarPadroes({}),
@@ -275,4 +279,68 @@ test('T3: o que não descarta passa', () => {
   for (const c of ['git reset --soft HEAD~1', 'git reset --mixed', 'git reset -q', 'git clean -nfd', 'git clean --dry-run -f', 'git clean -e f -n',
     'git restore src/a.js', 'git restore -s main arquivo.txt', 'git rebase --quit', 'git stash list --stat', 'git checkout -- src/a.js'])
     assert.ok(av(c).permite, c);
+});
+
+// ---- T4 (worktree de frente de outra sessão viva)
+const ctx4 = {
+  ...ctx, sessao: 'eu', frentes: [{ id: 'cd-1', nome: 'frete', ramo: 'feat/frete', worktree: '/wt/frete', dona: 'outra' }],
+  viva: id => id === 'outra', normalizar: x => x,
+};
+const av4 = (comando, cwd = '/r/x') => avaliar({ tipo: 'comando', comando, cwd }, ctx4);
+for (const c of ['git -C /wt/frete commit -m x', 'cd /wt/frete && git add a.js', 'git worktree remove --force /wt/frete', 'git branch -D feat/frete',
+  'rm -rf /wt/frete', 'rm /wt/frete/src/a.js', 'cp a.js /wt/frete/a.js', 'mv /wt/frete/a.js b.js', 'echo x > /wt/frete/a.js',
+  'cat <<EOF > /wt/frete/a.js\nx\nEOF', 'sed -i s/a/b/ /wt/frete/a.js', 'tee /wt/frete/a.js', 'touch ../../wt/frete/a.js'])
+  test(`T4 recusa: ${JSON.stringify(c)}`, () => { const r = av4(c); assert.equal(r.trava, 'T4'); assert.match(textoDaRecusa(r), /cd-1 frete[\s\S]*Faça: .*ah handoff/); });
+test('T4 permite ler o alheio, copiar dele e escrever nele quando a dona morreu', () => {
+  for (const c of ['cat /wt/frete/a.js', 'cp /wt/frete/a.js meu.js', 'git -C /wt/frete log', 'git -C /wt/frete status', 'grep x -r /wt/frete']) assert.ok(av4(c).permite, c);
+  assert.ok(avaliar({ tipo: 'comando', comando: 'rm -rf /wt/frete', cwd: '/r' }, { ...ctx4, viva: () => false }).permite);
+});
+test('T4 na edição: recusa no alheio, permite no principal; AH_GUARD não libera', () => {
+  assert.equal(avaliar({ tipo: 'edicao', arquivo: '/wt/frete/a.js', cwd: '/r' }, ctx4).trava, 'T4');
+  assert.ok(avaliar({ tipo: 'edicao', arquivo: 'src/a.js', cwd: '/r' }, ctx4).permite);
+  assert.equal(av4('AH_GUARD=off rm /wt/frete/a.js').liberada, 'T4');
+});
+test('T4: texto exato do motivo e da saída', () => {
+  const r = av4('rm /wt/frete/a.js');
+  assert.equal(textoDaRecusa(r), 'Recusado (T4): /wt/frete/a.js está no worktree da frente cd-1 frete, da sessão outra, que está viva\n'
+    + 'Faça: escreva só no worktree da sua frente; para mexer em frete, peça à sessão outra (ah handoff) ou, se ela morrer, ah takeover frete');
+});
+test('T4: mais formas que escrevem no alheio', () => {
+  for (const c of ['git worktree move /wt/frete /wt/outro', 'git branch --delete feat/frete', 'git branch -m feat/frete novo', 'git branch -f feat/frete HEAD',
+    'git -C /wt/frete/src stash', 'cd /wt/frete; git reset --hard', 'install a.js /wt/frete/a.js', 'ln -s a /wt/frete/l', 'cp -t /wt/frete a.js',
+    'perl -pi -e s/a/b/ /wt/frete/a.js', 'sed -n -e s/a/b/ -i /wt/frete/a.js', 'sed --in-place=.bak s/a/b/ /wt/frete/a.js', 'dd if=a of=/wt/frete/a',
+    'chmod +x /wt/frete/a.sh', 'mkdir -p /wt/frete/novo', 'truncate -s 0 /wt/frete/a', '> /wt/frete/a', 'X=1 >> /wt/frete/a', '( x ) > /wt/frete/a',
+    'bash -c "rm /wt/frete/a"', 'git -C /b status > /wt/frete/a', 'cd /wt/frete && echo x > a.js', 'cd /wt; rm -r frete', 'rm -- /wt/frete'])
+    assert.equal(av4(c).trava, 'T4', c);
+});
+test('T4: o que não é da frente alheia ou não dá para avaliar passa', () => {
+  for (const c of ['git branch feat/frete-2', 'git branch -D feat/frete-2', 'git branch --list feat/frete', 'git -C /wt/frete2 commit -m x', 'rm /wt/frete2/a',
+    'sed s/a/b/ /wt/frete/a.js', 'perl -ne print /wt/frete/a.js', 'cp /wt/frete/a b', 'echo x > $D/a', 'rm `pwd`/a', 'rm ~/a', 'echo x 2>&1', 'dd if=/wt/frete/a of=b',
+    'git -C /wt/frete diff > /r/d.txt'])
+    assert.ok(av4(c).permite, c);
+  assert.ok(avaliar({ tipo: 'comando', comando: 'rm a.js', cwd: null }, ctx4).permite);
+  assert.ok(avaliar({ tipo: 'comando', comando: 'rm /wt/frete/a', cwd: '/r' }, ctx).permite, 'sem frentes no ctx a T4 não age');
+  assert.ok(avaliar({ tipo: 'edicao', arquivo: '/wt/frete/a.js', cwd: '/r' }, ctx).permite);
+});
+test('T4: o cd que pode ter falhado também conta, e a edição relativa resolve contra o cwd', () => {
+  assert.equal(av4('cd /wt/frete; cd /r/nao-existe; rm a.js').trava, 'T4');
+  assert.equal(avaliar({ tipo: 'edicao', arquivo: 'a.js', cwd: '/wt/frete/src' }, ctx4).trava, 'T4');
+  assert.equal(avaliar({ tipo: 'edicao', arquivo: '../wt/frete/a.js', cwd: null }, ctx4).trava, 'T4', 'cwd nulo na edição: resolve contra a raiz');
+});
+
+// Foco 2: o worktree alheio escrito por outro caminho.
+test('T4 pega o worktree alheio por link simbólico e por ..', { skip: process.platform === 'win32' }, t => {
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ah-teste-t4-')));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(tmp, 'wt', 'frete'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'wt', 'x'), { recursive: true });
+  fs.symlinkSync(path.join(tmp, 'wt'), path.join(tmp, 'atalho'));
+  fs.symlinkSync(path.join(tmp, 'wt', 'frete', 'nada'), path.join(tmp, 'pendurado'));
+  const c = { ...ctx4, normalizar: normalizarCaminho, frentes: [{ ...ctx4.frentes[0], worktree: normalizarCaminho(path.join(tmp, 'wt', 'frete')) }] };
+  assert.equal(avaliar({ tipo: 'edicao', arquivo: path.join(tmp, 'atalho', 'frete', 'a.js'), cwd: '/r' }, c).trava, 'T4');
+  assert.equal(avaliar({ tipo: 'comando', comando: `touch ${tmp}/wt/x/../frete/b.js`, cwd: '/r' }, c).trava, 'T4');
+  assert.equal(avaliar({ tipo: 'comando', comando: `echo x > ${tmp}/pendurado`, cwd: '/r' }, c).trava, 'T4');
+  assert.equal(avaliar({ tipo: 'comando', comando: 'git add a.js', cwd: path.join(tmp, 'atalho', 'frete') }, c).trava, 'T4');
+  assert.equal(avaliar({ tipo: 'comando', comando: `touch '${tmp}/wt/frete/a\\..\\..\\x'`, cwd: '/r' }, c).trava, 'T4');
+  assert.ok(avaliar({ tipo: 'comando', comando: `touch ${tmp}/atalho/x/b.js`, cwd: '/r' }, c).permite);
 });
