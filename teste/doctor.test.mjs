@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { criarProjeto, criarRepo, gravar, dirDoTeste, envelhecerSinal } from './apoio/repo.mjs';
+import { copiarHarness, criarProjeto, criarRepo, gravar, dirDoTeste, envelhecerSinal } from './apoio/repo.mjs';
 import { enfileirar } from '../nucleo/lib/pendentes.mjs';
 
 test('projeto recém-preparado: sem falhas', () => {
@@ -207,12 +207,13 @@ test('sem ramos protegidos a proteção no servidor é aviso', () => {
   assert.match(p.ah(['doctor']).saida, /^aviso\s+Proteção no servidor: .*protegido/m);
 });
 
-test('C1: o doctor tem 22 itens, com "Harness no ramo base" antes de "Gancho responde" e os da fatia 2 depois dele', async () => {
+test('C1: o doctor tem 23 itens, com "Harness no ramo base" antes de "Gancho responde" e os da fatia 2 depois dele', async () => {
   const { VERIFICACOES } = await import('../nucleo/comandos/doctor.mjs');
   const nomes = VERIFICACOES.map(v => v.item);
   // 16 da fatia 1 e da tarefa 5, menos "Fila de pendentes" (virou "Comentários pendentes"), mais 5 da tarefa 14,
-  // mais "Fila de pesado" (fatia 3) e "Adaptador do agente em uso" (fatia 4).
-  assert.equal(nomes.length, 22);
+  // mais "Fila de pesado" (fatia 3), "Adaptador do agente em uso" (fatia 4) e "Núcleo igual ao clone de origem" (fatia 5).
+  assert.equal(nomes.length, 23);
+  assert.equal(nomes.indexOf('Núcleo igual ao clone de origem'), nomes.indexOf('Cópia do núcleo (MANIFEST.json)') + 1);
   assert.ok(nomes.includes('Fila de pesado'));
   assert.equal(nomes.at(-1), 'Adaptador do agente em uso');
   assert.equal(nomes.indexOf('Harness no ramo base'), nomes.indexOf('Ganchos do Claude Code instalados') + 1);
@@ -476,4 +477,28 @@ test('doctor confere a fila de pesado: legível, versão e senhas mortas', t => 
   fs.writeFileSync(path.join(dir, 'config.json'), '{');
   assert.equal(item().estado, 'falha');
   assert.match(item().fazer, /não é JSON válido.*corrija o arquivo/);
+});
+
+test('fatia 5: o núcleo é conferido contra o clone de origem registrado na máquina', t => {
+  const p = criarProjeto();
+  const clone = copiarHarness();
+  t.after(() => { p.limpar(); clone.limpar(); });
+  const linha = () => p.ah(['doctor']).saida.split('\n').find(l => l.includes('Núcleo igual ao clone de origem'));
+  assert.match(linha(), /^ok\s+Núcleo igual ao clone de origem$/);
+
+  const origem = path.join(dirDoTeste(p), 'origem.json');
+  fs.writeFileSync(origem, JSON.stringify({ clone: clone.raiz }));
+  assert.match(linha(), /^ok\s+Núcleo igual ao clone de origem$/);
+  clone.gravar('nucleo/lib/novidade.mjs', 'export {};\n');
+  const l = linha();
+  assert.match(l, /^aviso\s+Núcleo igual ao clone de origem: o clone em \S+ \(versão \d+\.\d+\.\d+\) difere da cópia instalada \(\d+\.\d+\.\d+\) em 1 arquivo\(s\); rode tools\/ah atualizar --de /);
+  assert.ok(l.includes(`--de ${clone.raiz}`), l);
+  assert.equal(clone.ah(p, ['atualizar']).codigo, 0);
+  assert.match(linha(), /^ok\s+Núcleo igual ao clone de origem$/);
+
+  fs.writeFileSync(origem, JSON.stringify({ clone: path.join(clone.raiz, 'sumiu') }));
+  assert.match(linha(), /^aviso\s+Núcleo igual ao clone de origem: o clone registrado \(.*sumiu\) não existe mais/);
+  fs.rmSync(origem);
+  assert.match(linha(), /^ok\s+Núcleo igual ao clone de origem \(sem clone registrado nesta máquina; não conferido\)$/);
+  assert.equal(p.ah(['doctor']).codigo, 0);
 });

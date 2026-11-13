@@ -18,6 +18,7 @@ import { gh, protecaoDoRamo, repoAtual } from '../lib/github.mjs';
 import { mesclarGanchos } from './init.mjs';
 import { ADAPTADORES, O_QUE_SE_PERDE, agenteEmUso } from '../adaptadores/registro.mjs';
 import { dirDaFila, retratoDaFila } from '../lib/fila.mjs';
+import { arquivosDaCopia, diferenca, eClone, lerManifesto, listaDoManifesto, versaoDoClone } from '../lib/copia.mjs';
 
 export const descricao = 'confere se o projeto está bem preparado';
 export const uso = 'ah doctor [--json]';
@@ -211,6 +212,28 @@ export const VERIFICACOES = [
       return falha(nome, `o núcleo copiado é ${m.versao} e o projeto pede ${amb.config.harnessMinimo} ou mais novo; rode ah init --sobrescrever a partir do clone atualizado`);
     }
     return ok(nome);
+  }),
+
+  // Fatia 5: a cópia instalada é a do clone de onde veio? O clone fica em origem.json, no estado do projeto
+  // (é da máquina); a comparação é pelo conteúdo (sha256 de cada arquivo), não pelo commit.
+  verificacao('Núcleo igual ao clone de origem', amb => {
+    const nome = 'Núcleo igual ao clone de origem';
+    if (!amb.config || !amb.dirEstado) return null;
+    let registro = null;
+    try { registro = lerJson(path.join(amb.dirEstado, 'origem.json'), null); } catch {
+      return aviso(nome, `${path.join(amb.dirEstado, 'origem.json')} ilegível; apague-o e rode tools/ah atualizar --de <clone>`);
+    }
+    if (typeof registro?.clone !== 'string') return ok(`${nome} (sem clone registrado nesta máquina; não conferido)`);
+    const clone = registro.clone;
+    if (!eClone(clone)) return aviso(nome, `o clone registrado (${clone}) não existe mais ou não é um clone do agent-harness; rode tools/ah atualizar --de <clone>`);
+    const m = lerManifesto(path.join(amb.raiz, '.harness', 'nucleo'));
+    const instalada = listaDoManifesto(m);
+    if (!instalada) return aviso(nome, `o MANIFEST.json não tem a lista dos arquivos (cópia de antes da atualização existir); rode tools/ah atualizar --de ${clone}`);
+    const doClone = Object.fromEntries(arquivosDaCopia(clone).arquivos.map(a => [a.rel, a.sha256]));
+    const d = diferenca(instalada, doClone);
+    const n = d.novos.length + d.alterados.length + d.removidos.length;
+    if (n === 0) return ok(nome);
+    return aviso(nome, `o clone em ${clone} (versão ${versaoDoClone(clone) ?? 'desconhecida'}) difere da cópia instalada (${m.versao ?? 'versão desconhecida'}) em ${n} arquivo(s); rode tools/ah atualizar --de ${clone} (--simular mostra o que muda)`);
   }),
 
   verificacao('Arquivos de estado legíveis', amb => {
