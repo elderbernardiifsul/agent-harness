@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { comandosSimples, ErroDeShell } from '../nucleo/lib/shell.mjs';
+import { comandosSimples, deuCerto, ErroDeShell } from '../nucleo/lib/shell.mjs';
 
 const so = (t, cwd = '/r') => comandosSimples(t, cwd).map(c => c.argv.join(' '));
 const erro = e => e instanceof ErroDeShell && e.name === 'ErroDeShell';
@@ -455,4 +455,43 @@ test('escritas com git -C ou env -C: o redirecionamento vale no cwd do shell', (
     assert.equal(c.find(s => s.argv.length).escritas, undefined, t);
     assert.deepEqual(c.filter(s => s.escritas).map(s => [s.argv, s.cwd, s.escritas]), [[[], '/r', ['f']]], t);
   }
+});
+
+// ---- pendência 7: o que certamente deu certo antes de cada comando
+test('aposSucesso: só && encadeia; ;, ||, &, ! e corpo de função não', () => {
+  // Índices dos comandos anteriores que certamente deram certo para o último rodar.
+  const antes = t => { const cs = comandosSimples(t, '/r'); const u = cs.at(-1); return cs.slice(0, -1).map((_, i) => i).filter(i => deuCerto(u, i)); };
+  assert.deepEqual(antes('a && b && c'), [0, 1]);
+  assert.deepEqual(antes('a; b && c'), [1]);
+  assert.deepEqual(antes('a || b && c'), []);
+  assert.deepEqual(antes('a & b && c'), [1]);
+  assert.deepEqual(antes('! a && c'), []);
+  assert.deepEqual(antes('a | b && c'), [1]);
+  assert.deepEqual(antes('(a; b) && c'), [1]);
+  assert.deepEqual(antes(`bash -c 'a && b' && c`), [0, 1]);
+  assert.deepEqual(antes(`bash -c 'exit 0; a' && c`), []);
+  assert.deepEqual(antes('a && f() { b; }'), []);
+  assert.deepEqual(antes('a && { b; c; }'), [0]);
+  assert.deepEqual(antes('xargs a && c'), []);
+});
+
+// ---- pendência 8: $ e crase literais
+test('literais: $ e crase entre aspas simples ou escapados; o que expande fica de fora', () => {
+  const lit = t => comandosSimples(t, '/r')[0].literais;
+  assert.deepEqual(lit(`git add 'a$b' "c\\$d" e\\$f $'g$h'`), ['a$b', 'c$d', 'e$f', 'g$h']);
+  assert.equal(lit(`git add "$X" $Y \`z\``), undefined);
+  assert.deepEqual(lit(`git add 'a$b' a$b 'c$d'`), ['c$d']);
+  assert.deepEqual(lit(`git -C /w add 'a$b'`), ['a$b']);
+});
+
+// ---- pendência 10: cd que pode falhar no meio de uma lista && seguida de ;
+test('cd x && a; b: a só roda em x; b roda em x ou na pasta de antes', () => {
+  const cs = comandosSimples('cd /w && a; b', '/r');
+  assert.deepEqual(cs.map(c => [c.argv[0], c.cwd, c.cwdsAlternativos]), [['cd', '/r', undefined], ['a', '/w', undefined], ['b', '/w', ['/r']]]);
+  const [, , , d] = comandosSimples('cd /w && a && b; d', '/r');
+  assert.deepEqual([d.cwd, d.cwdsAlternativos], ['/w', ['/r']]);
+  const [, , e] = comandosSimples('cd /w || exit 1; e', '/r');
+  assert.deepEqual([e.cwd, e.cwdsAlternativos], ['/w', undefined]);
+  // Com o cwd de entrada já incerto, o cd relativo deixa o de depois desconhecido.
+  assert.equal(comandosSimples('cd /w && x || y && cd sub; z', '/r').at(-1).cwd, null);
 });
