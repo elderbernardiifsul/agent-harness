@@ -553,3 +553,31 @@ test('T2: xargs git add/commit no checkout principal tem caminhos que não dá p
     assert.ok(av(c).permite, c);
   assert.ok(av('git ls-files -m | xargs git add', '/w').permite, 'no worktree da frente');
 });
+
+// ---- terceira revisão: checkout com -- sem caminhos e o repositório do gh
+test('git checkout <ramo> -- sem caminhos troca de ramo (T1 e T5; terceira revisão)', () => {
+  for (const c of ['git checkout main -- && git push', 'git checkout stage -- && git push origin HEAD', 'git checkout main --; git push'])
+    assert.equal(av(c, '/w').trava, 'T5', c);
+  assert.equal(av(soTrocaLiberada('git checkout main -- && git push')).trava, 'T5');
+  for (const c of ['git checkout main --', 'git checkout stage --', 'git checkout feat/x --'])
+    assert.equal(av(c).trava, 'T1', c);
+  // Com caminhos depois do --, é checkout de arquivo; o da base e o de ramo livre passam.
+  for (const c of ['git checkout dev -- && git push', 'git checkout main -- arquivo.txt && git push', 'git checkout -- && git push'])
+    assert.ok(av(c, '/w').permite, c);
+  for (const c of ['git checkout dev --', 'git checkout main -- src/a.js', 'git checkout -- main']) assert.ok(av(c).permite, c);
+});
+test('T5: merge de PR com o repositório vindo de GH_REPO, --repo ou -R não sabe a base (terceira revisão)', () => {
+  for (const c of ['GH_REPO=exemplo/outro gh api -X PUT repos/{owner}/{repo}/pulls/7/merge', 'gh api -X PUT repos/{owner}/{repo}/pulls/7/merge -R exemplo/outro',
+    'gh api --repo exemplo/outro -X PUT repos/{owner}/{repo}/pulls/7/merge', 'gh api -R exemplo/outro -X PUT repos/{owner}/{repo}/pulls/7/merge',
+    'gh api --repo=exemplo/outro -X PUT repos/{owner}/{repo}/pulls/7/merge', 'gh -R exemplo/outro api -X PUT repos/{owner}/{repo}/pulls/7/merge',
+    'env GH_REPO=exemplo/outro gh api -X PUT repos/{owner}/{repo}/pulls/7/merge', 'export GH_REPO=exemplo/outro; gh api -X PUT repos/{owner}/{repo}/pulls/7/merge',
+    'GH_REPO=exemplo/outro gh pr merge 7', 'export GH_REPO=exemplo/outro; gh pr merge 7']) {
+    const r = av(c);
+    assert.equal(r.trava, 'T5', c);
+    assert.match(r.motivo, /não consigo saber/, c);
+    assert.ok(r.saida, c);
+  }
+  for (const c of ['gh api -X PUT repos/{owner}/{repo}/pulls/7/merge', 'GH_REPO=exemplo/outro gh api repos/{owner}/{repo}/pulls/7/merge',
+    'gh api -R exemplo/outro repos/{owner}/{repo}/pulls/8', 'gh pr merge 7'])
+    assert.ok(av(c).permite, c);
+});
