@@ -79,7 +79,6 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
   delete env.GH_FALSO_RESPOSTAS;
   delete env.GH_FALSO_LOGIN;
   delete env.GH_FALSO_CORRIDA;
-  const git = (args, { cwd = raiz } = {}) => executar(args, { cwd, env });
   const exigir = (args, cwd) => {
     const r = executar(args, { cwd, env });
     if (r.codigo !== 0) throw new Error(`git ${args.join(' ')} falhou: ${r.erro}`);
@@ -102,9 +101,15 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
     exigir(['remote', 'add', 'origin', remotoCaminho], raiz);
   }
 
+  return montarProjeto({ base, raiz, remoto: remotoCaminho, estado, env });
+}
+
+// O objeto de projeto de teste (o mesmo para criarRepo e outraMaquina).
+function montarProjeto({ base, raiz, remoto, estado, env }) {
+  const git = (args, { cwd = raiz } = {}) => executar(args, { cwd, env });
   return {
     raiz,
-    remoto: remotoCaminho,
+    remoto,
     estado,
     env,
     git,
@@ -140,6 +145,26 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
       apagarPastaDeTeste(base);
     },
   };
+}
+
+// Outra máquina do mesmo projeto: empurra `dev` de `p`, clona o remoto de `p` numa pasta nova, com estado e
+// worktrees próprios, a sessão e o login dados, os mesmos tickets e o mesmo registro do gh falso, e a
+// máquina com `{sigla, login}`. Mesma forma do objeto de criarRepo.
+export function outraMaquina(p, { sessao, login, sigla }) {
+  if (!p.remoto) throw new Error('outraMaquina precisa de um projeto com remoto');
+  const empurra = p.git(['push', 'origin', 'refs/heads/dev:refs/heads/dev']);
+  if (empurra.codigo !== 0) throw new Error(`git push do dev falhou: ${empurra.erro}`);
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'ah-teste-maquina-')));
+  PASTAS_A_LIMPAR.add(base);
+  const raiz = join(base, 'repo');
+  const estado = join(base, 'estado');
+  const env = { ...p.env, AH_ESTADO: estado, AH_WORKTREES: join(base, 'wt'), AH_SESSAO: sessao, GH_FALSO_LOGIN: login };
+  delete env.GH_FALSO_RESPOSTAS;
+  const c = executar(['clone', '-b', 'dev', '--', p.remoto, raiz], { cwd: base, env });
+  if (c.codigo !== 0) throw new Error(`git clone falhou: ${c.erro}`);
+  mkdirSync(estado, { recursive: true });
+  writeFileSync(join(estado, 'maquina.json'), JSON.stringify({ sigla, login }, null, 2));
+  return montarProjeto({ base, raiz, remoto: p.remoto, estado, env });
 }
 
 // Grava .harness/config.json no repositório de teste.

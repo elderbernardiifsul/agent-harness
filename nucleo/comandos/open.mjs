@@ -7,9 +7,9 @@ import { frentesDa, gravarFrente, lerFrente, listarFrentes, listarFrentesToleran
 import { existeRamo, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
 import { reenviarComAviso } from '../lib/pendentes.mjs';
-import { desfazerReserva, marcarTickets, reservar } from '../lib/reserva.mjs';
+import { acharPassagem, confirmarRetomada, desfazerReserva, marcarTickets, reservar } from '../lib/reserva.mjs';
 import { arquivosDaFrente, caminhosEmComum, tocaOsCaminhos } from '../lib/sobreposicao.mjs';
-import { gravarSessao, idCurto, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
+import { ESQUEMA_DO_ESTADO, gravarSessao, idCurto, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
 import { avisarDaMarcacao } from './handoff.mjs';
 import { aberturaEmCurso, inicioDoProcesso, pidDeComando, vidaDaSessao } from '../lib/vida.mjs';
 
@@ -132,6 +132,8 @@ export async function executar(args, amb) {
     const f = git(['fetch', '--', remoto, cfg.git.base], { cwd: amb.raiz, env: amb.env });
     if (f.codigo !== 0) amb.avisar(`Aviso: não consegui atualizar ${remoto}/${cfg.git.base}; sigo com o que há aqui. (${f.erro.trim().split('\n')[0]})\n`);
   }
+  // Frente passada em outra máquina: sem estado nem ramo aqui e com o ramo no remoto, a passagem está nos tickets.
+  const passagem = temRemoto ? procurarPassagem({ amb, nome: o.nome, ramo, remoto, tickets, rotulo, oGh }) : null;
 
   // O registro `abrindo` é deste open enquanto guarda este processo (mesma sessão pode rodar dois open).
   const processoDesteOpen = { pid: process.pid, inicio: inicioDoProcesso(process.pid) };
@@ -139,7 +141,7 @@ export async function executar(args, amb) {
     && (f.processo?.inicio ?? null) === processoDesteOpen.inicio;
 
   // Fase 1, sob a trava: recusas locais, id e o registro `abrindo` (guarda id e nome contra outro open).
-  const { frente, partida, retomada } = await comTrava(dirEstado, 'frentes', async () => {
+  const { frente, partida, retomada, remota } = await comTrava(dirEstado, 'frentes', async () => {
     let sessao = lerSessao(dirEstado, amb.sessaoId);
     if (!sessao) {
       const doAgente = !amb.env.AH_SESSAO && amb.env[VARIAVEL_SESSAO_CLAUDE];
@@ -190,6 +192,9 @@ export async function executar(args, amb) {
       }
     }
     if (existente?.estado === 'passada') return { retomada: retomarSobTrava(existente, { amb, cfg, login, plano, caminhos, remoto }) };
+    if (!existente && passagem && !existeRamo(amb.raiz, ramo, { env: amb.env })) {
+      return { retomada: retomarSobTrava(frenteDaPassagem(passagem, { amb, cfg, ramo }), { amb, cfg, login, plano, caminhos, remoto }), remota: true };
+    }
     const repetido = existente && !tomado ? 'frente'
       : existeRamo(amb.raiz, ramo, { env: amb.env }) ? 'ramo local'
         : existeRamo(amb.raiz, ramo, { remoto, env: amb.env }) ? 'ramo remoto' : null;
@@ -219,7 +224,7 @@ export async function executar(args, amb) {
     if (tomado) registrarEvento(dirEstado, { tipo: 'abertura-retomada', sessao: amb.sessaoId, frente: o.nome, id, de: tomado.dona ?? null });
     return { frente: nova, partida };
   }, { venceMs: 120000 });
-  if (retomada) return terminarRetomada(retomada, { amb, login, oGh, rotulo });
+  if (retomada) return terminarRetomada(retomada, { amb, login, oGh, rotulo, remota });
   const id = frente.id;
 
   // Some com o registro `abrindo` (se ainda é deste open).
@@ -327,13 +332,29 @@ function retomarSobTrava(f, { amb, cfg, login, plano, caminhos, remoto }) {
 }
 
 // Depois da trava: a retomada nos tickets (sem rede vai para a fila), a lista de logins da reserva e os avisos.
-async function terminarRetomada(frente, { amb, login, oGh, rotulo }) {
+// Retomada de outra máquina (`remota`): direto no GitHub, com a corrida decidida; quem perde desfaz e recusa.
+async function terminarRetomada(frente, { amb, login, oGh, rotulo, remota = false }) {
   if ((frente.tickets ?? []).length) {
-    const r = marcarTickets({
-      frente, tipo: 'retomada', texto: `Frente ${frente.id} (${frente.nome}) retomada por @${login}.`,
-      login, sessao: amb.sessaoId, rotulo, dirEstado: amb.dirEstado, reatribuir: true,
-    }, oGh);
-    avisarDaMarcacao(r, amb.avisar);
+    let r;
+    if (remota) {
+      r = confirmarRetomada({ frente, login, sessao: amb.sessaoId, rotulo, dirEstado: amb.dirEstado }, oGh);
+      if (!r.ok) {
+        const local = await desfazerRetomada(frente, amb);
+        const qual = `${frente.id} ${frente.nome}`;
+        if (r.vencedor) {
+          throw recusa(`Não retomei ${frente.nome}: a frente ${frente.id} foi retomada antes por @${r.vencedor.login} (tickets: ${r.como}; aqui: ${local}).`,
+            `combine com @${r.vencedor.login}, que está com a frente ${frente.id}; se ela passar a frente de novo (ah handoff), rode ah open ${frente.nome}`);
+        }
+        throw recusa(`Não retomei a frente ${qual}: ${r.motivo} (tickets: ${r.como}; aqui: ${local}).`,
+          `tente de novo com rede: ah open ${frente.nome}`);
+      }
+    } else {
+      r = marcarTickets({
+        frente, tipo: 'retomada', texto: `Frente ${frente.id} (${frente.nome}) retomada por @${login}.`,
+        login, sessao: amb.sessaoId, rotulo, dirEstado: amb.dirEstado, reatribuir: true,
+      }, oGh);
+      avisarDaMarcacao(r, amb.avisar);
+    }
     if (frente.reserva && r.logins.length !== (frente.reserva.logins ?? []).length) {
       await comTrava(amb.dirEstado, 'frentes', async () => {
         const atual = lerFrente(amb.dirEstado, frente.nome);
@@ -347,6 +368,68 @@ async function terminarRetomada(frente, { amb, login, oGh, rotulo }) {
   amb.escrever(`Frente ${frente.id} ${frente.nome} retomada.\nTrabalhe em: ${frente.worktree}\n`);
   avisarDasOutrasSemFalhar(frente, Array.isArray(frente.caminhos) ? frente.caminhos.filter(c => typeof c === 'string') : [], amb);
   return 0;
+}
+
+// Fora da trava (o fetch e o gh levam rede): sem frente nem ramo locais e com o ramo `<prefixo><nome>` no remoto,
+// procura a passagem nos tickets (`--tickets` só diz onde procurar). Devolve a passagem ou recusa.
+function procurarPassagem({ amb, nome, ramo, remoto, tickets, rotulo, oGh }) {
+  if (lerFrente(amb.dirEstado, nome) || existeRamo(amb.raiz, ramo, { env: amb.env })) return null;
+  // Um ramo que não existe lá faz o fetch falhar; o que vale é a referência depois dele.
+  git(['fetch', '--', remoto, `+refs/heads/${ramo}:refs/remotes/${remoto}/${ramo}`], { cwd: amb.raiz, env: amb.env });
+  if (!existeRamo(amb.raiz, ramo, { remoto, env: amb.env })) return null;
+  const a = acharPassagem({ nome, tickets, rotulo }, oGh);
+  if (!a.ok) {
+    throw recusa(`Já existe ramo remoto com o nome ${nome}, e preciso do GitHub para achar a passagem de ${nome} (${a.motivo}).`,
+      `tente de novo com rede; se ${nome} não é uma frente passada, escolha outro nome`);
+  }
+  if (a.ativa) {
+    throw recusa(`Não retomei ${nome}: a frente ${a.ativa.id} está ativa com @${a.ativa.login} em outra máquina.`,
+      `combine com @${a.ativa.login}: peça que rode ah handoff lá e depois rode ah open ${nome}; ou escolha outro nome`);
+  }
+  if (!a.passagem) {
+    throw recusa(`Já existe ramo remoto com o nome ${nome}, sem passagem de bastão achada.`,
+      `se é uma frente passada, rode ah open ${nome} --tickets <n> com o ticket dela; senão escolha outro nome`);
+  }
+  return a.passagem;
+}
+
+// Sob a trava: a frente passada reconstruída do marcador da passagem (mesmo id), pronta para retomarSobTrava.
+function frenteDaPassagem(passagem, { amb, cfg, ramo }) {
+  const { dirEstado, env } = amb;
+  const igual = listarFrentes(dirEstado).find(f => f.id === passagem.id && f.nome !== passagem.nome);
+  if (igual) {
+    throw recusa(`A passagem de ${passagem.nome} é da frente ${passagem.id}, mas já existe aqui a frente ${igual.id} ${igual.nome} (máquinas com a mesma sigla).`,
+      `retome ${passagem.nome} numa máquina sem a frente ${igual.id}, ou encerre ${igual.nome} aqui (ah close ${igual.nome}) e rode ah open ${passagem.nome}; para não repetir, dê siglas diferentes às máquinas (ah init --sigla)`);
+  }
+  const wt = path.join(dirWorktrees(cfg, env, process.platform, os.homedir()), passagem.nome);
+  if (fs.existsSync(wt)) {
+    throw recusa(`A pasta do worktree da frente ${passagem.nome} já existe (${wt}) e não é de nenhuma frente desta máquina.`,
+      `confira o que há nela; se é sobra, apague-a (ou git worktree remove ${wt}) e rode ah open ${passagem.nome} de novo`);
+  }
+  return {
+    esquema: ESQUEMA_DO_ESTADO, id: passagem.id, nome: passagem.nome, ramo, worktree: wt,
+    tickets: [...passagem.tickets], plano: passagem.plano ?? null, caminhos: [], dona: null,
+    abertaPor: passagem.abertaPor ?? passagem.login, abertaEm: passagem.abertaEm ?? null,
+    estado: 'passada', notas: [], reserva: { logins: [...passagem.logins], tickets: [...passagem.tickets] }, passadaPor: null,
+  };
+}
+
+// A retomada de outra máquina perdeu (ou falhou): apaga o worktree, o ramo e o registro que ela criou.
+// Devolve o texto do que fez.
+async function desfazerRetomada(frente, amb) {
+  const { dirEstado, env } = amb;
+  return comTrava(dirEstado, 'frentes', async () => {
+    const atual = lerFrente(dirEstado, frente.nome);
+    if (atual?.id !== frente.id || atual.dona !== amb.sessaoId) return 'o registro mudou; não mexi nele';
+    const w = git(['worktree', 'remove', '--force', frente.worktree], { cwd: amb.raiz, env });
+    const b = w.codigo === 0 ? git(['branch', '-D', frente.ramo], { cwd: amb.raiz, env }) : w;
+    removerFrente(dirEstado, frente.nome);
+    const sessao = lerSessao(dirEstado, amb.sessaoId);
+    if (sessao && (sessao.frente?.nome ?? sessao.frente) === frente.nome) gravarSessao(dirEstado, { ...sessao, frente: null });
+    registrarEvento(dirEstado, { tipo: 'retomada-desfeita', sessao: amb.sessaoId, frente: frente.nome, id: frente.id });
+    return b.codigo === 0 ? 'desfiz o worktree, o ramo e o registro'
+      : `apaguei o registro, mas o git não apagou o worktree ou o ramo (${(b.erro.trim() || 'sem mensagem').split('\n')[0].slice(0, 200)}); apague à mão ${frente.worktree} e o ramo ${frente.ramo}`;
+  }, { venceMs: 120000 });
 }
 
 // A frente já está ativa: qualquer erro aqui vira aviso, e o open sai com 0.
