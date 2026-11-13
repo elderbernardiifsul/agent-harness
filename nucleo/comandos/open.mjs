@@ -486,7 +486,7 @@ function conferirAntesDeRetomar(local, { amb, login, rotulo, oGh, dona = amb.ses
     throw recusa(`Não retomei a frente ${local.id} ${nome}: há operações desta máquina na fila para ${presos.map(n => `#${n}`).join(', ')} que precisam sair antes.`,
       `tente de novo com rede: ah open ${nome}`);
   }
-  const sessoesDaqui = sessoesDaquiDaFrente(amb.dirEstado, local, [local.passadaPor]);
+  const sessoesDaqui = sessoesDaquiDaFrente(amb.dirEstado, local, [local.passadaPor, local.passadaDe]);
   const q = quemTemAFrente({ frente: local, login, sessao: dona, rotulo, sessoesDaqui }, oGh);
   const fechar = `o registro desta máquina ficou velho: ah close ${nome} o tira (só o worktree e o registro daqui; os tickets não mudam)`;
   switch (q.situacao) {

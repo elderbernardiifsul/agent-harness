@@ -5,6 +5,7 @@ import path from 'node:path';
 import { criarProjeto, dirDoTeste, outraMaquina } from './apoio/repo.mjs';
 import { acharPassagem, montarMarcador } from '../nucleo/lib/reserva.mjs';
 import { reenviarPendentes } from '../nucleo/lib/pendentes.mjs';
+import { encerrarSessao, registrarSessao } from '../nucleo/lib/sessao.mjs';
 
 const lerFrenteDoTeste = (p, nome) => JSON.parse(fs.readFileSync(path.join(dirDoTeste(p), 'frentes', `${nome}.json`), 'utf8'));
 const temFrente = (p, nome) => fs.existsSync(path.join(dirDoTeste(p), 'frentes', `${nome}.json`));
@@ -570,4 +571,87 @@ test('rodada 3, item 3: close depois de ida e volta tira todos os responsáveis 
   assert.match(r.saida, /Frente as-1 carrinho fechada\./);
   assert.deepEqual(p.ghTicket(1).assignees, []);
   assert.equal(tiposNoTicket(p, 1).at(-1), 'fechamento');
+});
+
+// ---- Consertos da revisão da tarefa 8, rodada 4 ----
+
+const marcadorDe = (tipo, n, login, sessao, extra = {}) => ({
+  ticket: n, autor: login,
+  body: `x\n\n${montarMarcador(tipo, { id: 'as-1', nome: 'carrinho', ramo: 'feat/carrinho', login, sessao, ...extra })}\n`,
+});
+
+test('rodada 4, item 1: com dois tickets, fechamento entre as retomadas desta (c1 c2 r1 f1 f2 r2) perde', t => {
+  const { p } = comFrente(t, { tickets: '1,2' });
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const corrida = [
+    { ...marcadorDe('retomada', 1, 'carla-dias', 'sessao-c'), antesDe: 1 },
+    { ...marcadorDe('retomada', 2, 'carla-dias', 'sessao-c'), antesDe: 1 },
+    { ...marcadorDe('fechamento', 1, 'carla-dias', 'sessao-c'), depoisDe: 1 },
+    { ...marcadorDe('fechamento', 2, 'carla-dias', 'sessao-c'), depoisDe: 1 },
+  ];
+  const r = p.ah(['open', 'carrinho'], { env: { AH_SESSAO: 'sessao-b-0002', GH_FALSO_CORRIDA: JSON.stringify(corrida) } });
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /foi fechada/);
+  assert.deepEqual([lerFrenteDoTeste(p, 'carrinho').estado, lerFrenteDoTeste(p, 'carrinho').dona], ['passada', null]);
+  for (const n of [1, 2]) assert.ok(['fechamento', 'desistencia'].includes(tiposNoTicket(p, n).at(-1)), `#${n}: ${tiposNoTicket(p, n)}`);
+  assert.deepEqual(acharPassagem({ nome: 'carrinho', tickets: [1, 2], rotulo: 'em-andamento' }, { cwd: p.raiz, env: p.env }), { ok: true, passagem: null });
+});
+
+test('rodada 4, item 1a: com um ticket (c1 r1 f1) a recusa diz que a frente foi fechada', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const corrida = [{ ...marcadorDe('retomada', 1, 'carla-dias', 'sessao-c'), antesDe: 1 }, { ...marcadorDe('fechamento', 1, 'carla-dias', 'sessao-c'), depoisDe: 1 }];
+  const r = p.ah(['open', 'carrinho'], { env: { AH_SESSAO: 'sessao-b-0002', GH_FALSO_CORRIDA: JSON.stringify(corrida) } });
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /foi fechada/);
+  assert.doesNotMatch(r.erro, /não consegui confirmar/);
+});
+
+test('rodada 4, item 1b: o desfazer de retomada fechada não tira o login que outra frente segura', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  p.ghSemear(1, { assignees: [] });
+  const corrida = [
+    { ...marcadorDe('fechamento', 1, 'carla-dias', 'sessao-c'), depoisDe: 1 },
+    { ticket: 1, autor: 'ana-souza', depoisDe: 1, body: `x\n\n${montarMarcador('frente', { id: 'as-9', nome: 'frete', ramo: 'feat/frete', estado: 'ativa', login: 'ana-souza', sessao: 'sessao-d' })}\n` },
+  ];
+  const r = p.ah(['open', 'carrinho'], { env: { AH_SESSAO: 'sessao-b-0002', GH_FALSO_CORRIDA: JSON.stringify(corrida) } });
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /foi fechada/);
+  assert.ok(p.ghTicket(1).assignees.includes('ana-souza'), p.ghTicket(1).assignees.join(','));
+  assert.ok(p.ghTicket(1).labels.includes('em-andamento'));
+});
+
+test('rodada 4, item 2: sessão encerrada desta máquina, de outra frente, não faz a frente "daqui"', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const q = maquina(t, p);
+  assert.equal(q.ah(['open', 'carrinho']).codigo, 0);
+  registrarSessao(dirDoTeste(p), { id: 'sessao-c-0003', agente: 'desconhecido', pid: null, pidInicio: null });
+  encerrarSessao(dirDoTeste(p), 'sessao-c-0003', 'fim');
+  const r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /ativa com @carla-dias em outra máquina/);
+});
+
+test('rodada 4, item 2: a continuação sem vínculo guarda de que sessão a frente ficou solta, e ela retoma como tomada', t => {
+  const { p } = comFrente(t);
+  const f = lerFrenteDoTeste(p, 'carrinho');
+  fs.writeFileSync(path.join(dirDoTeste(p), 'frentes', 'carrinho.json'), JSON.stringify({ ...f, estado: 'passada', dona: null, passadaPor: 'continuacao-sem-vinculo', passadaDe: 'sessao-teste-0001' }));
+  const s = JSON.parse(fs.readFileSync(path.join(dirDoTeste(p), 'sessoes', 'sessao-teste-0001.json'), 'utf8'));
+  fs.writeFileSync(path.join(dirDoTeste(p), 'sessoes', 'sessao-teste-0001.json'), JSON.stringify({ ...s, frente: null, fim: new Date().toISOString(), motivoFim: 'substituida' }));
+  const r = p.ah(['open', 'carrinho'], B);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.equal(tiposNoTicket(p, 1).at(-1), 'tomada');
+});
+
+test('rodada 4, item 3: o fechamento não tira o rótulo com outra frente ativa no ticket', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.git(['merge', '--no-ff', 'feat/carrinho', '-m', 'merge']).codigo, 0);
+  const outra = { author: 'carla-dias', body: `x\n\n${montarMarcador('frente', { id: 'cd-1', nome: 'frete', ramo: 'feat/frete', estado: 'ativa', login: 'carla-dias', sessao: 'sessao-c' })}` };
+  p.ghSemear(1, { comments: [...p.ghTicket(1).comments, outra], assignees: ['ana-souza', 'carla-dias'] });
+  const r = p.ah(['close', 'carrinho']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.ok(p.ghTicket(1).labels.includes('em-andamento'), p.ghTicket(1).labels.join(','));
+  assert.deepEqual(p.ghTicket(1).assignees, ['carla-dias']);
 });

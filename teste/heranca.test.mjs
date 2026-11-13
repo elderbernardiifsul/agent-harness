@@ -84,6 +84,7 @@ test('começo novo no mesmo processo substitui a anterior, solta a frente e o re
   const r = await tratar(inicio('s-b', 'novo'), { ...amb(p), pid: proc.pid, ...comHora });
   assert.deepEqual([lerFrente(dir, 'carrinho').estado, lerFrente(dir, 'carrinho').dona], ['passada', null]);
   assert.equal(lerFrente(dir, 'carrinho').passadaPor, 'continuacao-sem-vinculo');
+  assert.equal(lerFrente(dir, 'carrinho').passadaDe, 's-a');
   assert.equal(lerSessao(dir, 's-a').motivoFim, 'substituida');
   assert.equal(lerSessao(dir, 's-b').frente, null);
   assert.ok(lerEventos(dir).some(e => e.tipo === 'frente-solta'));

@@ -38,7 +38,8 @@ export function continuarSessao(dirEstado, { sessao, pid, pidInicio = null, orig
         registrarEvento(dirEstado, { tipo: 'heranca', de: velha.id, sessao, frentes: nomes });
       } else {
         for (const f of daVelha) {
-          gravarFrente(dirEstado, { ...f, estado: 'passada', dona: null, passadaEm: agora, passadaPor: 'continuacao-sem-vinculo' });
+          // `passadaDe`: a sessão de quem a frente ficou solta (a retomada a reconhece como desta máquina).
+          gravarFrente(dirEstado, { ...f, estado: 'passada', dona: null, passadaEm: agora, passadaPor: 'continuacao-sem-vinculo', passadaDe: velha.id });
           resultado.soltas.push(f.nome);
           registrarEvento(dirEstado, { tipo: 'frente-solta', sessao: velha.id, frente: f.nome, por: sessao, motivo: 'continuacao-sem-vinculo' });
         }

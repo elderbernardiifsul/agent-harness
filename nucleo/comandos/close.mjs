@@ -240,7 +240,7 @@ export async function executar(args, amb) {
       const rotulo = cfg.github.rotuloDeReserva;
       const semRede = motivo => recusa(`Não fechei ${frente.nome}: preciso do GitHub para confirmar que ninguém retomou ${frente.nome} (${motivo}).`,
         `tente de novo com rede: ah close ${frente.nome}; nada foi apagado`);
-      const sessoesDaqui = sessoesDaquiDaFrente(dirEstado, frente, [frente.passadaPor]);
+      const sessoesDaqui = sessoesDaquiDaFrente(dirEstado, frente, [frente.passadaPor, frente.passadaDe]);
       const q = quemTemAFrente({ frente, login, sessao: amb.sessaoId, rotulo, sessoesDaqui }, oGh);
       if (q.situacao === 'sem-rede') throw semRede(q.motivo);
       if (q.situacao === 'outra') soLocal = `a frente ${q.id} está ativa com @${q.login} em outra máquina`;
