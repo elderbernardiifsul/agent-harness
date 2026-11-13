@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { criarProjeto, amb, dirDoTeste } from './apoio/repo.mjs';
 import { tratar, passaNaQuebra, respostaNaQuebra } from '../nucleo/adaptadores/contrato.mjs';
-import { montarResumo } from '../nucleo/lib/resumo.mjs';
+import { linhaDoPesado, montarResumo } from '../nucleo/lib/resumo.mjs';
+import { dirDaFila } from '../nucleo/lib/fila.mjs';
 import { lerSessao, idadeDoSinalMs } from '../nucleo/lib/sessao.mjs';
 import { lerEventos } from '../nucleo/lib/estado.mjs';
 import { gravarFrente } from '../nucleo/lib/frente.mjs';
@@ -81,6 +82,34 @@ test('o resumo não passa do limite nem com nomes e caminhos enormes', async () 
   const t = montarResumo({ sessao: { id: 's1', papel: 'executor', frente: 'f0' }, frentes: [enorme, ...quarentaFrentes.slice(1)], config, baseLimpa: true });
   assert.ok(t.length <= 1200, String(t.length));
   assert.match(t, /Mais: docs\/agents\/sessoes-paralelas\.md · tools\/ah board$/);
+});
+
+test('o resumo diz quem está no pesado, numa linha, dentro do limite', async () => {
+  const e = (senha, estado, worktree, haMs) => ({ senha, estado, projeto: 'loja', worktree, classe: 'grande', haMs });
+  assert.equal(linhaDoPesado({ entradas: [], erro: null }), null);
+  assert.equal(linhaDoPesado({ entradas: [], erro: 'fila ilegível' }), null);
+  assert.equal(linhaDoPesado({ entradas: [e(2, 'rodando', '/wt/carrinho', 5 * 60000), e(3, 'esperando', '/wt/frete', 60000), e(4, 'esperando', '/wt/cupom', 0)] }),
+    'Pesado: rodando senha 2 (loja, carrinho, há 5 min); 2 esperando (tools/ah board).');
+  assert.equal(linhaDoPesado({ entradas: [e(3, 'esperando', '/wt/frete', 1000)] }), 'Pesado: ninguém rodando; 1 esperando (tools/ah board).');
+  const pesado = linhaDoPesado({ entradas: Array.from({ length: 40 }, (_, i) => e(i + 1, 'rodando', `/wt/${'x'.repeat(30)}${i}`, 1000)) });
+  assert.ok(pesado.length <= 200, String(pesado.length));
+  const t = montarResumo({ sessao: { id: 's1', papel: 'executor', frente: 'f0' }, frentes: quarentaFrentes, config, baseLimpa: true, pesado });
+  assert.ok(t.length <= 1200, String(t.length));
+  const linhas = t.split('\n');
+  assert.ok(linhas.indexOf(pesado) > 0 && linhas.indexOf(pesado) < linhas.findIndex(l => l.startsWith('Outras frentes:')), t);
+  assert.doesNotMatch(montarResumo({ sessao: { id: 's1' }, frentes: [], config, baseLimpa: true }), /Pesado:/);
+});
+
+test('inicio: o resumo mostra a fila de pesado da máquina', async t => {
+  const dir = dirDaFila(p.env);
+  fs.mkdirSync(dir, { recursive: true });
+  t.after(() => fs.rmSync(path.join(dir, 'fila.json'), { force: true }));
+  const ha = min => new Date(Date.now() - min * 60000).toISOString();
+  fs.writeFileSync(path.join(dir, 'fila.json'), JSON.stringify({ versao: 1, proximaSenha: 3, entradas: [
+    { senha: 2, pid: process.pid, inicio: null, projeto: 'loja', worktree: '/wt/carrinho', comando: 'npm run build', classe: 'grande', vagas: 1, chegou: ha(10), rodandoDesde: ha(5) },
+  ] }));
+  const r = await tratar({ tipo: 'inicio', sessao: 's7', agente: 'claude-code', cwd: p.raiz, origem: 'novo' }, amb(p));
+  assert.match(r.contexto, /^Pesado: rodando senha 2 \(loja, carrinho, há 5 min\) \(tools\/ah board\)\.$/m);
 });
 
 test('o resumo mostra avisos e frentes sem dona antes das outras, cada linha com no máximo 200 caracteres', async () => {

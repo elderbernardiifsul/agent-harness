@@ -22,7 +22,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { avaliar } from '../lib/travas.mjs';
-import { aninhamentoConferido, dirDaFila } from '../lib/fila.mjs';
+import { aninhamentoConferido, dirDaFila, retratoDaFila } from '../lib/fila.mjs';
 import { textoDaRecusa } from '../lib/recusa.mjs';
 import { comandosSimples } from '../lib/shell.mjs';
 import { registrarEvento, comTrava, lerJson, gravarJson } from '../lib/estado.mjs';
@@ -33,7 +33,7 @@ import {
   aberturaParada, frenteOrfa, pidDoAgente, processoExiste, inicioDoProcesso as inicioPadrao, descartarPidMorto, vidaDaDona,
 } from '../lib/vida.mjs';
 import { normalizarCaminho } from '../lib/caminhos.mjs';
-import { montarResumo } from '../lib/resumo.mjs';
+import { linhaDoPesado, montarResumo } from '../lib/resumo.mjs';
 import { git, topoDe, ramoAtual, limpo } from '../lib/git.mjs';
 import { gh } from '../lib/github.mjs';
 import { arquivosDaFrenteOuNulo, contaNaSobreposicao, sobreposicoes as calcularSobreposicoes } from '../lib/sobreposicao.mjs';
@@ -275,7 +275,10 @@ async function inicio(evento, amb) {
   const ambDaExtensao = { ...amb, sessaoId: id, escrever: () => {}, avisar: () => {} };
   const dasExtensoes = ativas.length ? await linhasDoResumo(ativas, ambDaExtensao, { frente: minha ?? null }) : { linhas: [], falhas: [] };
   if (dasExtensoes.falhas.length) situacao.avisos.push(`Extensão ${dasExtensoes.falhas.join(', ')} falhou no resumo (ah doctor).`);
-  const contexto = montarResumo({ sessao, frentes, config: amb.config, baseLimpa: baseLimpa(amb), situacao, extensoes: dasExtensoes.linhas });
+  // Quem está no pesado da máquina (seção 8 do desenho); a fila que não se lê não derruba o começo de sessão.
+  let pesado = null;
+  try { pesado = linhaDoPesado(retratoDaFila(dirDaFila(amb.env))); } catch { pesado = null; }
+  const contexto = montarResumo({ sessao, frentes, config: amb.config, baseLimpa: baseLimpa(amb), situacao, extensoes: dasExtensoes.linhas, pesado });
   return { contexto };
 }
 
