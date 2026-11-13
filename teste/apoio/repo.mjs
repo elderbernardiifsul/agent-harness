@@ -1,5 +1,5 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, realpathSync, readFileSync, mkdirSync, existsSync, utimesSync, chmodSync, readdirSync, lstatSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, realpathSync, readFileSync, mkdirSync, existsSync, utimesSync, chmodSync, readdirSync, lstatSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -230,4 +230,29 @@ export function envelhecerSinal(p, sessao, minutos) {
   const arquivo = join(dirDoTeste(p), 'sessoes', `${sessao}.sinal`);
   const quando = new Date(Date.now() - minutos * 60000);
   utimesSync(arquivo, quando, quando);
+}
+
+// Clone descartável do agent-harness (sem git): o núcleo, os modelos e os documentos que o init copia.
+// `gravar` e `apagar` mexem nele por caminho relativo; `ah(p, args)` roda o ah dele na pasta do projeto `p`.
+export function copiarHarness() {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'ah-teste-clone-')));
+  PASTAS_A_LIMPAR.add(base);
+  const raiz = join(base, 'agent-harness');
+  for (const rel of ['nucleo', 'modelos', 'docs/agentes', 'docs/referencia']) {
+    cpSync(join(RAIZ_HARNESS, ...rel.split('/')), join(raiz, ...rel.split('/')), { recursive: true });
+  }
+  return {
+    raiz,
+    gravar(rel, texto) {
+      const destino = join(raiz, ...rel.split('/'));
+      mkdirSync(dirname(destino), { recursive: true });
+      writeFileSync(destino, texto);
+    },
+    apagar(rel) { rmSync(join(raiz, ...rel.split('/')), { force: true }); },
+    ah(p, args, { cwd = p.raiz, env: extra = {} } = {}) {
+      const r = spawnSync(process.execPath, [join(raiz, 'nucleo', 'bin', 'ah.mjs'), ...args], { cwd, env: { ...p.env, ...extra }, encoding: 'utf8' });
+      return { codigo: r.status ?? 1, saida: r.stdout ?? '', erro: r.stderr ?? '' };
+    },
+    limpar() { apagarPastaDeTeste(base); },
+  };
 }
