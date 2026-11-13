@@ -203,6 +203,14 @@ export function reservar({ tickets, frente, login, sessao, rotulo, dirEstado = n
     }
     const quem = s.id ? `pela frente ${s.id}${s.nome ? ` (${s.nome})` : ''}, de @${s.login}` : `por @${s.login} (responsável sem frente do harness)`;
     const dona = s.id ? `dona da frente ${s.id}` : `que está no ticket #${n}`;
+    // Frente passada (sem dona) continua com a reserva: o caminho é retomá-la, não abrir outra.
+    if (s.estado === 'passada' && s.nome) {
+      return {
+        ok: false, id: s.id, login: s.login,
+        motivo: `o ticket #${n} já está reservado ${quem}, que foi passada adiante (sem dona).`,
+        saida: `retome essa frente com ah open ${s.nome} em vez de abrir outra, ou combine com @${s.login} e escolha outro ticket`,
+      };
+    }
     return {
       ok: false, id: s.id, login: s.login,
       motivo: `o ticket #${n} já está reservado ${quem}.`,

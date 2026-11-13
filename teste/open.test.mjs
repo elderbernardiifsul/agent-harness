@@ -99,8 +99,8 @@ test('nome repetido como ramo local, ramo remoto ou frente é recusado', () => {
   p.git(['fetch', 'origin']);
   assert.match(p.ah(['open', 'yy']).erro, /Faça: .*outro nome/);
   p.ah(['open', 'z1']);
-  fechaSimulado(p);
-  assert.match(p.ah(['open', 'z1']).erro, /Faça: .*outro nome/);
+  // Frente ativa de outra sessão viva: recusa apontando o handoff (a passada se retoma: teste/handoff.test.mjs).
+  assert.match(p.ah(['open', 'z1'], { env: { AH_SESSAO: 'sessao-teste-0002' } }).erro, /Faça: .*ah handoff/);
   p.limpar();
 });
 

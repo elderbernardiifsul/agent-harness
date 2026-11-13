@@ -7,9 +7,10 @@ import { frentesDa, gravarFrente, lerFrente, listarFrentes, listarFrentesToleran
 import { existeRamo, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
 import { reenviarComAviso } from '../lib/pendentes.mjs';
-import { desfazerReserva, reservar } from '../lib/reserva.mjs';
+import { desfazerReserva, marcarTickets, reservar } from '../lib/reserva.mjs';
 import { arquivosDaFrente, caminhosEmComum, tocaOsCaminhos } from '../lib/sobreposicao.mjs';
-import { gravarSessao, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
+import { gravarSessao, idCurto, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
+import { avisarDaMarcacao } from './handoff.mjs';
 import { aberturaEmCurso, inicioDoProcesso, pidDeComando, vidaDaSessao } from '../lib/vida.mjs';
 
 export const descricao = 'abre uma frente de trabalho: ramo, worktree, registro e reserva dos tickets';
@@ -138,7 +139,7 @@ export async function executar(args, amb) {
     && (f.processo?.inicio ?? null) === processoDesteOpen.inicio;
 
   // Fase 1, sob a trava: recusas locais, id e o registro `abrindo` (guarda id e nome contra outro open).
-  const { frente, partida } = await comTrava(dirEstado, 'frentes', async () => {
+  const { frente, partida, retomada } = await comTrava(dirEstado, 'frentes', async () => {
     let sessao = lerSessao(dirEstado, amb.sessaoId);
     if (!sessao) {
       const doAgente = !amb.env.AH_SESSAO && amb.env[VARIAVEL_SESSAO_CLAUDE];
@@ -151,6 +152,21 @@ export async function executar(args, amb) {
     // for a sessão); este open o toma com o mesmo id (os marcadores nos tickets são desse id). Com o processo vivo
     // há uma abertura em curso. Registro sem processo (anterior a este campo): vale a vida da sessão dona.
     const existente = lerFrente(dirEstado, o.nome);
+    // Frente ativa com o mesmo nome: não se abre nem se retoma; a saída depende da dona.
+    if (existente?.estado === 'ativa') {
+      const qual = `${existente.id} ${existente.nome}`;
+      if (existente.dona === amb.sessaoId) throw recusa(`A frente ${qual} já é desta sessão.`, `trabalhe em ${existente.worktree}`);
+      if (existente.dona && donaViva(dirEstado, existente.dona, cfg)) {
+        throw recusa(`A frente ${qual} está ativa com a sessão ${idCurto(existente.dona)}, que está viva.`,
+          `peça à sessão ${idCurto(existente.dona)} que rode ah handoff; depois rode ah open ${o.nome}`);
+      }
+      throw recusa(`A frente ${qual} está ativa, mas a dona (${existente.dona ? `sessão ${idCurto(existente.dona)}` : 'nenhuma'}) não está viva.`,
+        `para assumi-la, rode ah takeover ${o.nome}`);
+    }
+    if (existente?.estado === 'passada' && tickets.length) {
+      throw recusa(`A frente ${existente.id} ${o.nome} está passada: os tickets vêm da frente passada; rode ah open ${o.nome} sem --tickets.`,
+        `rode ah open ${o.nome} sem --tickets (com --plano e --caminhos, se quiser trocá-los)`);
+    }
     let tomado = null;
     if (existente?.estado === 'abrindo') {
       const vivaDona = existente.dona === amb.sessaoId || (Boolean(existente.dona) && donaViva(dirEstado, existente.dona, cfg));
@@ -173,6 +189,7 @@ export async function executar(args, amb) {
           `continue nela ou, antes de abrir outra, encerre com ${saidas.join('; ')} (o orquestrador abre várias: ah papel orquestrador)`);
       }
     }
+    if (existente?.estado === 'passada') return { retomada: retomarSobTrava(existente, { amb, cfg, login, plano, caminhos, remoto }) };
     const repetido = existente && !tomado ? 'frente'
       : existeRamo(amb.raiz, ramo, { env: amb.env }) ? 'ramo local'
         : existeRamo(amb.raiz, ramo, { remoto, env: amb.env }) ? 'ramo remoto' : null;
@@ -202,6 +219,7 @@ export async function executar(args, amb) {
     if (tomado) registrarEvento(dirEstado, { tipo: 'abertura-retomada', sessao: amb.sessaoId, frente: o.nome, id, de: tomado.dona ?? null });
     return { frente: nova, partida };
   }, { venceMs: 120000 });
+  if (retomada) return terminarRetomada(retomada, { amb, login, oGh, rotulo });
   const id = frente.id;
 
   // Some com o registro `abrindo` (se ainda é deste open).
@@ -272,6 +290,62 @@ export async function executar(args, amb) {
 
   // Fora da trava (o git das outras frentes pode demorar): avisos sobre quem já mexe no mesmo lugar. Nunca recusa.
   avisarDasOutrasSemFalhar(frente, caminhos, amb);
+  return 0;
+}
+
+// Retomada de frente passada, sob a trava `frentes` (a sessão já foi registrada e a regra do executor conferida):
+// recria o worktree se sumiu, grava a dona e o foco. Devolve a frente ativa.
+function retomarSobTrava(f, { amb, cfg, login, plano, caminhos, remoto }) {
+  const { dirEstado, env } = amb;
+  const wt = typeof f.worktree === 'string' && f.worktree
+    ? f.worktree : path.join(dirWorktrees(cfg, env, process.platform, os.homedir()), f.nome);
+  if (!fs.existsSync(wt)) {
+    // Registro velho de um worktree apagado à mão impediria o add.
+    git(['worktree', 'prune'], { cwd: amb.raiz, env });
+    let args;
+    if (existeRamo(amb.raiz, f.ramo, { env })) args = ['worktree', 'add', wt, f.ramo];
+    else if (existeRamo(amb.raiz, f.ramo, { remoto, env })) args = ['worktree', 'add', '--track', '-b', f.ramo, wt, `${remoto}/${f.ramo}`];
+    else {
+      throw recusa(`O worktree da frente ${f.id} ${f.nome} não existe e o ramo ${f.ramo} não está aqui nem em ${remoto}.`,
+        `se o trabalho foi para outro lugar, encerre o registro com ah close ${f.nome}; se o ramo está em outro remoto, traga-o (git fetch) e rode ah open ${f.nome} de novo`);
+    }
+    const g = git(args, { cwd: amb.raiz, env });
+    if (g.codigo !== 0) {
+      throw recusa(`O git não recriou o worktree da frente ${f.nome}: ${(g.erro.trim() || 'sem mensagem').slice(0, 300)}`,
+        `resolva o que o git descreve e rode ah open ${f.nome} de novo; a frente continua passada`);
+    }
+  }
+  const de = f.passadaPor ?? null;
+  const retomada = { ...f, worktree: wt, dona: amb.sessaoId, estado: 'ativa', retomadaEm: new Date().toISOString() };
+  if (plano !== null) retomada.plano = plano;
+  if (caminhos.length) retomada.caminhos = caminhos;
+  gravarFrente(dirEstado, retomada);
+  const sessao = lerSessao(dirEstado, amb.sessaoId);
+  if (sessao) gravarSessao(dirEstado, { ...sessao, frente: retomada.nome });
+  registrarEvento(dirEstado, { tipo: 'retomada', sessao: amb.sessaoId, frente: retomada.nome, id: retomada.id, de, login });
+  return retomada;
+}
+
+// Depois da trava: a retomada nos tickets (sem rede vai para a fila), a lista de logins da reserva e os avisos.
+async function terminarRetomada(frente, { amb, login, oGh, rotulo }) {
+  if ((frente.tickets ?? []).length) {
+    const r = marcarTickets({
+      frente, tipo: 'retomada', texto: `Frente ${frente.id} (${frente.nome}) retomada por @${login}.`,
+      login, sessao: amb.sessaoId, rotulo, dirEstado: amb.dirEstado, reatribuir: true,
+    }, oGh);
+    avisarDaMarcacao(r, amb.avisar);
+    if (frente.reserva && r.logins.length !== (frente.reserva.logins ?? []).length) {
+      await comTrava(amb.dirEstado, 'frentes', async () => {
+        const atual = lerFrente(amb.dirEstado, frente.nome);
+        if (atual?.id !== frente.id || atual.dona !== amb.sessaoId || !atual.reserva) return;
+        atual.reserva = { ...atual.reserva, logins: [...new Set([...(atual.reserva.logins ?? []), ...r.logins])] };
+        gravarFrente(amb.dirEstado, atual);
+        frente.reserva = atual.reserva;
+      });
+    }
+  }
+  amb.escrever(`Frente ${frente.id} ${frente.nome} retomada.\nTrabalhe em: ${frente.worktree}\n`);
+  avisarDasOutrasSemFalhar(frente, Array.isArray(frente.caminhos) ? frente.caminhos.filter(c => typeof c === 'string') : [], amb);
   return 0;
 }
 
