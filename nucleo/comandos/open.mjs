@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { ErroDeUso, arquivoDaMaquina, dirWorktrees } from '../lib/caminhos.mjs';
 import { comTrava, lerJson, registrarEvento } from '../lib/estado.mjs';
+import { reagir } from '../lib/extensoes.mjs';
 import { frentesDa, gravarFrente, lerFrente, listarFrentes, listarFrentesTolerante, nomeValido, novaFrente, proximoId, removerFrente, siglaValida } from '../lib/frente.mjs';
 import { existeRamo, git, recusaDoWorktree } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
@@ -345,7 +346,15 @@ export async function executar(args, amb) {
 
   // Fora da trava (o git das outras frentes pode demorar): avisos sobre quem já mexe no mesmo lugar. Nunca recusa.
   avisarDasOutrasSemFalhar(frente, caminhos, amb);
+  await reagirDepoisDeAbrir(frente, amb, false);
   return 0;
+}
+
+// Reação das extensões à frente aberta (ou retomada): erro vira aviso, e a frente fica aberta.
+async function reagirDepoisDeAbrir(frente, amb, retomada) {
+  let atual = frente;
+  try { atual = lerFrente(amb.dirEstado, frente.nome) ?? frente; } catch { /* vale a que temos */ }
+  await reagir('depoisDeAbrir', amb, { frente: atual, retomada });
 }
 
 // Retomada de frente passada, sob a trava `frentes` (a sessão já foi registrada e a regra do executor conferida):
@@ -445,6 +454,7 @@ async function terminarRetomada(frente, { amb, login, oGh, rotulo, remota = null
   if (destino) registrarEvento(amb.dirEstado, { tipo: 'atribuicao', sessao: amb.sessaoId, para: destino, frente: frente.nome, id: frente.id });
   amb.escrever(`Frente ${frente.id} ${frente.nome} retomada.\n${destino ? `Dona: sessão ${idCurto(destino)} (retomada por esta sessão).\n` : ''}Trabalhe em: ${frente.worktree}\n`);
   avisarDasOutrasSemFalhar(frente, Array.isArray(frente.caminhos) ? frente.caminhos.filter(c => typeof c === 'string') : [], amb);
+  await reagirDepoisDeAbrir(frente, amb, true);
   return 0;
 }
 

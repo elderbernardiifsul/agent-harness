@@ -19,6 +19,7 @@ import { mesclarGanchos } from './init.mjs';
 import { ADAPTADORES, O_QUE_SE_PERDE, agenteEmUso } from '../adaptadores/registro.mjs';
 import { dirDaFila, retratoDaFila } from '../lib/fila.mjs';
 import { arquivosDaCopia, citar, diferenca, eClone, lerManifesto, listaDoManifesto, versaoDoClone } from '../lib/copia.mjs';
+import { itensDoDoctor } from '../lib/extensoes.mjs';
 
 export const descricao = 'confere se o projeto está bem preparado';
 export const uso = 'ah doctor [--json]';
@@ -483,6 +484,14 @@ export async function executar(args, amb) {
   }
   if (completo.config && !completo.dirEstado) completo.dirEstado = caminhoDoEstado(completo.config.projeto, amb.env, process.platform, os.homedir());
   const itens = rodar(completo);
+  // Depois dos itens do núcleo: o item "Extensões" e as verificações das extensões (só com configuração legível).
+  if (completo.config && completo.raiz) {
+    try {
+      itens.push(...await itensDoDoctor(completo));
+    } catch (e) {
+      itens.push(falha('Extensões', `erro interno: ${String(e?.message ?? e).split('\n')[0]}`));
+    }
+  }
   const falhas = itens.filter(i => i.estado === 'falha').length;
   const avisos = itens.filter(i => i.estado === 'aviso').length;
   if (args.includes('--json')) {

@@ -48,7 +48,9 @@ function linhasDaSituacao({ semDona = [], sobreposicoes = [], avisos = [] }) {
 }
 
 // `situacao` = {semDona: [{id, nome, saida}], sobreposicoes: [{arquivo, frentes: [ids das outras frentes]}], avisos: [texto]}.
-export function montarResumo({ sessao, frentes = [], config, baseLimpa, situacao = {} }) {
+// `extensoes`: linhas das extensões (até duas de cada, já juntadas), somadas antes da cauda; se não couberem no
+// limite nem sem a lista das outras frentes, saem as últimas.
+export function montarResumo({ sessao, frentes = [], config, baseLimpa, situacao = {}, extensoes = [] }) {
   const minha = nomeDaFrente(sessao.frente);
   const listadasSemDona = new Set((situacao.semDona ?? []).map(f => f.nome));
   const outras = frentes.filter(f => f.nome !== minha && !listadasSemDona.has(f.nome))
@@ -65,19 +67,24 @@ export function montarResumo({ sessao, frentes = [], config, baseLimpa, situacao
     `Regras: trabalhe no worktree da sua frente; git add só por caminho; push e merge em ${protegidos} só com ordem do executivo.`,
     'Mais: docs/agents/sessoes-paralelas.md · tools/ah board',
   ];
-  const montar = n => {
+  const dasExtensoes = extensoes.map(l => linha(l, LIMITE_LINHA_DA_SITUACAO)).filter(Boolean);
+  const montar = (n, k = dasExtensoes.length) => {
     let lista = 'nenhuma';
     if (outras.length) {
       lista = outras.slice(0, n).join('; ');
       if (n < outras.length) lista += `${n ? '; ' : ''}e mais ${outras.length - n} frentes (tools/ah board)`;
     }
-    return [...cabeca, `Outras frentes: ${lista}`, ...cauda].join('\n');
+    return [...cabeca, `Outras frentes: ${lista}`, ...dasExtensoes.slice(0, k), ...cauda].join('\n');
   };
   for (let n = outras.length; n > 0; n--) {
     const t = montar(n);
     if (t.length <= LIMITE_RESUMO) return t;
   }
-  const t = montar(0);
+  for (let k = dasExtensoes.length; k > 0; k--) {
+    const t = montar(0, k);
+    if (t.length <= LIMITE_RESUMO) return t;
+  }
+  const t = montar(0, 0);
   // Os campos já vêm cortados; a garantia final vale para configurações absurdas.
   return t.length <= LIMITE_RESUMO ? t : `${t.slice(0, LIMITE_RESUMO - cauda[2].length - 2)}…\n${cauda[2]}`;
 }

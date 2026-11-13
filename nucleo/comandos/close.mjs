@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ErroDeUso } from '../lib/caminhos.mjs';
 import { comTrava, registrarEvento } from '../lib/estado.mjs';
+import { reagir, recusaAntesDeFechar } from '../lib/extensoes.mjs';
 import { frentesDa, gravarFrente, lerFrente, linhaDoHistorico, listarFrentesTolerante, nomeValido, removerFrente } from '../lib/frente.mjs';
 import { existeRamo, ramoAtual, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
@@ -226,6 +227,18 @@ export async function executar(args, amb) {
     }
     const primeiros = conferir();
     if (primeiros.length) recusarProblemas(primeiros);
+    // As extensões conferem o que é delas (antesDeFechar) antes de qualquer mudança; a que recusa (ou falha) para
+    // o close aqui. O que ela gravou na frente volta para o objeto que o close grava adiante.
+    const daExtensao = await recusaAntesDeFechar(amb, { frente, dentroDaTrava: true });
+    if (daExtensao) {
+      throw recusa(daExtensao.falhou
+        ? `a extensão ${daExtensao.extensao} falhou em antesDeFechar: ${daExtensao.motivo}`
+        : `a extensão ${daExtensao.extensao} não deixa fechar a frente ${frente.id} ${frente.nome}: ${daExtensao.motivo}`, daExtensao.saida);
+    }
+    try {
+      const relida = lerFrente(dirEstado, frente.nome);
+      if (relida?.extensoes !== undefined) frente.extensoes = relida.extensoes;
+    } catch { /* fica o que já estava no objeto */ }
 
     // Frente passada com tickets: outra máquina pode tê-la retomado, ou retomá-la enquanto este close comenta.
     // Então este close primeiro toma a frente pela mesma corrida da retomada (marcador `retomada` desta sessão) e
@@ -361,6 +374,7 @@ export async function executar(args, amb) {
     soltarFoco(sessao);
     soltarFoco(sessaoDona);
     registrarEvento(dirEstado, { tipo: soLocal ? 'fechamento-local' : 'fechamento', sessao: amb.sessaoId, id: frente.id, nome: frente.nome, frente: frente.nome, aberta: frente.abertaEm, fechada: new Date().toISOString() });
+    await reagir('depoisDeFechar', amb, { frente, dentroDaTrava: true, soLocal: Boolean(soLocal) });
 
     // 7. Saída.
     if (soLocal) {

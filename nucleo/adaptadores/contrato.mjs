@@ -37,6 +37,7 @@ import { montarResumo } from '../lib/resumo.mjs';
 import { git, topoDe, ramoAtual, limpo } from '../lib/git.mjs';
 import { gh } from '../lib/github.mjs';
 import { arquivosDaFrenteOuNulo, contaNaSobreposicao, sobreposicoes as calcularSobreposicoes } from '../lib/sobreposicao.mjs';
+import { ativasOuNada, frenteDaSessao, linhasDoResumo, travasDasExtensoes } from '../lib/extensoes.mjs';
 
 const LIMITE_COMANDO_NO_EVENTO = 500;
 const LIMITE_MOTIVO = 300;
@@ -125,8 +126,18 @@ function vidaDasDonas(amb) {
   };
 }
 
-function contextoDasTravas(amb, sessao) {
+// As travas das extensões ligadas, com o ctx delas. Nas travas, escrever e avisar não mostram nada (a saída do
+// gancho é do agente); a frente é a da sessão do evento.
+async function travasDeExtensao(amb, sessao) {
+  const ativas = await ativasOuNada(amb);
+  if (!ativas.some(e => e.def.travas?.length)) return [];
+  const ambDaTrava = { ...amb, sessaoId: sessao, escrever: () => {}, avisar: () => {} };
+  return travasDasExtensoes(ativas, ambDaTrava, { frente: frenteDaSessao(amb.dirEstado, sessao, lerSessao) });
+}
+
+function contextoDasTravas(amb, sessao, extensoes = []) {
   return {
+    extensoes,
     sessao,
     frentes: frentesDeOutras(sessao, amb),
     viva: vidaDasDonas(amb),
@@ -260,7 +271,11 @@ async function inicio(evento, amb) {
   const minha = typeof sessao.frente === 'string' ? frentes.find(f => f.nome === sessao.frente && f.dona === id) : null;
   const semDona = frentesSemDona(frentes, sessao.frente, amb);
   const situacao = { semDona: semDona.lista, sobreposicoes: sobreposicoesDaSessao(minha, frentes, amb), avisos: [...avisos, ...semDona.ilegiveis] };
-  const contexto = montarResumo({ sessao, frentes, config: amb.config, baseLimpa: baseLimpa(amb), situacao });
+  const ativas = await ativasOuNada(amb);
+  const ambDaExtensao = { ...amb, sessaoId: id, escrever: () => {}, avisar: () => {} };
+  const dasExtensoes = ativas.length ? await linhasDoResumo(ativas, ambDaExtensao, { frente: minha ?? null }) : { linhas: [], falhas: [] };
+  if (dasExtensoes.falhas.length) situacao.avisos.push(`Extensão ${dasExtensoes.falhas.join(', ')} falhou no resumo (ah doctor).`);
+  const contexto = montarResumo({ sessao, frentes, config: amb.config, baseLimpa: baseLimpa(amb), situacao, extensoes: dasExtensoes.linhas });
   return { contexto };
 }
 
@@ -315,16 +330,18 @@ async function antes(evento, amb) {
   try { await manterVivo(evento, amb, { esperaMs: ESPERA_DA_TRAVA_NO_ANTES_MS }); } catch { /* segue para as travas */ }
   const { acao } = evento;
   if (acao?.tipo === 'outra') return { decisao: 'permite' };
-  const r = avaliar({ ...acao, cwd: evento.cwd ?? null }, contextoDasTravas(amb, evento.sessao));
+  const r = avaliar({ ...acao, cwd: evento.cwd ?? null }, contextoDasTravas(amb, evento.sessao, await travasDeExtensao(amb, evento.sessao)));
+  // Trava de extensão: o id é `<extensão>/<id>`, e o evento diz de qual extensão é.
+  const daExtensao = t => (typeof t === 'string' && t.includes('/') ? { extensao: t.split('/')[0] } : {});
   const comando = acao.tipo === 'comando' ? cortar(acao.comando, LIMITE_COMANDO_NO_EVENTO) : undefined;
   if (!r.permite) {
     const daEdicao = acao.tipo === 'edicao'
       ? { ferramenta: acao.ferramenta, caminho: typeof acao.arquivo === 'string' ? path.resolve(evento.cwd ?? amb.raiz, acao.arquivo) : undefined }
       : {};
-    registrarEvento(amb.dirEstado, { tipo: 'recusa', sessao: evento.sessao, trava: r.trava, comando, ...daEdicao });
+    registrarEvento(amb.dirEstado, { tipo: 'recusa', sessao: evento.sessao, trava: r.trava, ...daExtensao(r.trava), comando, ...daEdicao });
     return { decisao: 'recusa', mensagem: textoDaRecusa(r) };
   }
-  if (r.liberada) registrarEvento(amb.dirEstado, { tipo: 'liberacao', sessao: evento.sessao, trava: r.liberada, comando });
+  if (r.liberada) registrarEvento(amb.dirEstado, { tipo: 'liberacao', sessao: evento.sessao, trava: r.liberada, ...daExtensao(r.liberada), comando });
   return { decisao: 'permite' };
 }
 

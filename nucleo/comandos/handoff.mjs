@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { ErroDeUso } from '../lib/caminhos.mjs';
 import { comTrava, registrarEvento } from '../lib/estado.mjs';
+import { reagir } from '../lib/extensoes.mjs';
 import { frentesDa, gravarFrente, lerFrente, listarFrentes, listarFrentesTolerante, nomeValido } from '../lib/frente.mjs';
 import { git, recusaDoWorktree } from '../lib/git.mjs';
 import { loginDeQuemAge } from '../lib/github.mjs';
@@ -174,6 +175,7 @@ export async function executar(args, amb) {
     const naFila = passada.tickets.filter(n => pendentesDoTicket(dirEstado, n).some(op => op.tipo === 'comentario' && op.corpo === corpo));
     avisarDaMarcacao({ comentariosNaFila: naFila, edicoesNaFila: [] }, amb.avisar);
   }
+  await reagir('aoPassar', amb, { frente: passada });
   amb.escrever(`Frente ${passada.id} ${passada.nome} passada.\nPara retomar: tools/ah open ${passada.nome}\n`);
   return 0;
 }

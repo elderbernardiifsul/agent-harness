@@ -9,6 +9,7 @@
 //       escrevem arquivo, redirecionamentos e edição de arquivo
 //   T5  push e merge de PR em ramo protegido
 //   T6  comando de uma classe de trabalho pesado (pesado.classes) fora do `ah pesado`
+//   <extensão>/<id>  travas das extensões ligadas (`ctx.extensoes`), avaliadas depois destas
 //
 // Limites conhecidos (a trava enxerga a mais, não a tudo): apelidos do git
 // (`-c alias.x=push`), `gh api` direto, `push.default` e `remote.*.push` da
@@ -767,15 +768,56 @@ function novasTrocas(ctx) {
 
 const TRAVAS = [travaT1, travaT2, travaT3, travaT4, travaT5, travaT6];
 
+// ---------------------------------------------------------------- travas de extensão
+
+const SAIDA_DA_TRAVA_QUEBRADA = 'corrija a extensão ou desligue-a em .harness/config.json';
+
+// `AH_GUARD=off` libera a trava de extensão quando todo comando simples da linha (fora o `cd`) o traz: a trava
+// julga a ação inteira e não diz qual comando a ofendeu.
+function liberavel(comandos) {
+  const contam = (comandos ?? []).filter(c => c.argv.length && nomeDe(c.argv[0]) !== 'cd');
+  return contam.length > 0 && contam.every(c => c.env?.AH_GUARD === 'off');
+}
+
+// As travas das extensões (`ctx.extensoes`: [{id: '<extensão>/<id>', avaliar(acao)}]), depois das do núcleo.
+// `avaliar` é síncrona e devolve null ou {motivo, saida}; a que lança (ou devolve promessa) recusa.
+function travasDeExtensao(acao, comandos, ctx, liberadaAntes) {
+  let liberada = liberadaAntes;
+  const lista = Array.isArray(ctx.extensoes) ? ctx.extensoes : [];
+  if (lista.length) {
+    const vista = Object.freeze({
+      ...acao,
+      ...(comandos ? { comandos: comandos.map(c => Object.freeze({ argv: [...c.argv], cwd: c.cwd ?? null, env: { ...(c.env ?? {}) } })) } : {}),
+    });
+    for (const t of lista) {
+      let r;
+      try {
+        r = t.avaliar(vista);
+        if (r && typeof r.then === 'function') {
+          r.then(null, () => {});
+          throw new Error('avaliar devolveu uma promessa; a trava de extensão é síncrona');
+        }
+      } catch (e) {
+        r = { motivo: `a trava falhou: ${String(e?.message ?? e).split('\n')[0].slice(0, 200)}`, saida: SAIDA_DA_TRAVA_QUEBRADA };
+      }
+      if (!r) continue;
+      const saida = typeof r.saida === 'string' && r.saida.trim() ? r.saida : `veja a extensão ${t.id.split('/')[0]}, ou desligue-a em .harness/config.json`;
+      if (liberavel(comandos)) { liberada ??= t.id; continue; }
+      return recusa(t.id, String(r.motivo ?? 'recusado pela extensão'), saida);
+    }
+  }
+  return liberada ? { permite: true, liberada } : { permite: true };
+}
+
 export function avaliar(acao, ctx) {
-  if (acao?.tipo === 'edicao') return travaT4Edicao(acao, ctx) ?? { permite: true };
+  if (acao?.tipo === 'edicao') return travaT4Edicao(acao, ctx) ?? travasDeExtensao(acao, null, ctx);
   if (acao?.tipo !== 'comando') throw new TypeError(`avaliar: tipo de ação desconhecido: ${acao?.tipo}`);
   let comandos;
   try {
     comandos = comandosSimples(acao.comando, acao.cwd ?? null);
   } catch (e) {
     if (!(e instanceof ErroDeShell)) throw e;
-    return PALAVRA_GIT.test(acao.comando) ? recusaT0(`não consegui ler o comando (${e.message}) e ele menciona git ou gh`) : { permite: true };
+    return PALAVRA_GIT.test(acao.comando) ? recusaT0(`não consegui ler o comando (${e.message}) e ele menciona git ou gh`) : travasDeExtensao(acao, null, ctx);
   }
   let liberada;
   const trocas = novasTrocas(ctx);
@@ -801,5 +843,5 @@ export function avaliar(acao, ctx) {
     if (r.trava !== 'T0' && cmd.env?.AH_GUARD === 'off') { liberada ??= r.trava; continue; }
     return r;
   }
-  return liberada ? { permite: true, liberada } : { permite: true };
+  return travasDeExtensao(acao, comandos, ctx, liberada);
 }

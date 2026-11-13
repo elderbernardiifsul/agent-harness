@@ -1,5 +1,6 @@
 import { ErroDeUso } from '../lib/caminhos.mjs';
 import { achados, reparar } from '../lib/varredura.mjs';
+import { reagir } from '../lib/extensoes.mjs';
 
 export const descricao = 'acha o que está fora do lugar no estado (frente órfã, worktree sumido, sessão morta) e repara o estado';
 export const uso = 'ah sweep [--reparar] [--json]';
@@ -16,11 +17,17 @@ export async function executar(args, amb) {
   }
   const reparos = consertar ? await reparar(amb) : [];
   const lista = achados(amb);
+  // noSweep de cada extensão: as linhas que ela quer mostrar; `reparar` diz se pode consertar.
+  const dasExtensoes = {};
+  for (const { extensao, valor } of await reagir('noSweep', amb, { reparar: consertar })) {
+    dasExtensoes[extensao] = (Array.isArray(valor) ? valor : valor == null ? [] : [valor]).map(l => String(l).replace(/\s+/g, ' ').trim()).filter(Boolean);
+  }
   if (json) {
-    amb.escrever(`${JSON.stringify({ reparos, achados: lista })}\n`);
+    amb.escrever(`${JSON.stringify({ reparos, achados: lista, ...(Object.keys(dasExtensoes).length ? { extensoes: dasExtensoes } : {}) })}\n`);
     return 0;
   }
   if (consertar) amb.escrever(reparos.length ? `Reparos:\n${reparos.map(l => `  ${l}\n`).join('')}` : 'Reparos: nada a fazer.\n');
   amb.escrever(lista.length ? lista.map(a => `- ${a.tipo}: ${a.detalhe}. Faça: ${a.saida}\n`).join('') : 'Nada fora do lugar.\n');
+  for (const [nome, linhas] of Object.entries(dasExtensoes)) for (const l of linhas) amb.escrever(`- ${nome}: ${l}\n`);
   return 0;
 }
