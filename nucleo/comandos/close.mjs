@@ -291,11 +291,12 @@ export async function executar(args, amb) {
     const novos = conferir();
     if (novos.length) recusarProblemas(novos);
     if (temWt) {
-      // A reconferência acabou de passar: só agora o --force (para ignorados) é seguro.
-      let r = g(['worktree', 'remove', '--', wt]);
-      if (r.codigo !== 0 && o.descartarIgnorados) r = g(['worktree', 'remove', '--force', '--', wt]);
+      // Nunca com --force: o remove simples já apaga os ignorados, e só falha com alteração ou arquivo novo, que
+      // pode ser trabalho escrito depois da reconferência.
+      const r = g(['worktree', 'remove', '--', wt]);
       if (r.codigo !== 0) {
-        throw recusa(`O git não removeu o worktree ${wt}: ${r.erro.trim().split('\n')[0]}`, `resolva o que o git descreve e rode ah close de novo`);
+        throw recusa(`O git não removeu o worktree ${wt}: ${(r.erro || r.saida || `código ${r.codigo}`).trim().split('\n')[0]} (apareceu alteração ou arquivo novo depois da conferência?)`,
+          `confira o que apareceu (git -C ${wt} status), guarde ou apague e rode ah close de novo; nada foi apagado`);
       }
     } else {
       g(['worktree', 'prune']);

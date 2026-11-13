@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { criarProjeto, envelhecerSinal } from './apoio/repo.mjs';
 
 const HISTORICO = 'docs/agents/historico-das-frentes.md';
@@ -493,3 +494,21 @@ test('close libera: tira responsável e rótulo e comenta o fechamento como livr
   assert.match(t.comments.at(-1).body, /fechada\.[\s\S]*soma[\s\S]*ah:fechamento id=as-1 .*estado=livre/);
   p.limpar();
 });
+
+// ---- Segunda onda: o remove do worktree nunca usa --force
+test('arquivo novo que aparece antes do worktree remove: close recusa e não apaga, mesmo com --descartar-ignorados',
+  { skip: process.platform === 'win32' ? 'embrulho do git em sh' : false }, t => {
+    const { p, wt } = comFrente();
+    t.after(() => p.limpar());
+    mescla(p);
+    const gitReal = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+    const dirBin = path.join(path.dirname(p.raiz), 'bin-embrulho');
+    fs.mkdirSync(dirBin, { recursive: true });
+    fs.writeFileSync(path.join(dirBin, 'git'), `#!/bin/sh\ncase "$*" in *"worktree remove"*) eval "ult=\\\${$#}"; echo novo > "$ult/novo.txt";; esac\nexec "${gitReal}" "$@"\n`);
+    fs.chmodSync(path.join(dirBin, 'git'), 0o755);
+    const r = p.ah(['close', '--descartar-ignorados'], { env: { PATH: `${dirBin}${path.delimiter}${p.env.PATH ?? process.env.PATH}` } });
+    assert.equal(r.codigo, 1, r.saida + r.erro);
+    assert.match(r.erro, /^Recusado: O git não removeu o worktree/m);
+    assert.match(r.erro, /Faça: .*git -C .* status/);
+    assert.equal(fs.readFileSync(path.join(wt, 'novo.txt'), 'utf8'), 'novo\n');
+  });

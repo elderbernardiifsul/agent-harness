@@ -434,7 +434,7 @@ Fecha a frente em foco da sessão sem perder trabalho: confere que o ramo foi me
 
 - **Tickets:** em cada um, o comentário `Frente as-1 (carrinho) fechada.` com o resumo e o marcador `fechamento` (`estado=livre`); com reserva, tira o rótulo e os responsáveis que a frente pôs (os da reserva local e os que os marcadores do ticket mostram, menos os logins que outra frente ativa no ticket segura; o rótulo fica se outra frente ainda o segura). O ticket não é fechado. Uma vez só, mesmo se o `close` for repetido.
 - **Fila:** o que falha por rede (comentário ou edição) entra na fila de pendentes, em ordem, e sai no próximo comando com rede (todo comando que mexe em ticket reenvia antes); o `close` avisa `o comentário ficou na fila; sai no próximo comando com rede`. Erro permanente (ticket inexistente) tira a operação da fila e a guarda em `pendentes-descartados.jsonl`. `ah doctor` e `ah sweep` mostram a fila; `ah sweep --reparar` a reenvia.
-- `--descartar-ignorados`: aceita perder os arquivos ignorados pelo git que estão no worktree (`node_modules/`, caches…); sem ela, o `close` recusa e lista esses itens.
+- `--descartar-ignorados`: aceita perder os arquivos ignorados pelo git que estão no worktree (`node_modules/`, caches…); sem ela, o `close` recusa e lista esses itens. O worktree sai sempre com `git worktree remove` sem `--force` (que já apaga os ignorados): se aparecer alteração ou arquivo novo entre a conferência e a remoção, o `close` recusa e não apaga nada.
 - `<nome>` fecha uma frente pelo nome. Se a dona não está viva (encerrada, morta ou sem registro) ou a frente está passada, esta sessão a fecha, com as mesmas conferências, e a saída diz `A frente era da sessão <id>, já encerrada; esta sessão a fechou.` (ou `que não está viva (<motivo>)`, ou `A frente estava passada pela sessão sessao-t, sem dona; esta sessão a fechou.`).
 - **Frente passada com tickets:** outra máquina pode tê-la retomado. O `close` primeiro a toma nos tickets pela mesma corrida da retomada e só então fecha; se ela está ativa com outra máquina (ou já foi fechada lá), fecha só o registro e o worktree daqui, sem comentar nem mexer nos tickets e sem mudar o histórico. Sem rede, recusa.
 - **Abertura parada:** com o registro `abrindo` e o processo do `open` morto, o `close` só desfaz a abertura: tira a reserva dos tickets onde ela é desta frente (comentário `desistencia`), apaga o registro e lista o que sobrou para limpar à mão. Sem linha no histórico nem commit.
@@ -464,6 +464,7 @@ A linha `Falta: git push …` só aparece quando o projeto tem remoto. O `close`
 | `Não fechei carrinho: há operações desta máquina na fila para #1 que precisam sair antes.` | tente de novo com rede; nada foi apagado |
 | `Não fechei carrinho: preciso do GitHub para confirmar que ninguém retomou carrinho (…).` | tente de novo com rede; nada foi apagado |
 | `Não consegui conferir …` | resolva o que o git descreve; nada foi apagado |
+| `O git não removeu o worktree <wt>: … (apareceu alteração ou arquivo novo depois da conferência?)` | confira o que apareceu (`git -C <wt> status`), guarde ou apague e rode `ah close` de novo; nada foi apagado |
 
 ## gancho
 
