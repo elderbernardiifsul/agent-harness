@@ -1,6 +1,6 @@
 {
   "name": "agent-harness",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Harness de programação com vários agentes.",
   "type": "module",
   "license": "MIT",
