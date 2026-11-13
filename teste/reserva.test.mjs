@@ -608,6 +608,32 @@ test('quem escreve depois desiste mesmo tendo aberto antes e com id menor (ordem
   assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'ativa');
 });
 
+test('close de abertura parada: a leitura dos tickets roda fora da trava, e o registro fica com o close até ele terminar', async t => {
+  const p = projeto(t);
+  gravarAbrindo(p, { id: 'as-7', tickets: [1], processo: { pid: await pidMorto(), inicio: null } });
+  p.ghSemear(1, { assignees: ['ana-souza'], labels: ['em-andamento'], comments: [{ author: 'ana-souza', body: marcadorDe('as-7', 'carrinho', 'ana-souza') }] });
+  const pausa = path.join(path.dirname(p.raiz), 'pausa');
+  const c = ahAssinc(p, ['close', 'carrinho'], { GH_FALSO_PAUSA: pausa });
+  try {
+    await esperarArquivo(`${pausa}.chegou`);
+    const B = { env: { AH_SESSAO: 'sessao-b-0002' } };
+    const inicio = Date.now();
+    const w = p.ah(['whoami'], B);
+    assert.equal(w.codigo, 0, w.erro);
+    assert.ok(Date.now() - inicio < 4000, 'o whoami esperou a trava');
+    const o = p.ah(['open', 'carrinho'], B);
+    assert.equal(o.codigo, 1);
+    assert.match(o.erro, /abertura da frente carrinho em curso/);
+  } finally {
+    fs.writeFileSync(`${pausa}.solta`, '');
+  }
+  const r = await c;
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Abertura de as-7 carrinho desfeita/);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho'), null);
+  assert.match(p.ghTicket(1).comments.at(-1).body, /ah:desistencia id=as-7 /);
+});
+
 test('close de abertura parada com outro login tira a responsável que a reserva pôs', async t => {
   const p = projeto(t);
   gravarAbrindo(p, { id: 'as-7', tickets: [1], processo: { pid: await pidMorto(), inicio: null } });

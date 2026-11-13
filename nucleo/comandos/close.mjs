@@ -174,6 +174,42 @@ export async function executar(args, amb) {
     } catch { /* registro ilegível ou apagado: a marca de um processo morto não vale */ }
   };
 
+  // Abertura parada: a desistência nos tickets fora da trava; depois, sob a trava, tira o registro se ainda é deste
+  // close (só então: outro processo que o tomou responde por ele).
+  async function desfazerAbrindo(frente) {
+    const oGh = { cwd: raiz, env, avisar: amb.avisar };
+    const login = loginAtual(oGh) ?? frente.abertaPor ?? 'local';
+    const r = desfazerAbertura({ frente, login, sessao: amb.sessaoId, rotulo: cfg.github.rotuloDeReserva, dirEstado }, oGh);
+    if (r.naoLidos.length) {
+      amb.avisar(`Aviso: não consegui ler ${r.naoLidos.map(n => `#${n}`).join(', ')}; confira à mão se a frente ${frente.id} ainda está de responsável e com o rótulo lá.\n`);
+    }
+    for (const f of r.ficaram) {
+      amb.avisar(`Aviso: @${f.login} continua de responsável no ticket #${f.ticket} (${f.motivo}).${f.motivo.startsWith('outra') ? '' : ` Se precisar, tire à mão: gh issue edit ${f.ticket} --remove-assignee ${f.login}`}\n`);
+    }
+    await comTrava(dirEstado, 'frentes', async () => {
+      const atual = lerFrente(dirEstado, frente.nome);
+      const deste = atual?.id === frente.id && atual.estado === 'abrindo' && atual.processo?.pid === processoDeste.pid
+        && (atual.processo?.inicio ?? null) === processoDeste.inicio;
+      if (!deste) {
+        throw recusa(`O registro da frente ${frente.nome} mudou enquanto eu desfazia a abertura (${atual ? `agora ${atual.id}, ${atual.estado}` : 'sumiu'}); não mexi nele.`,
+          `rode ah board para ver como ela está${r.tickets.length ? `; nos tickets: ${r.texto}` : ''}`);
+      }
+      removerFrente(dirEstado, frente.nome);
+      for (const id of new Set([amb.sessaoId, frente.dona].filter(Boolean))) {
+        const s = lerSessao(dirEstado, id);
+        if (s && (s.frente?.nome ?? s.frente) === frente.nome) gravarSessao(dirEstado, { ...s, frente: null });
+      }
+      registrarEvento(dirEstado, { tipo: 'abertura-desfeita', sessao: amb.sessaoId, id: frente.id, nome: frente.nome, frente: frente.nome, tickets: r.tickets });
+      await reagir('depoisDeFechar', amb, { frente, dentroDaTrava: true, soLocal: false, aberturaDesfeita: true });
+    }, { venceMs: 120000 });
+    const sobras = [];
+    if (existeRamo(raiz, frente.ramo, { env })) sobras.push(`git branch -D ${frente.ramo}`);
+    if (typeof frente.worktree === 'string' && fs.existsSync(frente.worktree)) sobras.unshift(`git worktree remove ${frente.worktree}`);
+    if (sobras.length) amb.avisar(`Sobrou coisa com esse nome. Para limpar à mão (confira antes se há trabalho a guardar):\n${sobras.map(x => `  ${x}`).join('\n')}\n`);
+    amb.escrever(`Abertura de ${frente.id} ${frente.nome} desfeita.${r.texto ? ` Reserva: ${r.texto}.` : ''}\n`);
+    return 0;
+  }
+
   // Fase 1, sob a trava: recusas locais, conferências de perda de trabalho, antesDeFechar e a marca `fechando`.
   const fase1 = await comTrava(dirEstado, 'frentes', async () => {
     const sessao = lerSessao(dirEstado, amb.sessaoId);
@@ -216,27 +252,13 @@ export async function executar(args, amb) {
       // As extensões também conferem a abertura desfeita (podem ter gravado na frente no meio do open).
       const daExtensao = await recusaAntesDeFechar(amb, { frente, dentroDaTrava: true, aberturaDesfeita: true });
       if (daExtensao) throw recusaDaExtensao(daExtensao, frente);
-      const oGh = { cwd: raiz, env, avisar: amb.avisar };
-      const login = loginAtual(oGh) ?? frente.abertaPor ?? 'local';
-      const r = desfazerAbertura({ frente, login, sessao: amb.sessaoId, rotulo: cfg.github.rotuloDeReserva, dirEstado }, oGh);
-      if (r.naoLidos.length) {
-        amb.avisar(`Aviso: não consegui ler ${r.naoLidos.map(n => `#${n}`).join(', ')}; confira à mão se a frente ${frente.id} ainda está de responsável e com o rótulo lá.\n`);
-      }
-      for (const f of r.ficaram) {
-        amb.avisar(`Aviso: @${f.login} continua de responsável no ticket #${f.ticket} (${f.motivo}).${f.motivo.startsWith('outra') ? '' : ` Se precisar, tire à mão: gh issue edit ${f.ticket} --remove-assignee ${f.login}`}\n`);
-      }
-      removerFrente(dirEstado, frente.nome);
-      for (const s of [sessao, frente.dona && frente.dona !== amb.sessaoId ? lerSessao(dirEstado, frente.dona) : null]) {
-        if (s && (s.frente?.nome ?? s.frente) === frente.nome) gravarSessao(dirEstado, { ...s, frente: null });
-      }
-      registrarEvento(dirEstado, { tipo: 'abertura-desfeita', sessao: amb.sessaoId, id: frente.id, nome: frente.nome, frente: frente.nome, tickets: r.tickets });
-      await reagir('depoisDeFechar', amb, { frente, dentroDaTrava: true, soLocal: false, aberturaDesfeita: true });
-      const sobras = [];
-      if (existeRamo(raiz, frente.ramo, { env })) sobras.push(`git branch -D ${frente.ramo}`);
-      if (typeof frente.worktree === 'string' && fs.existsSync(frente.worktree)) sobras.unshift(`git worktree remove ${frente.worktree}`);
-      if (sobras.length) amb.avisar(`Sobrou coisa com esse nome. Para limpar à mão (confira antes se há trabalho a guardar):\n${sobras.map(x => `  ${x}`).join('\n')}\n`);
-      amb.escrever(`Abertura de ${frente.id} ${frente.nome} desfeita.${r.texto ? ` Reserva: ${r.texto}.` : ''}\n`);
-      return { fim: 0 };
+      // O registro passa a guardar o processo deste close: enquanto ele vive, outro open (ou close) vê uma abertura
+      // em curso e espera; a leitura dos tickets e a desistência rodam fora da trava.
+      let atual = frente;
+      try { atual = lerFrente(dirEstado, frente.nome) ?? frente; } catch { /* vale a que temos */ }
+      atual.processo = processoDeste;
+      gravarFrente(dirEstado, atual);
+      return { abrindo: atual };
     }
     // Outras frentes com arquivo ilegível não param este close (a do nome dado, sim: lerFrente recusa acima).
     for (const n of listarFrentesTolerante(dirEstado).ilegiveis) {
@@ -302,6 +324,7 @@ export async function executar(args, amb) {
     return { frente, daEncerrada, vidaDaDona, refs };
   }, { venceMs: 120000 });
   if (fase1.fim !== undefined) return fase1.fim;
+  if (fase1.abrindo) return desfazerAbrindo(fase1.abrindo);
   let { frente } = fase1;
   const { daEncerrada, vidaDaDona } = fase1;
   const temTickets = (frente.tickets ?? []).length > 0;
