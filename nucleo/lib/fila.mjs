@@ -172,7 +172,17 @@ export function ahMorto(e, { existe = processoExiste, inicio = inicioDoProcesso 
   return atual != null && atual !== e.inicio;
 }
 
-const grupoVivo = (e, opcoes = {}) => e.grupo != null && (opcoes.grupoExiste ?? grupoExiste)(e.grupo);
+// O grupo do comando ainda é o nosso: o líder existe com a hora de início gravada. Líder morto, hora não
+// gravada, não lida ou diferente (número reaproveitado): não é nosso, e nada é sinalizado (prefere-se deixar
+// escapar um neto a matar o grupo de outro).
+function grupoVivo(e, opcoes = {}) {
+  if (e.grupo == null || e.grupoInicio == null) return false;
+  const existe = opcoes.existe ?? processoExiste;
+  const inicio = opcoes.inicio ?? inicioDoProcesso;
+  if (!existe(e.grupo)) return false;
+  const atual = inicio(e.grupo);
+  return atual != null && atual === e.grupoInicio && (opcoes.grupoExiste ?? grupoExiste)(e.grupo);
+}
 
 // Morta: o `ah` morreu e o grupo do comando (quando gravado) também. `ah` morto com o grupo de pé é órfã.
 export const entradaMorta = (e, opcoes = {}) => ahMorto(e, opcoes) && !grupoVivo(e, opcoes);
@@ -265,9 +275,10 @@ export async function tentarComecar(dir, senha, maquina, opcoes) {
   }, opcoes);
 }
 
-// Grava o grupo de processos do comando na entrada (para matar um órfão se o `ah` morrer).
-export async function marcarGrupo(dir, senha, grupo, opcoes) {
-  return naFila(dir, estado => ({ gravar: true, estado: { ...estado, entradas: estado.entradas.map(e => (e.senha === senha ? { ...e, grupo } : e)) } }), opcoes);
+// Grava o grupo de processos do comando e a hora de início do líder na entrada (para matar um órfão se o
+// `ah` morrer, sem confundir com um grupo de mesmo número de outro dono).
+export async function marcarGrupo(dir, senha, grupo, grupoInicio, opcoes) {
+  return naFila(dir, estado => ({ gravar: true, estado: { ...estado, entradas: estado.entradas.map(e => (e.senha === senha ? { ...e, grupo, grupoInicio } : e)) } }), opcoes);
 }
 
 // O marcador de aninhamento (`AH_PESADO_ANINHADO=<senha>`) só vale conferido: a senha está na fila, rodando,

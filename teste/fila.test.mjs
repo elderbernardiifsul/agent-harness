@@ -8,6 +8,8 @@ import {
   lerConfigDaMaquina, lerEstadoDaFila, dirDaFila, PADROES_DA_MAQUINA, entrarNaFila, tentarComecar, sairDaFila, memoriaLivreMb,
 } from '../nucleo/lib/fila.mjs';
 import { ErroDeUso } from '../nucleo/lib/caminhos.mjs';
+import { spawn } from 'node:child_process';
+import { inicioDoProcesso, processoExiste } from '../nucleo/lib/vida.mjs';
 
 const CLASSES = {
   exclusivo: { vagas: 'todas', padroes: ['npm run e2e*', 'npx playwright*'] },
@@ -146,4 +148,23 @@ test('entrar, começar e sair: senhas crescentes, morta descartada', async t => 
   await sairDaFila(dir, s1, vivo);
   assert.deepEqual(lerEstadoDaFila(dir).entradas.map(e => e.senha), [3]);
   assert.equal(lerEstadoDaFila(dir).proximaSenha, 4);
+});
+
+test('grupo órfão só é sinalizado se o líder existe com a mesma hora de início', { skip: process.platform === 'win32' ? 'sem grupo no Windows' : false }, async t => {
+  // Processo vivo, líder do próprio grupo, que não é nosso: a entrada forjada aponta para ele com outra hora.
+  const alheio = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1e6)'], { stdio: 'ignore', detached: true });
+  t.after(() => { try { process.kill(-alheio.pid, 'SIGKILL'); } catch { /* já saiu */ } });
+  let inicio = null;
+  for (let i = 0; i < 100 && inicio == null; i++) { inicio = inicioDoProcesso(alheio.pid); if (inicio == null) await new Promise(r => setTimeout(r, 10)); }
+  assert.ok(inicio != null, 'hora de início do processo de teste');
+  const sinais = [];
+  const sinal = (g, s) => sinais.push([g, s]);
+  const forjada = { senha: 1, pid: 999999, grupo: alheio.pid, grupoInicio: `outra-${inicio}`, vagas: 1, rodandoDesde: 'x' };
+  let r = separarMortas({ entradas: [forjada] });
+  assert.deepEqual(r.mortas.map(e => e.senha), [1]);
+  assert.ok(processoExiste(alheio.pid), 'o processo alheio não foi morto');
+  r = separarMortas({ entradas: [{ ...forjada, grupoInicio: undefined }] }, { sinalNoGrupo: sinal });
+  assert.deepEqual([r.mortas.length, sinais.length], [1, 0], 'sem hora gravada: morta, nada sinalizado');
+  r = separarMortas({ entradas: [{ ...forjada, grupoInicio: inicio }] }, { sinalNoGrupo: sinal });
+  assert.deepEqual([r.orfas.length, sinais], [1, [[alheio.pid, 'SIGTERM']]], 'mesma hora: órfã de verdade, recebe SIGTERM');
 });

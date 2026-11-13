@@ -150,7 +150,9 @@ export async function executar(args, amb) {
     const terminou = esperarFim(filho);
     const grupo = grupoDo(filho);
     // O grupo na entrada: se este `ah` morrer sem poder matar a árvore (SIGKILL), quem vier depois mata o órfão.
-    if (grupo != null) { try { await marcarGrupo(dir, senha, grupo); } catch { /* sem o grupo, vale o pid do ah */ } }
+    // Sem a hora de início do líder, o grupo não é gravado: um órfão não seria morto, mas nada alheio o seria.
+    const grupoInicio = grupo != null ? inicioDoProcesso(grupo) : null;
+    if (grupoInicio != null) { try { await marcarGrupo(dir, senha, grupo, grupoInicio); } catch { /* sem o grupo, vale o pid do ah */ } }
     const fim = await terminou;
     if (saindo) return new Promise(() => {});
     // Netos deixados em segundo plano pelo comando saem com ele.
