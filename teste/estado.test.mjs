@@ -569,3 +569,24 @@ test('revisão 2, achado 6: a liberação espera, com recuo, o dono voltar de qu
   assert.equal(fs.existsSync(fora), false, 'o dono não voltou durante a espera');
   assert.equal(fs.existsSync(pasta), false);
 });
+
+test('revisão 2, achado 7: a tomada de trava vencida limpa os restos com mais de 10 min, e só eles', async t => {
+  const d = temp(t);
+  const travas = path.join(d, 'travas');
+  const ha = min => Date.now() - min * 60000;
+  fs.mkdirSync(path.join(travas, `y.vencida.1.${ha(20)}.ab12cd34`), { recursive: true });
+  fs.writeFileSync(path.join(travas, `y.vencida.1.${ha(20)}.ab12cd34`, 'dono.json'), '{}');
+  fs.writeFileSync(path.join(travas, `x.dono.123.${ha(20)}.abcdef12`), '{}');
+  const novo = `z.dono.9.${ha(1)}.ff00ff00`;
+  fs.writeFileSync(path.join(travas, novo), '{}');
+  fs.mkdirSync(path.join(travas, 'viva'));
+  fs.writeFileSync(path.join(travas, 'viva', 'dono.json'), donoDe('viva'));
+  vencidaDeMorto(d);
+  assert.equal(await comTrava(d, 'x', () => 'entrou', { esperaMs: 500 }), 'entrou');
+  assert.deepEqual(fs.readdirSync(travas).sort(), ['viva', novo].sort());
+  assert.deepEqual(fs.readdirSync(path.join(travas, 'viva')), ['dono.json']);
+  // nome de trava que pareceria resto é recusado
+  for (const n of ['a.dono.1.2.ab', 'a.vencida.1.2.ab']) {
+    await assert.rejects(comTrava(d, n, () => 1), e => e.name === 'ErroDeEstado');
+  }
+});

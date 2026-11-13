@@ -220,6 +220,28 @@ function lixoNaPasta(pasta) {
   }
 }
 
+// Restos ao lado das travas: `<nome>.dono.<pid>.<ms>.<marca>` (dono tirado por quem morreu antes de apagá-lo ou
+// devolvê-lo) e `<nome>.vencida.<pid>.<ms>.<marca>` (pasta tirada do lugar pelo desenho anterior). O `<ms>` do
+// nome é a hora em que saíram do lugar. Nenhum nome de trava tem essas formas (prepararTrava recusa), então a
+// limpeza nunca pega uma trava.
+const RESTO = /\.(?:dono|vencida)\.\d+\.(\d+)\.[0-9a-f-]{1,8}$/;
+const IDADE_DO_RESTO_MS = 10 * 60000;
+
+// Apaga os restos com mais de IDADE_DO_RESTO_MS: bem acima do teto (PRAZO_MAXIMO_MS), então quem os tirou já
+// passou de qualquer prazo e não vai mais devolvê-los. Roda na tomada de trava vencida, que é rara e já é o
+// caminho lento (a liberação e a entrada normais não pagam nada); os restos nascem de processos que morreram no
+// meio, que também deixam travas vencidas. Os mais novos ficam para uma tomada seguinte. Erros são ignorados.
+function limparRestos(travas) {
+  let nomes;
+  try { nomes = fs.readdirSync(travas); } catch { return; }
+  const agora = Date.now();
+  for (const nome of nomes) {
+    const m = RESTO.exec(nome);
+    if (!m || agora - Number(m[1]) <= IDADE_DO_RESTO_MS) continue;
+    try { fs.rmSync(path.join(travas, nome), { recursive: true, force: true }); } catch { /* fica para a próxima */ }
+  }
+}
+
 // Uma tentativa de pegar a trava: true se pegou; false se outro a tem e ela não venceu, ou se está presa.
 //
 // A pasta da trava nunca sai do lugar com dono dentro. Para tomar uma vencida, tira-se o dono.json dela (rename,
@@ -244,6 +266,7 @@ function tentarPegar(t) {
     const vista = lerDono(pasta);
     if (!vencida(vista?.dono, mtime(pasta), venceMs)) return false;
     if (lixoNaPasta(pasta).length) return false;
+    if (volta === 0) limparRestos(path.dirname(pasta));
     ganchosDeTeste.antesDeTomar?.(pasta);
     if (!vista) {
       // Sem dono.json: pasta vazia (alguém morreu entre o mkdir e o dono). rmdir só a tira se ainda estiver
@@ -293,6 +316,7 @@ function tirarPastaVazia(pasta) {
 
 function prepararTrava(dir, nome, venceMs) {
   validarNomeSeguro(nome, 'Nome da trava');
+  if (/\.(?:dono|vencida)\./.test(nome)) throw new ErroDeEstado(`Nome da trava inválido: ${JSON.stringify(nome)} (".dono." e ".vencida." são dos restos de trava)`);
   if (!(Number.isFinite(venceMs) && venceMs > 0 && venceMs <= PRAZO_MAXIMO_MS)) {
     throw new ErroDeEstado(`Prazo da trava "${nome}" fora do teto: venceMs=${venceMs} (de 1 a ${PRAZO_MAXIMO_MS} ms)`, null, 'corrija quem chamou comTrava');
   }
