@@ -2,7 +2,7 @@
 
 Harness de programação com vários agentes: várias sessões de agentes trabalham ao mesmo tempo no mesmo repositório, cada uma na sua frente, com ramos, travas e estado local coordenados por comandos. Requer Node 22 ou mais novo e não tem dependências.
 
-> Em construção: a interface ainda muda.
+> Fatias 1 a 4 entregues; a 5 está em construção, e a interface ainda muda.
 
 ## O que a fatia 1 entrega
 
@@ -28,6 +28,10 @@ Várias sessões e várias pessoas no mesmo repositório:
 ## Trabalho pesado (fatia 3)
 
 Builds e testes ponta a ponta de várias sessões ao mesmo tempo esgotam a memória da máquina. `tools/ah pesado -- <comando>` põe o comando numa fila da máquina (a mesma para todos os projetos com o harness): espera a vez, roda e devolve a saída e o código. As vagas e a memória livre mínima são da máquina; as classes (quais comandos são pesados e quantas vagas pedem) ficam em `pesado.classes` no `.harness/config.json`. Com classes configuradas, a trava T6 recusa rodar um desses comandos fora da fila e diz como rodar por ela. O `board` mostra quem roda e quem espera. Detalhes e limites: `docs/referencia/comandos.md`, seção "pesado".
+
+## Outros agentes (fatia 4)
+
+Só o Claude Code tem adaptador; os do Codex e do OpenCode não vêm prontos, por decisão do autor (seção 15 de `docs/superpowers/specs/2026-11-12-nucleo-design.md`): o agente que chega ao projeto escreve o dele seguindo o roteiro em `docs/agentes/` (o contrato dos quatro eventos, o adaptador do Claude Code como exemplo, o passo a passo e como provar). Os testes de contrato que todo adaptador precisa passar rodam com `AH_ADAPTADOR=<agente> node --test teste/contrato-adaptadores.test.mjs`. O `AGENTS.md` que o `init` instala aponta para o roteiro (`.harness/nucleo/docs/agentes/README.md`), e o `doctor` diz, no item "Adaptador do agente em uso", quando o agente em uso não tem adaptador e as travas automáticas não valem. O roteiro não foi ensaiado com o Codex nem com o OpenCode.
 
 ## Como preparar um projeto pelo agente
 
@@ -66,7 +70,8 @@ Testes: `node --test teste/`.
 
 ## Próximas fatias
 
-- Fatia 4, outros agentes: adaptadores do Codex e do OpenCode, com ensaio nos três.
+As fatias 3 (trabalho pesado) e 4 (outros agentes, conforme a seção 15 do desenho: roteiro de adaptação em vez de adaptadores prontos) estão entregues.
+
 - Fatia 5, abertura: extensões do projeto em `.harness/extensoes/` com exemplo e guia, `atualizar`, `deps` e números de uso.
 
 A ordem e o escopo ainda podem mudar.

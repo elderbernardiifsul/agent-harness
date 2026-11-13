@@ -16,7 +16,7 @@ Vários agentes no mesmo repositório. Slides: `2026-11-13-apresentacao.html` (4
 | 93–110 | 17 | 22–25 | Questão 4, reserva e corrida |
 | 110–133 | 23 | 26–31 | Questão 5, regra escrita × regra que recusa, com a demonstração das recusas (passo 3) e os limites ditos com honestidade (slide 31: engano, não má-fé) |
 | 133–148 | 15 | 37–38 | Visão geral do harness como uma alternativa (3 min); turma dita a sequência de passos (2 min); demonstração do ciclo (passos 4 a 7, com a recusa T4 no passo 5) |
-| 148–155 | 7 | 39–42 | O que existe hoje; o defeito que só o ensaio com o agente real achou (slide 40, 2 min); como aplicar; OpenCode e Codex |
+| 148–155 | 7 | 39–42 | O que existe hoje; o defeito que só o ensaio com o agente real achou (slide 40, 2 min); como aplicar; OpenCode e Codex (o roteiro oficial de adaptação) |
 | 155–172 | 17 | 43–45 | Trabalho final: as duas tabelas "decisão do harness × cenário × o que aproveitar" (9 min, uma linha por vez, perguntando qual grupo pensa num cenário parecido); cada grupo escreve curiosidade, cenário e uma decisão que tomaria diferente (3 min); duas leituras em voz alta e recolher (5 min) |
 | 172–180 | 8 | 46 | Próximos passos e tarefa |
 
@@ -53,7 +53,7 @@ Num terminal com fonte grande, longe do projeto real. Sem `gh` (`AH_GH=/bin/fals
 D=$(mktemp -d); mkdir $D/loja && cd $D/loja && git init -q -b main
 mkdir src && echo 'export const total = itens => itens.reduce((s, i) => s + i.preco, 0);' > src/total.js
 git add src && git commit -qm "loja inicial"
-export AH_ESTADO=$D/estado AH_WORKTREES=$D/wt AH_GH=/bin/false
+export AH_ESTADO=$D/estado AH_WORKTREES=$D/wt AH_GH=/bin/false AH_FILA=$D/fila
 ```
 
 **2. Instalar** (no intervalo):
@@ -61,9 +61,9 @@ export AH_ESTADO=$D/estado AH_WORKTREES=$D/wt AH_GH=/bin/false
 ```
 node ~/projetos/agent-harness/nucleo/bin/ah.mjs init --projeto loja --sigla as --sem-protecao
 git switch dev                                         # Switched to branch 'dev'
-git add -- .harness tools/ah tools/ah.cmd docs/agents/sessoes-paralelas.md docs/agents/historico-das-frentes.md .claude/settings.json .github/workflows/ah-ci.yml
+git add -- .harness tools/ah tools/ah.cmd AGENTS.md docs/agents/sessoes-paralelas.md docs/agents/historico-das-frentes.md .claude/settings.json .github/workflows/ah-ci.yml
 git commit -qm "chore: instala o agent-harness"
-tools/ah doctor        # 20 itens; espere: 0 falha(s), 4 aviso(s) (sigla, gh, proteção no servidor e CI, todos por falta de gh)
+tools/ah doctor        # 21 itens (o 22º, "Adaptador do agente em uso", só sai dentro de um agente); espere: 0 falha(s), 4 aviso(s) (sigla, gh, proteção no servidor e CI)
 ```
 
 **3. Recusas** (slide 30):
@@ -78,7 +78,7 @@ ev "git switch main"                 # Recusado (T1): trocar o ramo do checkout 
 ev "git reset --hard"                # Recusado (T3): git reset --hard no checkout principal descarta ou esconde trabalho …
 ```
 
-Fala: até a véspera, `git switch main` passava (T1 em construção); hoje recusa. Logo depois, mostre o slide 31: o que as travas **não** pegam (`python -c`, `find -delete`, `xargs rm`).
+Fala: até a véspera, `git switch main` passava (T1 em construção); hoje recusa. Logo depois, mostre o slide 31: o que as travas **não** pegam (`python -c`, `find -delete`, `xargs rm`). Se perguntarem da T6 (slide 29): fica para a questão 8, na aula 2; no projeto da demonstração ela está desligada, porque o `init` instala `pesado.classes` vazio (`tools/ah pesado --classe npm test` responde `exclusivo (todas as vagas; o projeto não tem classes: tudo pede todas as vagas)`).
 
 **4. Abrir e trabalhar:**
 
@@ -149,12 +149,12 @@ Ensaiado em 12/11/2026 à noite (commits `5f146ed` e `bcfd668`) e em 13/11 com a
 
 - Ler a seção 1 do material de apoio ("O mínimo de git e GitHub") e fazer os exercícios 1 a 3.
 - Escolher uma das sete perguntas do slide 36 e trazer uma proposta escrita (três linhas: proposta, custo, onde quebra).
-- Trazer o OpenCode instalado e um repositório descartável no GitHub, para a prática do roteiro da seção 5 do material.
+- Trazer o OpenCode instalado e um repositório descartável no GitHub, para a prática da aula 2: dar ao OpenCode o roteiro oficial de adaptação (`docs/agentes/README.md` no clone; seção 5 do material).
 - Grupos: a curiosidade escrita no slide 45 entra na conversa da proposta do trabalho final; a tabela completa de decisões × cenários está na seção 6 do material de apoio.
 
 ## Conferir antes da aula
 
-- `tools/ah --help` (no clone do harness: `node ~/projetos/agent-harness/nucleo/bin/ah.mjs --help`): devem aparecer 12 comandos, `sweep` entre eles. Continuam em construção a fila de trabalho pesado (`pesado`, T6), a atualização do harness instalado e os adaptadores do Codex e do OpenCode (slides 29, 39 e 42).
+- `tools/ah --help` (no clone do harness: `node ~/projetos/agent-harness/nucleo/bin/ah.mjs --help`): devem aparecer 13 comandos, `pesado` e `sweep` entre eles. Continuam em construção só a atualização do harness instalado e `board --numeros` (slide 39). A fila de pesado e a T6 estão prontas, mas não foram ensaiadas com agente real nem em Windows ou macOS; o roteiro de adaptação (`docs/agentes/`) não foi ensaiado com o Codex nem com o OpenCode (slides 29 e 42).
 - `docs/referencia/ensaio-claude-code.md`, seção "Reensaio do `/clear`": o conserto do `/clear` (slide 40) foi conferido com o Claude Code 2.1.319 real em 13/11. O mesmo reensaio achou outro defeito (`/resume` interativo de uma conversa que já tinha frente deixava o executor com duas frentes); confira lá se já foi consertado e, se não, diga isso à turma.
 
 Conferir antes da aula: `tools/ah --help`.

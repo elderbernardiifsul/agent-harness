@@ -20,7 +20,7 @@ Os exemplos usam um projeto fictício, a `loja` (repositório `exemplo/loja`), e
 8. Gabarito comentado
 9. Glossário
 
-Estado do harness descrito aqui: conferido no código com a fatia 2 pronta (ramo `dev`; referência em `docs/referencia/comandos.md` no clone). Peças marcadas **em construção** estão só no desenho: a fila de trabalho pesado (`pesado`, trava T6; fatia 3), os adaptadores do Codex e do OpenCode (fatia 4; só o Claude Code foi ensaiado) e a atualização do harness instalado e os números de uso (fatia 5). Para conferir o que existe na sua cópia: `tools/ah --help`.
+Estado do harness descrito aqui: conferido no código com as fatias 3 e 4 prontas (referência em `docs/referencia/comandos.md` no clone). Fatia 3: a fila de trabalho pesado (`pesado`) e a trava T6, sem ensaio com agente real nem em Windows ou macOS. Fatia 4: o roteiro de adaptação para outros agentes (`docs/agentes/`), com testes de contrato, não ensaiado com o Codex nem com o OpenCode; só o Claude Code tem adaptador. Peças marcadas **em construção** estão só no desenho: a atualização do harness instalado e os números de uso (`board --numeros`), da fatia 5. Para conferir o que existe na sua cópia: `tools/ah --help`.
 
 ---
 
@@ -305,11 +305,11 @@ Na balança, "custo de adotar" é o que a alternativa cobra (tempo, código, inf
 | T3 | descartar trabalho na pasta principal (`reset --hard`, `clean -f`, `stash`, `rebase`) | pronto |
 | T4 | escrever no worktree ou no ramo da frente de outra sessão viva, por comando ou por edição de arquivo | pronto |
 | T5 | push para ramo protegido em qualquer forma; `gh pr merge` com base protegida | pronto |
-| T6 | trabalho pesado fora da fila | em construção |
+| T6 | trabalho pesado fora da fila, quando o projeto configura classes (questão 8) | pronto |
 
 - **De volta à questão 2:** T1, T2 e T3 guardam a pasta principal; T4 guarda a pasta e o ramo da frente de outra sessão viva (pasta de frente passada, órfã ou de dona morta não é protegida: aí vale o `takeover`). T1 e T3 valem só na pasta principal: no worktree da própria frente, `rebase`, `stash` e `reset` são livres.
 - **Gancho que quebra recusa.** Mesmo quebrado, deixa passar uma chamada a `tools/ah` (para rodar o `doctor`) e a edição de `.harness/config.json`.
-- **Desvio de emergência:** `AH_GUARD=off` no começo do próprio comando, só com ordem do executivo, libera T1 a T5 naquele comando e fica registrado. Nunca libera a T0. Na edição de arquivo (T4) não há liberação: o caminho é pedir à dona ou o `takeover`.
+- **Desvio de emergência:** `AH_GUARD=off` no começo do próprio comando, só com ordem do executivo, libera T1 a T6 naquele comando e fica registrado. Nunca libera a T0. Na edição de arquivo (T4) não há liberação: o caminho é pedir à dona ou o `takeover`.
 - **A barreira de verdade fica no servidor:** o `init` configura proteção de ramo no GitHub para `stage` e `main`. As travas locais avisam antes e dão a saída certa; não substituem a proteção.
 - **Regra geral:** o harness sugere e registra; só recusa o que protege o trabalho dos outros e a máquina. Método (fazer plano, escrever teste antes) nunca é motivo de recusa.
 
@@ -471,9 +471,33 @@ Sessões vivas: ana-term (executor, carrinho); carla-te (executor, cupom)
 
 **Não resolver custa:** editor, sessões e banco mortos de uma vez; trabalho não salvo perdido.
 
-**O que o harness faz.** Fila de trabalho pesado por máquina (`tools/ah pesado -- <comando>`), com vagas e classes, e a trava T6: **em construção** (fatia 3). Hoje: limite à mão quantas sessões rodam testes; aponte `TMPDIR` para uma pasta própria; cada teste que cria pasta apaga ao terminar.
+**O que o harness faz.** Fica com a fila por máquina, e deixa a limpeza a cargo de cada teste. Paga com isto: espera, e configuração de quem conhece o projeto.
 
-**Limites.** O incidente não foi de memória, foi de pasta temporária: a fila desenhada não o teria evitado.
+- `tools/ah pesado -- <comando>` espera a vez numa **fila da máquina** (a mesma para todos os projetos com o harness), roda o comando, repassa a saída e devolve o código dele. **Pronto** (fatia 3; não ensaiado com agente real nem em Windows ou macOS).
+- **Vagas e memória são da máquina**, num `config.json` da fila, criado com os padrões na primeira chamada: 2 vagas e 4096 MB livres para um comando rodar ao lado de outro.
+- **Classes são do projeto**, em `pesado.classes` no `.harness/config.json`: quais comandos são pesados e quantas vagas pedem. Comando que não casa com nenhuma classe cai na mais restritiva. Um exemplo:
+  ```json
+  "pesado": {
+    "classes": {
+      "exclusivo": { "vagas": "todas", "padroes": ["npm test*"] },
+      "grande": { "vagas": 1, "padroes": ["npm run build*"] }
+    }
+  }
+  ```
+  ```
+  $ tools/ah pesado --classe npm run build
+  grande (1 vaga(s); casou com um padrão)
+  $ tools/ah pesado -- npm test
+  ```
+- **Ordem estrita de chegada, por senha:** só o primeiro da espera começa; quem pede todas as vagas não é ultrapassado (o custo: um comando leve atrás dele espera, mesmo com vaga). Interrompido, o `pesado` mata a árvore inteira do comando antes de soltar a vaga.
+- **T6:** com classes configuradas, o gancho recusa rodar fora da fila um comando que casa com uma delas:
+  ```
+  Recusado (T6): npm é trabalho pesado (classe exclusivo) e roda fora da fila; vários juntos esgotam a memória da máquina
+  Faça: tools/ah pesado -- npm test
+  ```
+- **Projeto novo nasce com `classes: {}`:** a T6 fica desligada até o grupo configurar. O `init` deixa um `_exemplo` ao lado para copiar.
+
+**Limites.** O incidente não foi de memória, foi de pasta temporária: a fila não o teria evitado. Continue apontando `TMPDIR` para uma pasta própria, e cada teste que cria pasta apaga ao terminar. A T6 lê texto, como as outras travas: `npm run build` dentro de um script passa (ponha o script na classe). Comando digitado no terminal, fora do agente, não passa por gancho; para ir pela fila, use `tools/ah pesado` também à mão.
 
 **Trabalho final.** Enunciado §4: rodar código de terceiros em ambiente descartável também protege disso.
 
@@ -519,7 +543,8 @@ Sessões vivas: ana-term (executor, carrinho); carla-te (executor, cupom)
 - **Contrato de quatro eventos**: começo de sessão, sinal de vida, antes de ferramenta, fim de sessão. O adaptador de cada agente só traduz. **Pronto.**
 - **Adaptador do Claude Code**, ensaiado com o agente real (versão 2.1.319). **Pronto.**
 - **Tabela de capacidades** dos três agentes em `docs/referencia/capacidades-por-agente.md`: os três permitem recusar antes de comando e de edição; o OpenCode não tem evento de começo nem de fim de sessão; o Codex só roda ganchos do projeto depois de a pasta e cada gancho serem confiados.
-- **Adaptadores do Codex e do OpenCode, roteiro e testes de contrato para outros agentes:** **em construção** (fatia 4). O autor decidiu não escrever os adaptadores do Codex e do OpenCode; o agente que chega lê o repositório e escreve o próprio. A seção 5 deste material traz esse roteiro hoje.
+- **Roteiro de adaptação para outros agentes**, em `docs/agentes/` (fatia 4): o contrato, o adaptador do Claude Code comentado como exemplo, o passo a passo e como provar; testes de contrato que todo adaptador precisa passar (`AH_ADAPTADOR=<agente> node --test teste/contrato-adaptadores.test.mjs`); um ponteiro no `AGENTS.md` que o `init` instala; e o item "Adaptador do agente em uso" no `doctor`. **Pronto**, não ensaiado com o Codex nem com o OpenCode.
+- **Adaptadores do Codex e do OpenCode não existem, por decisão do autor:** o agente que chega lê o roteiro e escreve o próprio. A seção 5 diz como.
 
 **Trabalho final.** Cenário 9 e cenário 7: escrever o adaptador do OpenCode é estender um harness por dentro, por eventos, com o contrato já definido.
 
@@ -564,7 +589,7 @@ Sessões vivas: ana-term (executor, carrinho); carla-te (executor, cupom)
 
 **O que o harness faz e o que o método fez.**
 
-- `tools/ah doctor` confere a preparação em 20 verificações (Node, git, `gh`, configuração, ganchos, proteção dos ramos, estado) e ensaia recusas de verdade (uma T5 e uma T1). **Pronto.**
+- `tools/ah doctor` confere a preparação em 21 itens, mais um ("Adaptador do agente em uso") quando o agente se identifica (Node, git, `gh`, configuração, ganchos, proteção dos ramos, estado, fila de pesado) e ensaia recusas de verdade (uma T5 e uma T1). **Pronto.**
 - **Ensaio com o agente de verdade.** Os testes do harness simulam o agente: entregam ao gancho eventos escritos à mão. Todos passavam. No ensaio com o Claude Code de verdade, apareceu um defeito que eles não pegavam: no `/clear`, o agente avisa o **fim** da conversa velha **antes** de avisar o **começo** da nova. O harness tratava todo fim como fim; quando o começo chegava, não havia mais conversa viva para herdar, e a frente ficava órfã. O conserto: um fim por `/clear` ou por retomada não encerra a sessão; ela fica esperando a continuação. O reensaio com o agente real (Claude Code 2.1.319, 13/11) conferiu: o agente mandou o fim com o motivo `clear`, depois o começo com a origem `clear` e um id novo, no mesmo processo, e a conversa nova herdou a frente. E o segundo ensaio achou outro defeito: retomar (`/resume`) uma conversa que já tinha frente deixava o executor com duas frentes, quando a regra é uma só. Lição: **teste simulado prova a lógica; só o ensaio com o agente real prova o que supomos sobre o agente.** (Fonte: `docs/referencia/ensaio-claude-code.md`, seções da fatia 2 e "Reensaio do `/clear`".)
 - **O agente afirma o que não fez.** No mesmo reensaio, com um pedido vago, o modelo pequeno não chamou ferramenta nenhuma e respondeu que o `git reset --hard` "descartou" as alterações. Nada tinha rodado. Para ver uma recusa com o agente, peça "rode exatamente este comando: …" e confira no registro do harness (`tools/ah board`, `eventos.jsonl`) que ela aconteceu. É a mesma regra do enunciado §8: vale o que o registro mostra, não o que o agente diz.
 - Na construção do harness, cada tarefa passou por revisão independente (outro agente, com o diff e o plano, sem o raciocínio do implementador). Em cinco tarefas seguidas a revisão pediu conserto; o defeito das reservas cruzadas foi achado assim, não pelos testes de quem implementou.
@@ -618,7 +643,7 @@ Falta: git push origin dev
 - **O que resolve.** Várias conversas de agente, e várias pessoas, trabalhando no mesmo repositório sem uma estragar o trabalho da outra: questões 1 a 7, 9 e 13. Em parte: questões 10 e 12.
 - **Como resolve.** Cada trabalho vira uma frente, com ramo e pasta próprios (questão 2); quem faz o quê fica na máquina, fora do git (questão 3); a reserva vai para o ticket do GitHub, que serve de canal entre máquinas (questão 4); travas avaliadas antes de cada comando do agente recusam o que estraga o trabalho alheio (questão 5); passagem de bastão e tomada com confirmação para quem para ou morre (questão 6).
 - **Como aplicar.** `init` no projeto e `doctor` para conferir; o passo a passo está logo abaixo.
-- **O que não resolve.** Método e escolha de modelo (nunca recusa por isso; questão 11), medida de horas e gasto, recurso da máquina (fila de pesado em construção; questão 8), agentes sem adaptador (Codex e OpenCode em construção; questão 10), má-fé (as travas pegam engano; questão 5).
+- **O que não resolve.** Método e escolha de modelo (nunca recusa por isso; questão 11), medida de horas e gasto, agentes sem adaptador (Codex e OpenCode: o agente escreve o seu pelo roteiro de `docs/agentes/`; questão 10), má-fé (as travas pegam engano; questão 5).
 - **A regra do autor.** O harness sugere e registra; só recusa o que protege o trabalho dos outros e a máquina.
 
 Ele é uma das linhas da balança, não a resposta. As propostas que a turma fez em aula continuam valendo como alternativas para o trabalho final (seção 6).
@@ -644,24 +669,28 @@ git clone https://github.com/elderbernardiifsul/agent-harness ~/agent-harness
 
 ```
 $ node ~/agent-harness/nucleo/bin/ah.mjs init
+CI criada desligada: defina ci.comandoDeTeste em .harness/config.json e rode ah init de novo
 Criei:
-  .harness/nucleo/ (32 arquivos)
+  .harness/nucleo/ (48 arquivos)
   .harness/config.json
   .harness/extensoes/.gitkeep
   tools/ah
   tools/ah.cmd
   docs/agents/sessoes-paralelas.md
   docs/agents/historico-das-frentes.md
+  AGENTS.md
   .claude/settings.json
   .github/workflows/ah-ci.yml
   ramo dev (local)
   ramo stage (local)
 Falta levar o harness para o ramo base dev (as frentes partem dele; fora dele não há tools/ah nem gancho):
   git switch dev
-  git add -- .harness tools/ah tools/ah.cmd docs/agents/sessoes-paralelas.md docs/agents/historico-das-frentes.md .claude/settings.json .github/workflows/ah-ci.yml
+  git add -- .harness tools/ah tools/ah.cmd AGENTS.md docs/agents/sessoes-paralelas.md docs/agents/historico-das-frentes.md .claude/settings.json .github/workflows/ah-ci.yml
   git commit -m "chore: instala o agent-harness"
 Depois rode: tools/ah doctor
 ```
+
+O `AGENTS.md` instalado traz as regras do harness e, para quem não usa o Claude Code, aponta o roteiro de adaptação (`.harness/nucleo/docs/agentes/README.md`).
 
 Sem `gh` com login, passe a sigla: `--sigla as`. Num repositório sem remoto, ou para ensaiar, `--sem-protecao` pula a proteção de ramo no servidor. O `init` não faz commit: rode os três comandos que ele mostra.
 
@@ -690,10 +719,12 @@ ok      Proteção de stage no servidor
 ok      Proteção de main no servidor
 aviso   CI com comando de teste: defina ci.comandoDeTeste em .harness/config.json e rode ah init
 ok      Frentes com worktree
+ok      Fila de pesado
+ok      Adaptador do agente em uso (claude-code)
 0 falha(s), 1 aviso(s).
 ```
 
-(Uma linha de proteção por ramo protegido. Sem `gh`, saem avisos no lugar delas e no da sigla; avisos não mudam o código de saída.)
+(São 22 itens. O último só aparece quando um agente se identifica, como aqui, em que o próprio agente rodou o `doctor`; num terminal comum, saem 21. Uma linha de proteção por ramo protegido. Sem `gh`, saem avisos no lugar delas e no da sigla; avisos não mudam o código de saída.)
 
 **4. Abrir a frente.** Dentro do agente, a sessão vem do gancho. À mão, num terminal, diga quem é com `AH_SESSAO`:
 
@@ -733,7 +764,7 @@ Ajuda: `tools/ah --help` lista os comandos; `tools/ah <comando> --help` mostra o
 
 ## 5. Para quem usa OpenCode ou Codex
 
-Não há adaptador pronto para OpenCode nem para Codex. O autor decidiu que o agente que chega ao repositório lê as instruções e escreve o próprio adaptador. Os adaptadores, o roteiro oficial e os testes de contrato são da fatia 4 (**em construção**). Este roteiro é o caminho de hoje, **não ensaiado** com o harness; tratem o resultado como experimento e registrem o que aconteceu.
+Não há adaptador pronto para OpenCode nem para Codex, por decisão do autor: o agente que chega ao repositório segue um roteiro, escreve o próprio adaptador, roda os testes de contrato e prova com o agente de verdade. O roteiro existe (fatia 4), mas **não foi ensaiado** com o Codex nem com o OpenCode; tratem o resultado como experimento e registrem o que aconteceu.
 
 **Sem adaptador, o que já funciona:** todos os comandos, passando a sessão por variável. No OpenCode, o id da conversa está em `OPENCODE_SESSION_ID`; no Codex, em `CODEX_THREAD_ID`:
 
@@ -742,45 +773,28 @@ AH_SESSAO=$OPENCODE_SESSION_ID tools/ah open carrinho
 AH_SESSAO=$OPENCODE_SESSION_ID tools/ah whoami
 ```
 
-O que não funciona sem adaptador: travas automáticas e o resumo no começo da sessão.
+O que não funciona sem adaptador: travas automáticas e o resumo no começo da sessão. O `doctor` diz isso no item "Adaptador do agente em uso"; se o agente não for reconhecido, declare-o: `AH_AGENTE=opencode tools/ah doctor`.
 
-**O roteiro, para dar ao agente.** Num repositório descartável com o harness instalado, peça:
+**O roteiro oficial**, no clone do agent-harness (e copiado no projeto em `.harness/nucleo/docs/agentes/`):
 
-> Leia, no clone do agent-harness: `docs/referencia/capacidades-por-agente.md` (o que o nosso agente permite), `nucleo/adaptadores/contrato.mjs` (os quatro eventos), `nucleo/adaptadores/claude-code.mjs` e `modelos/claude-code/ganchos.json` (o adaptador de exemplo), `teste/claude-code.test.mjs` e `teste/eventos-gravados/` (como ele é testado). Confira o formato do nosso agente na documentação oficial dele, não só na tabela. Depois:
-> 1. Diga o que falta para o nosso agente ter as travas.
-> 2. Escreva o adaptador mais curto possível, sem mudar o núcleo.
-> 3. Escreva testes com eventos do nosso agente, no formato de `teste/claude-code.test.mjs`, e rode `node --test teste/` no clone.
-> 4. Prove com o agente de verdade, num repositório descartável sem remoto: peça `git push origin main` e mostre a recusa e a linha no `eventos.jsonl`.
-> Não use `AH_GUARD=off`. Registre cada passo com o comando e a saída.
+| Arquivo | Para quê |
+|---|---|
+| `docs/agentes/README.md` | por onde começar: o que o adaptador faz, onde as coisas moram, quando está pronto |
+| `docs/agentes/contrato.md` | os quatro eventos, a recusa, a sessão e o processo, o fim que é continuação |
+| `docs/agentes/exemplo-claude-code.md` | o adaptador que existe, comentado, com os eventos reais do ensaio |
+| `docs/agentes/escrever-um-adaptador.md` | o passo a passo, e o que fazer quando o agente não tem um dos eventos |
+| `docs/agentes/provar.md` | os testes de contrato e o ensaio com o agente de verdade |
 
-**Caminho curto, OpenCode.** Um plugin em `.opencode/plugins/ah.js` que, no gancho `execute.before`, monta o evento no formato que o adaptador do Claude Code já entende e chama `tools/ah gancho claude-code`; código 2 vira exceção, e o OpenCode não executa a ferramenta. Esboço para o agente conferir na documentação oficial (a API de plugins muda entre versões):
+O adaptador se escreve **no clone**, não no projeto: o módulo `nucleo/adaptadores/<agente>.mjs` e o arquivo de gancho do agente, que o `init` leva para o projeto. Está pronto quando `AH_ADAPTADOR=<agente> node --test teste/contrato-adaptadores.test.mjs` passa, a suíte inteira continua passando, o ensaio com o agente de verdade recusou as ações proibidas e o que o agente não entrega está declarado.
 
-```js
-// .opencode/plugins/ah.js — esboço, não ensaiado
-import { spawnSync } from 'node:child_process';
-import path from 'node:path';
+**O pedido, para dar ao agente.** Num repositório descartável com o harness instalado:
 
-const FERRAMENTAS = { shell: ['Bash', 'command'], edit: ['Edit', 'file_path'], write: ['Write', 'file_path'], patch: ['Edit', 'file_path'] };
+> Leia `.harness/nucleo/docs/agentes/README.md` e siga o roteiro até o fim, no clone do agent-harness. Confira o formato do nosso agente na documentação oficial dele, não só na tabela de capacidades. Antes de escrever código, diga o que falta para o nosso agente ter as travas. No fim, prove com o agente de verdade, num repositório descartável sem remoto: peça "rode exatamente: `git push origin main`" e mostre a recusa e a linha no `eventos.jsonl`. Não use `AH_GUARD=off`. Registre cada passo com o comando e a saída.
 
-export default {
-  id: 'agent-harness',
-  setup(ctx) {
-    ctx.tool.hook('execute.before', ev => {
-      const par = FERRAMENTAS[ev.tool];
-      if (!par) return;
-      const [nome, campo] = par;
-      const valor = campo === 'command' ? ev.input.command : path.resolve(ev.input.path ?? ev.input.filePath ?? '');
-      const evento = { session_id: ev.sessionID, hook_event_name: 'PreToolUse', cwd: process.cwd(), tool_name: nome, tool_input: { [campo]: valor } };
-      const r = spawnSync('tools/ah', ['gancho', 'claude-code'], { input: JSON.stringify(evento), encoding: 'utf8' });
-      if (r.status === 2) throw new Error(r.stderr.trim());
-    });
-  },
-};
-```
+**O que já se sabe e o roteiro detalha** (de `docs/referencia/capacidades-por-agente.md`, tirado da documentação; nada disso foi ensaiado com o harness):
 
-O que esse caminho deixa de fora, e o agente deve dizer: o evento fica registrado como se fosse do Claude Code; não há resumo no começo (o OpenCode não tem esse evento; a saída é uma linha no `AGENTS.md` mandando rodar `AH_SESSAO=$OPENCODE_SESSION_ID tools/ah whoami`); o `patch` pode tocar vários arquivos e o esboço só olha um; subagentes podem não passar pelo gancho. O caminho completo é um `nucleo/adaptadores/opencode.mjs` registrado em `nucleo/comandos/gancho.mjs`, o que mexe no núcleo.
-
-**Codex.** O evento `PreToolUse` do Codex é parecido com o do Claude Code (`session_id`, `tool_name: "Bash"`, `tool_input.command`). Um `.codex/hooks.json` com seletor `Bash` chamando `tools/ah gancho claude-code` pode bastar para os comandos. Duas pegadinhas: a edição chega como `apply_patch`, com o caminho dentro do texto do patch (o adaptador do Claude Code a trataria como ferramenta desconhecida e recusaria com T0); e os ganchos do projeto só rodam depois de a pasta `.codex/` e cada gancho serem confiados em `/hooks`. Sem isso, são ignorados em silêncio.
+- **OpenCode:** não há gancho por comando externo; é um plugin em `.opencode/plugins/`, e a recusa é uma exceção no gancho `execute.before`. Não há evento de começo nem de fim de sessão: o resumo do começo não tem onde entrar do mesmo jeito.
+- **Codex:** `PreToolUse` parecido com o do Claude Code, mas a edição chega como `apply_patch`, com o caminho dentro do texto do patch; e os ganchos do projeto só rodam depois de a pasta e cada gancho serem confiados (`/hooks`). Sem isso, são ignorados em silêncio.
 
 ---
 
@@ -829,7 +843,7 @@ Os três primeiros são de nivelamento; façam antes da aula 2. O gabarito está
 6. **Corrida.** Frente A pede os tickets #1 e #2; frente B pede #2 e #1, ao mesmo tempo. Com a regra "vence o comentário mais antigo", e supondo que A comentou primeiro no #1 e B primeiro no #2, o que acontece? Proponha uma regra que garanta um vencedor.
 7. **Sessão viva.** Escreva em pseudocódigo a função "a sessão está viva?". Liste três jeitos de ela errar (dizer viva quando está morta, ou o contrário).
 8. **Onde mora.** Classifique como "vai para o git" ou "fica fora": (a) quem está no ticket #2 agora; (b) que a frente as-1 foi fechada em 12/11; (c) a nota "mexendo no total"; (d) a previsão de prazo do grupo, escrita antes da etapa.
-9. **Prática (aula 2).** Dê ao OpenCode o roteiro da seção 5. Registre: o que ele disse que faltava, o que escreveu, quais testes rodou, se a recusa aconteceu com o agente real e o que você precisou corrigir.
+9. **Prática (aula 2).** Dê ao OpenCode o roteiro oficial (`docs/agentes/README.md`; o pedido está na seção 5). Registre: o que ele disse que faltava, o que escreveu, quais testes rodou, se a recusa aconteceu com o agente real e o que você precisou corrigir.
 
 ---
 
@@ -851,7 +865,7 @@ Os três primeiros são de nivelamento; façam antes da aula 2. O gabarito está
 
 **8.** (a) fora: estado de agora, muda o tempo todo (no ticket, sim, como comentário). (b) git: histórico. (c) fora: recado de agora. (d) git, com commit antes da etapa: é a prova pedida pelo enunciado §4.
 
-**9.** Sem gabarito único. Um bom registro diz a versão do OpenCode e do modelo, o que o agente afirmou e o que você conferiu, e se a recusa chegou ao modelo com o motivo. Se o agente disse "pronto" sem mostrar a recusa acontecendo com o agente real, o exercício não terminou.
+**9.** Sem gabarito único. Um bom registro diz a versão do OpenCode e do modelo, o que o agente afirmou e o que você conferiu, e se a recusa chegou ao modelo com o motivo. Diga também se os testes de contrato (`AH_ADAPTADOR=<agente> node --test teste/contrato-adaptadores.test.mjs`) passaram. Se o agente disse "pronto" sem mostrar a recusa acontecendo com o agente real, o exercício não terminou.
 
 ---
 
@@ -895,6 +909,7 @@ Os três primeiros são de nivelamento; façam antes da aula 2. O gabarito está
 | **remoto** | A cópia do repositório no servidor (GitHub), por convenção `origin`. |
 | **repositório** | O projeto com todo o histórico de mudanças. |
 | **rótulo (label)** | Etiqueta colorida de um ticket no GitHub, como `em-andamento`. |
+| **pesado (fila de)** | Fila da máquina para builds e testes pesados: `tools/ah pesado -- <comando>` espera a vez e roda; as classes do projeto dizem o que é pesado. |
 | **reserva** | Marcar no ticket que uma frente está com ele (responsável, rótulo `em-andamento` e marcador). |
 | **resumo da sessão** | Texto curto (até 1200 caracteres) que o harness injeta no começo da conversa: quem é a sessão, a frente dela, as dos outros, as regras. |
 | **revisão** | Leitura do código por outra pessoa ou agente antes do merge. |
@@ -904,8 +919,9 @@ Os três primeiros são de nivelamento; façam antes da aula 2. O gabarito está
 | **sobreposição** | Duas frentes ativas que já mudaram o mesmo arquivo; o harness avisa, não recusa. |
 | **stage** | Ramo de teste: publica numa versão para conferir antes da produção. |
 | **takeover (tomada)** | Assumir a frente ativa de uma sessão que morreu, só com a confirmação do executivo (`--confirmado`). |
+| **testes de contrato** | Testes que todo adaptador precisa passar (`AH_ADAPTADOR=<agente> node --test teste/contrato-adaptadores.test.mjs`). |
 | **ticket** | Tarefa registrada no rastreador (no GitHub, *issue*), com número. |
 | **trava** | Regra do gancho que recusa um comando antes de ele rodar (T0 a T6). |
 | **worktree** | Uma pasta de trabalho a mais do mesmo repositório, com o seu próprio ramo em uso; no harness, uma por frente. |
-| **`AH_GUARD=off`** | Prefixo de um comando que libera T1 a T5 naquele comando, por ordem do executivo; fica registrado; nunca libera a T0. |
+| **`AH_GUARD=off`** | Prefixo de um comando que libera T1 a T6 naquele comando, por ordem do executivo; fica registrado; nunca libera a T0. |
 | **`AH_SESSAO`** | Variável que diz ao harness qual é a sessão quando o agente não informa (uso à mão, ou agente sem adaptador). |

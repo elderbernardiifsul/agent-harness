@@ -713,10 +713,10 @@ Faça: combine com @carla-dias, …</pre>
     <tr><td>T5</td><td>enviar para ramo protegido, em qualquer forma</td><td><span class="tag pronto">pronto</span></td></tr>
     <tr><td>T1 · T3</td><td>trocar o ramo · descartar trabalho, na pasta principal</td><td><span class="tag pronto">pronto</span></td></tr>
     <tr><td>T4</td><td>escrever na pasta ou no ramo de outra conversa viva</td><td><span class="tag pronto">pronto</span></td></tr>
-    <tr><td>T6</td><td>trabalho pesado fora da fila</td><td><span class="tag construcao">em construção</span></td></tr>
+    <tr><td>T6</td><td>trabalho pesado fora da fila (se o projeto configurar)</td><td><span class="tag pronto">pronto</span></td></tr>
   </table>
   <p class="pequeno">Das propostas: "conferir antes" mais "proteger no GitHub". Gancho que quebra <b>recusa</b>.</p>
-  <aside class="notas">Juntou "conferir o comando antes" com "proteger no GitHub": a barreira de verdade fica no servidor (proteção de ramo); a trava local avisa antes e diz a saída. Paga: a trava lê texto e sempre há forma que escapa. Regra geral do harness: só recusa o que protege o trabalho dos outros e a máquina; método (plano, teste antes) nunca é motivo de recusa. Desvio: AH_GUARD=off no começo do comando, por ordem do executivo, libera T1 a T5 naquele comando e fica registrado; nunca libera T0. Volte à questão 2: T1 e T3 guardam a pasta principal; T4 guarda a pasta e o ramo da frente de outra conversa viva, por comando e por edição de arquivo. No worktree da própria frente, a conversa é livre.</aside>
+  <aside class="notas">Juntou "conferir o comando antes" com "proteger no GitHub": a barreira de verdade fica no servidor (proteção de ramo); a trava local avisa antes e diz a saída. Paga: a trava lê texto e sempre há forma que escapa. Regra geral do harness: só recusa o que protege o trabalho dos outros e a máquina; método (plano, teste antes) nunca é motivo de recusa. Desvio: AH_GUARD=off no começo do comando, por ordem do executivo, libera T1 a T6 naquele comando e fica registrado; nunca libera T0. A T6 é da questão 8 (aula 2): recusa build ou teste pesado rodado fora da fila (tools/ah pesado), mas só depois que o grupo configura as classes; projeto novo nasce com ela desligada. Não foi ensaiada com agente real. Volte à questão 2: T1 e T3 guardam a pasta principal; T4 guarda a pasta e o ramo da frente de outra conversa viva, por comando e por edição de arquivo. No worktree da própria frente, a conversa é livre.</aside>
 </section>
 
 <section class="slide">
@@ -875,16 +875,16 @@ Para retomar: tools/ah open cupom
   <div class="duas">
     <div>
       <p><span class="tag pronto">pronto</span></p>
-      <p class="mono pequeno">init · doctor · open · nota · board · whoami · papel · handoff · takeover · sweep · close · gancho</p>
-      <p class="pequeno">Travas T0 a T5 · adaptador do Claude Code, ensaiado · comentários pendentes sem rede</p>
+      <p class="mono pequeno">init · doctor · open · nota · board · whoami · papel · handoff · takeover · sweep · pesado · close · gancho</p>
+      <p class="pequeno">Travas T0 a T6 · adaptador do Claude Code, ensaiado · roteiro para outros agentes · comentários pendentes sem rede</p>
     </div>
     <div>
       <p><span class="tag construcao">em construção</span></p>
-      <p class="pequeno">fila de trabalho pesado e T6 · adaptadores do Codex e do OpenCode · atualizar o harness instalado</p>
+      <p class="pequeno">atualizar o harness instalado · <span class="mono">board --numeros</span></p>
     </div>
   </div>
   <p class="pequeno sub">Conferido no código em 13/11/2026. Confiram com <span class="mono">tools/ah --help</span>, não no slide.</p>
-  <aside class="notas">Node 22, sem dependências. Construído em fatias: cada uma utilizável e testada antes da seguinte. open aceita --tickets, --plano, --caminhos e --para. Se o repositório estiver publicado: github.com/elderbernardiifsul/agent-harness; se não, só demonstração.</aside>
+  <aside class="notas">Fila de pesado e T6: prontas, sem ensaio com agente real nem em Windows ou macOS. Roteiro de adaptação (docs/agentes/): pronto, não ensaiado com Codex nem com OpenCode; adaptadores desses dois não existem, por decisão do autor. Node 22, sem dependências. Construído em fatias: cada uma utilizável e testada antes da seguinte. open aceita --tickets, --plano, --caminhos e --para. Se o repositório estiver publicado: github.com/elderbernardiifsul/agent-harness; se não, só demonstração.</aside>
 </section>
 
 <section class="slide">
@@ -918,13 +918,13 @@ Para retomar: tools/ah open cupom
   <h2>Sem adaptador pronto: o agente se adapta</h2>
   <ol class="pequeno">
     <li>Os comandos já funcionam: <span class="mono">AH_SESSAO=$OPENCODE_SESSION_ID tools/ah open …</span></li>
-    <li>O agente lê a tabela de capacidades, o contrato de quatro eventos e o adaptador do Claude Code</li>
-    <li>Escreve o adaptador mais curto, sem mudar o núcleo</li>
-    <li>Escreve testes e roda <span class="mono">node --test teste/</span></li>
+    <li>O agente segue o roteiro: <span class="mono">docs/agentes/README.md</span></li>
+    <li>Escreve o adaptador e o arquivo de gancho do agente dele</li>
+    <li>Roda os testes de contrato: <span class="mono">AH_ADAPTADOR=&lt;agente&gt; node --test …</span></li>
     <li>Prova com o agente real: pede um envio para a main e mostra a recusa</li>
   </ol>
-  <p class="pequeno"><span class="tag construcao">em construção</span> adaptadores e roteiro oficial · hoje: roteiro do material, não ensaiado</p>
-  <aside class="notas">O OpenCode recusa por exceção num plugin (execute.before); não tem evento de começo nem de fim de sessão. O Codex só roda ganchos do projeto depois de confiados. Isto é a prática da aula 2.</aside>
+  <p class="pequeno"><span class="tag pronto">pronto</span> roteiro e testes de contrato · não ensaiados com Codex nem com OpenCode</p>
+  <aside class="notas">O AGENTS.md que o init instala aponta para o roteiro (.harness/nucleo/docs/agentes/README.md), e o doctor tem o item "Adaptador do agente em uso". O adaptador se escreve no clone do agent-harness (nucleo/adaptadores/&lt;agente&gt;.mjs), não no projeto. Comando completo dos testes: AH_ADAPTADOR=&lt;agente&gt; node --test teste/contrato-adaptadores.test.mjs. Adaptadores do Codex e do OpenCode não existem, por decisão do autor: o agente de cada um escreve o seu. O OpenCode recusa por exceção num plugin (execute.before); não tem evento de começo nem de fim de sessão. O Codex só roda ganchos do projeto depois de confiados. Isto é a prática da aula 2.</aside>
 </section>
 
 <section class="slide">
