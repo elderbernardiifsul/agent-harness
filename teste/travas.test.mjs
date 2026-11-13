@@ -244,6 +244,17 @@ test('T2: $ ou crase em caminho literal (aspas simples, escape) não é expansã
   }
   assert.equal(av(`git add 'a$b' .`).trava, 'T2'); // o literal não esconde o "tudo" ao lado
 });
+test('T2: no texto relido que veio de palavra com expansão, as aspas simples não seguram o $ (terceira revisão)', () => {
+  // A camada de fora expande o $ (e a crase) antes de o texto ser relido: não é literal.
+  for (const c of [`bash -c "git add '$(pwd)'"`, "bash -c \"git add '`pwd`'\"", `bash -c "git commit -m x -- '$PWD'"`, `eval "git add '$X'"`,
+    `su -c "git add '$X'"`, `bash -c "bash -c \\"git add '\\$X'\\""`, `echo "git add '$X'" | sh`, `sh <<EOF\ngit add '$X'\nEOF`,
+    `sh <<< "git add '$X'"`, `trap "git add '$X'" EXIT`, `env -S "git add '$X'"`, `env -S"git add '$X'"`, `sudo bash -c "git add '$X'"`])
+    assert.equal(av(c).trava, 'T2', c);
+  // Sem expansão na camada de fora, o literal continua literal.
+  for (const c of [`sh -c "git add 'a\\$b'"`, `sh <<'EOF'\ngit add 'a$b'\nEOF`, `bash -c 'git add '"'"'a$b'"'"`, `echo "git add 'a\\$b'" | sh`,
+    `env -S "git add 'a\\$b'"`, `eval 'git add '"'"'a$b'"'"`])
+    assert.ok(av(c).permite, c);
+});
 
 // ---- onda final: M6 (cd que pode falhar seguido de ;)
 test('M6. cd seguido de ; avalia também na pasta de antes', () => {

@@ -483,6 +483,16 @@ test('literais: $ e crase entre aspas simples ou escapados; o que expande fica d
   assert.deepEqual(lit(`git add 'a$b' a$b 'c$d'`), ['c$d']);
   assert.deepEqual(lit(`git -C /w add 'a$b'`), ['a$b']);
 });
+test('literais: texto relido que veio de palavra com expansão não tem literais (terceira revisão)', () => {
+  const lit = t => comandosSimples(t, '/r').filter(c => c.argv[0] === 'git').map(c => c.literais);
+  for (const t of [`bash -c "git add '$X'"`, `eval "git add '$X'"`, `su -c "git add '$X'"`, `trap "git add '$X'" EXIT`, `echo "git add '$X'" | sh`,
+    `sh <<EOF\ngit add '$X'\nEOF`, `sh <<< "git add '$X'"`, `env -S "git add '$X'"`, `bash -c "bash -c \\"git add '\\$X'\\""`])
+    assert.deepEqual(lit(t), [undefined], t);
+  // O que vem depois, fora do texto relido, volta a ter literais.
+  assert.deepEqual(lit(`bash -c "git add '$X'"; git add 'a$b'`), [undefined, ['a$b']]);
+  for (const t of [`sh -c "git add 'a\\$b'"`, `sh <<'EOF'\ngit add 'a$b'\nEOF`, `env -S "git add 'a\\$b'"`])
+    assert.deepEqual(lit(t), [['a$b']], t);
+});
 
 // ---- pendência 10: cd que pode falhar no meio de uma lista && seguida de ;
 test('cd x && a; b: a só roda em x; b roda em x ou na pasta de antes', () => {
