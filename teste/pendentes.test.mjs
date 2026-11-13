@@ -28,7 +28,7 @@ test('editarTicket e criarRotulo chamam o gh com os argumentos do desenho', () =
 
 test('comentário com rede sai na hora e não entra na fila', () => {
   const { p, dir, o } = preparar();
-  assert.equal(comentarOuEnfileirar(dir, 1, 'a', o), true);
+  assert.equal(comentarOuEnfileirar(dir, 1, 'a', o), 'enviado');
   assert.equal(contarPendentes(dir), 0);
   assert.equal(p.ghTicket(1).comments[0].body, 'a');
   p.limpar();
@@ -36,7 +36,7 @@ test('comentário com rede sai na hora e não entra na fila', () => {
 
 test('comentário sem rede vai para a fila e sai no reenvio', async () => {
   const { p, dir, o, fora } = preparar();
-  assert.equal(comentarOuEnfileirar(dir, 1, 'a', fora), false);
+  assert.equal(comentarOuEnfileirar(dir, 1, 'a', fora), 'na-fila');
   assert.equal(contarPendentes(dir), 1);
   assert.ok(eventos(p).some(e => e.tipo === 'comentario-falhou' && e.ticket === 1));
   assert.deepEqual(p.ghTicket(1).comments, []);
@@ -49,11 +49,11 @@ test('comentário sem rede vai para a fila e sai no reenvio', async () => {
 test('edição sem rede vai para a fila e sai no reenvio', async () => {
   const { p, dir, o, fora } = preparar();
   assert.equal(criarRotulo('em-andamento', o), true);
-  assert.equal(editarOuEnfileirar(dir, 2, ['--add-assignee', '@me', '--add-label', 'em-andamento'], fora), false);
+  assert.equal(editarOuEnfileirar(dir, 2, ['--add-assignee', '@me', '--add-label', 'em-andamento'], fora), 'na-fila');
   assert.ok(eventos(p).some(e => e.tipo === 'edicao-falhou' && e.ticket === 2));
   assert.deepEqual(await reenviarPendentes(dir, o), { enviados: 1, restam: 0, descartados: 0 });
   assert.deepEqual(p.ghTicket(2), { state: 'OPEN', assignees: ['ana-souza'], labels: ['em-andamento'], comments: [] });
-  assert.equal(editarOuEnfileirar(dir, 2, ['--remove-label', 'em-andamento'], o), true);
+  assert.equal(editarOuEnfileirar(dir, 2, ['--remove-label', 'em-andamento'], o), 'enviado');
   assert.deepEqual(p.ghTicket(2).labels, []);
   p.limpar();
 });
@@ -72,8 +72,8 @@ test('reenvio para no primeiro erro passageiro e mantém a ordem', async () => {
 test('com comentário do mesmo ticket na fila, o novo entra atrás dele para não passar na frente', async () => {
   const { p, dir, o } = preparar();
   enfileirar(dir, { tipo: 'comentario', ticket: 1, corpo: 'antigo' });
-  assert.equal(comentarOuEnfileirar(dir, 1, 'novo', o), false);
-  assert.equal(comentarOuEnfileirar(dir, 2, 'outro ticket', o), true);
+  assert.equal(comentarOuEnfileirar(dir, 1, 'novo', o), 'na-fila');
+  assert.equal(comentarOuEnfileirar(dir, 2, 'outro ticket', o), 'enviado');
   assert.deepEqual(await reenviarPendentes(dir, o), { enviados: 2, restam: 0, descartados: 0 });
   assert.deepEqual(p.ghTicket(1).comments.map(c => c.body), ['antigo', 'novo']);
   p.limpar();
@@ -265,7 +265,7 @@ test('com a trava da fila presa, comentar e editar não lançam: avisam que nada
   fs.mkdirSync(trava, { recursive: true });
   fs.writeFileSync(path.join(trava, 'dono.json'), JSON.stringify({ pid: 1, em: new Date().toISOString(), marca: 'outra' }));
   const avisos = [];
-  assert.equal(comentarOuEnfileirar(dir, 1, 'a', { ...fora, avisar: t => avisos.push(t) }), false);
+  assert.equal(comentarOuEnfileirar(dir, 1, 'a', { ...fora, avisar: t => avisos.push(t) }), 'perdido');
   assert.match(avisos.join(''), /comentário no ticket #1 não foi enviada nem guardada na fila .*Faça à mão: gh issue comment 1/);
   assert.equal(contarPendentes(dir), 0);
   assert.ok(eventos(p).some(e => e.tipo === 'comentario-falhou' && e.ticket === 1 && e.guardada === false));
@@ -273,7 +273,7 @@ test('com a trava da fila presa, comentar e editar não lançam: avisam que nada
   // Arquivo da fila inacessível (uma pasta no lugar): a edição também só avisa.
   fs.mkdirSync(path.join(dir, 'pendentes.jsonl'));
   const avisos2 = [];
-  assert.equal(editarOuEnfileirar(dir, 2, ['--add-label', 'x'], { ...fora, avisar: t => avisos2.push(t) }), false);
+  assert.equal(editarOuEnfileirar(dir, 2, ['--add-label', 'x'], { ...fora, avisar: t => avisos2.push(t) }), 'perdido');
   assert.match(avisos2.join(''), /edição no ticket #2 não foi enviada nem guardada.*gh issue edit 2 --add-label x/);
   p.limpar();
 });

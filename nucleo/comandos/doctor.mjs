@@ -10,6 +10,7 @@ import { ErroDeConfig, carregarConfig, configAusente } from '../lib/config.mjs';
 import { ErroDeEstado, lerJson } from '../lib/estado.mjs';
 import { idsNoHistorico, lerFrente, listarFrentes, siglaValida } from '../lib/frente.mjs';
 import { lerSessao } from '../lib/sessao.mjs';
+import { vidaDaSessao } from '../lib/vida.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
 import { gh, protecaoDoRamo, repoAtual } from '../lib/github.mjs';
 import { mesclarGanchos } from './init.mjs';
@@ -256,6 +257,10 @@ export const VERIFICACOES = [
   }),
 
   verificacao('Frentes com worktree', amb => {
+    const sessaoViva = (a, id) => {
+      if (!id) return false;
+      try { return vidaDaSessao(a.dirEstado, id, { config: a.config }).estado === 'viva'; } catch { return false; }
+    };
     if (!amb.dirEstado) return null;
     let frentes;
     try { frentes = listarFrentes(amb.dirEstado); } catch (e) {
@@ -263,8 +268,13 @@ export const VERIFICACOES = [
       throw e;
     }
     const sumidas = frentes.filter(f => f.estado === 'ativa' && typeof f.worktree === 'string' && !fs.existsSync(f.worktree));
-    if (!sumidas.length) return ok('Frentes com worktree');
-    return sumidas.map(f => aviso(`Frente ${f.nome}`, `o worktree ${f.worktree} não existe; recrie-o ou encerre a frente com ah close ${f.nome}`));
+    // Registro `abrindo` cuja dona não está viva: um open que parou entre a reserva e o worktree.
+    const paradas = frentes.filter(f => f.estado === 'abrindo' && !sessaoViva(amb, f.dona));
+    if (!sumidas.length && !paradas.length) return ok('Frentes com worktree');
+    return [
+      ...sumidas.map(f => aviso(`Frente ${f.nome}`, `o worktree ${f.worktree} não existe; recrie-o ou encerre a frente com ah close ${f.nome}`)),
+      ...paradas.map(f => aviso(`Frente ${f.nome} em abertura parada`, `um ah open parou no meio (sessão ${f.dona ?? 'sem dona'}); rode ah open ${f.nome} para terminar, ou ah close ${f.nome} para desistir`)),
+    ];
   }),
 ];
 

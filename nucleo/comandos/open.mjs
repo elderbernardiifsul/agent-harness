@@ -3,13 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { ErroDeUso, arquivoDaMaquina, dirWorktrees } from '../lib/caminhos.mjs';
 import { comTrava, lerJson, registrarEvento } from '../lib/estado.mjs';
-import { frentesDa, gravarFrente, lerFrente, listarFrentes, nomeValido, novaFrente, proximoId, siglaValida } from '../lib/frente.mjs';
+import { frentesDa, gravarFrente, lerFrente, listarFrentes, nomeValido, novaFrente, proximoId, removerFrente, siglaValida } from '../lib/frente.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
 import { reenviarComAviso } from '../lib/pendentes.mjs';
 import { desfazerReserva, reservar } from '../lib/reserva.mjs';
 import { gravarSessao, lerSessao, registrarSessao, tocarSinal, VARIAVEL_SESSAO_CLAUDE } from '../lib/sessao.mjs';
-import { inicioDoProcesso, pidDeComando } from '../lib/vida.mjs';
+import { inicioDoProcesso, pidDeComando, vidaDaSessao } from '../lib/vida.mjs';
 
 export const descricao = 'abre uma frente de trabalho: ramo, worktree, registro e reserva dos tickets';
 export const uso = 'ah open <nome> [--tickets 1,2] [--plano <arquivo>] [--caminhos <globs>]';
@@ -120,7 +120,19 @@ export async function executar(args, amb) {
   const remoto = cfg.git.remoto;
   const ramo = cfg.git.prefixo + o.nome;
 
-  return comTrava(dirEstado, 'frentes', async () => {
+  const oGh = { cwd: amb.raiz, env: amb.env, avisar: amb.avisar };
+  const rotulo = cfg.github.rotuloDeReserva;
+
+  // Rede fora da trava das frentes: o fetch e (abaixo) a reserva podem levar segundos, e a trava segura o
+  // começo de sessão, o close, o whoami e o papel de todas as sessões da máquina.
+  const temRemoto = git(['remote'], { cwd: amb.raiz, env: amb.env }).saida.split('\n').includes(remoto);
+  if (temRemoto) {
+    const f = git(['fetch', '--', remoto, cfg.git.base], { cwd: amb.raiz, env: amb.env });
+    if (f.codigo !== 0) amb.avisar(`Aviso: não consegui atualizar ${remoto}/${cfg.git.base}; sigo com o que há aqui. (${f.erro.trim().split('\n')[0]})\n`);
+  }
+
+  // Fase 1, sob a trava: recusas locais, id e o registro `abrindo` (guarda id e nome contra outro open).
+  const { frente, partida } = await comTrava(dirEstado, 'frentes', async () => {
     let sessao = lerSessao(dirEstado, amb.sessaoId);
     if (!sessao) {
       const doAgente = !amb.env.AH_SESSAO && amb.env[VARIAVEL_SESSAO_CLAUDE];
@@ -129,16 +141,27 @@ export async function executar(args, amb) {
     } else {
       tocarSinal(dirEstado, amb.sessaoId);
     }
-    // A dona da frente é a fonte: o executor com frente ativa não abre outra; o orquestrador abre quantas quiser.
+    // Registro `abrindo` de um open que parou no meio (dona que não está viva, ou esta mesma sessão): este open
+    // o toma, com o mesmo id (os marcadores nos tickets são desse id). Com a dona viva, ela ainda está abrindo.
+    const existente = lerFrente(dirEstado, o.nome);
+    let tomado = null;
+    if (existente?.estado === 'abrindo') {
+      if (existente.dona !== amb.sessaoId && existente.dona && donaViva(dirEstado, existente.dona, cfg)) {
+        throw recusa(`A sessão ${existente.dona} está abrindo a frente ${o.nome} agora.`,
+          `espere ela terminar (ah board mostra a frente) ou escolha outro nome; se ela parou, rode ah open ${o.nome} de novo quando o sinal de vida dela vencer`);
+      }
+      tomado = existente;
+    }
+    // A dona da frente é a fonte: o executor com frente ativa (ou em abertura) não abre outra; o orquestrador abre quantas quiser.
     if (sessao.papel !== 'orquestrador') {
-      const minhas = frentesDa(listarFrentes(dirEstado), amb.sessaoId);
+      const minhas = frentesDa(listarFrentes(dirEstado), amb.sessaoId, { comAbrindo: true }).filter(f => f.nome !== tomado?.nome);
       if (minhas.length) {
         const nomes = minhas.map(f => f.nome);
         throw recusa(`Esta sessão já tem a frente ${nomes.join(', ').slice(0, 60)}.`,
           `continue nela ou, antes de abrir outra, encerre com ${nomes.map(n => `ah close ${n}`).join('; ')} (o orquestrador abre várias: ah papel orquestrador)`);
       }
     }
-    const repetido = lerFrente(dirEstado, o.nome) ? 'frente'
+    const repetido = existente && !tomado ? 'frente'
       : existeRamo(amb.raiz, ramo, { env: amb.env }) ? 'ramo local'
         : existeRamo(amb.raiz, ramo, { remoto, env: amb.env }) ? 'ramo remoto' : null;
     if (repetido === 'ramo local') {
@@ -148,11 +171,6 @@ export async function executar(args, amb) {
     }
     if (repetido) throw recusa(`Já existe ${repetido} com o nome ${o.nome}.`, 'escolha outro nome para a frente');
 
-    const temRemoto = git(['remote'], { cwd: amb.raiz, env: amb.env }).saida.split('\n').includes(remoto);
-    if (temRemoto) {
-      const f = git(['fetch', '--', remoto, cfg.git.base], { cwd: amb.raiz, env: amb.env });
-      if (f.codigo !== 0) amb.avisar(`Aviso: não consegui atualizar ${remoto}/${cfg.git.base}; sigo com o que há aqui. (${f.erro.trim().split('\n')[0]})\n`);
-    }
     const partida = pontoDePartida(amb, cfg.git.base, remoto);
     if (partida.erro) throw new ErroDeUso(partida.erro);
     // Sem o harness no ponto de partida, o worktree nasceria sem tools/ah e sem gancho.
@@ -161,36 +179,70 @@ export async function executar(args, amb) {
         `faça o commit do harness lá: git switch ${cfg.git.base} e o git add/git commit que o ah init mostrou (rode tools/ah doctor para conferir)`);
     }
 
-    const frentesAbertas = listarFrentes(dirEstado);
-    const id = proximoId({ sigla: maquina.sigla, historico: lerHistorico(amb, partida.refs), frentes: frentesAbertas });
+    const id = tomado?.id ?? proximoId({ sigla: maquina.sigla, historico: lerHistorico(amb, partida.refs), frentes: listarFrentes(dirEstado) });
     const dirWt = dirWorktrees(cfg, amb.env, process.platform, os.homedir());
-    const frente = novaFrente({ id, nome: o.nome, config: cfg, dirWorktrees: dirWt, tickets, plano, caminhos, dona: amb.sessaoId, login, agora: new Date() });
+    const nova = novaFrente({ id, nome: o.nome, config: cfg, dirWorktrees: dirWt, tickets, plano, caminhos, dona: amb.sessaoId, login, agora: new Date() });
+    nova.estado = 'abrindo';
+    // Provisória: se o open morrer no meio, quem fechar o registro sabe que tickets liberar.
+    nova.reserva = tickets.length ? { logins: [login], tickets: [...tickets] } : null;
+    gravarFrente(dirEstado, nova);
+    if (tomado) registrarEvento(dirEstado, { tipo: 'abertura-retomada', sessao: amb.sessaoId, frente: o.nome, id, de: tomado.dona ?? null });
+    return { frente: nova, partida };
+  }, { venceMs: 120000 });
+  const id = frente.id;
 
-    // Reserva dos tickets no servidor: depois das recusas locais e antes de criar qualquer coisa no disco.
-    const rotulo = cfg.github.rotuloDeReserva;
-    const oGh = { cwd: amb.raiz, env: amb.env, avisar: amb.avisar };
-    let reserva = null;
-    if (tickets.length) {
-      const r = reservar({ tickets, frente, login, sessao: amb.sessaoId, rotulo, dirEstado }, oGh);
-      if (!r.ok) {
-        if (r.desistiu) registrarEvento(dirEstado, { tipo: 'reserva-desistida', sessao: amb.sessaoId, frente: frente.nome, id, tickets, vencedor: r.id });
-        throw recusa(`Não reservei os tickets: ${r.motivo}`, r.saida);
-      }
-      frente.reserva = { logins: [login], tickets: r.reservados };
-      reserva = r;
-      for (const n of r.fechados) amb.avisar(`Aviso: o ticket #${n} está fechado; não o reservei (a frente o guarda na lista).\n`);
+  // Some com o registro `abrindo` (se ainda é deste open).
+  const soltarRegistro = () => comTrava(dirEstado, 'frentes', async () => {
+    const f = lerFrente(dirEstado, frente.nome);
+    if (f && f.estado === 'abrindo' && f.dona === amb.sessaoId && f.id === id) removerFrente(dirEstado, frente.nome);
+  });
+
+  // Fase 2, fora da trava: a reserva dos tickets no servidor.
+  let reserva = null;
+  if (tickets.length) {
+    let r;
+    try {
+      r = reservar({ tickets, frente, login, sessao: amb.sessaoId, rotulo, dirEstado }, oGh);
+    } catch (e) {
+      await soltarRegistro();
+      throw e;
     }
+    if (!r.ok) {
+      if (r.desistiu) registrarEvento(dirEstado, { tipo: 'reserva-desistida', sessao: amb.sessaoId, frente: frente.nome, id, tickets, vencedor: r.id });
+      await soltarRegistro();
+      throw recusa(`Não reservei os tickets: ${r.motivo}`, r.saida);
+    }
+    frente.reserva = { logins: [login], tickets: r.reservados };
+    reserva = r;
+    for (const n of r.fechados) amb.avisar(`Aviso: o ticket #${n} está fechado; não o reservei (a frente o guarda na lista).\n`);
+  } else {
+    frente.reserva = null;
+  }
+  const desfazer = motivo => (frente.reserva?.tickets.length
+    ? ` (reserva: ${desfazerReserva({ frente, login, sessao: amb.sessaoId, rotulo, dirEstado, motivo }, oGh)})` : '');
 
+  // Fase 3, sob a trava: worktree e a frente vira ativa.
+  return comTrava(dirEstado, 'frentes', async () => {
+    const atual = lerFrente(dirEstado, frente.nome);
+    if (!atual || atual.estado !== 'abrindo' || atual.dona !== amb.sessaoId || atual.id !== id) {
+      const como = desfazer('outra sessão tomou o registro da frente');
+      throw recusa(`Outra sessão tomou o registro da frente ${frente.nome} enquanto esta reservava os tickets${como}.`, 'rode ah board para ver quem está com ela e, se for o caso, abra com outro nome');
+    }
     const g = git(['worktree', 'add', '-b', frente.ramo, frente.worktree, partida.ponto], { cwd: amb.raiz, env: amb.env });
     if (g.codigo !== 0) {
       if (existeRamo(amb.raiz, frente.ramo, { env: amb.env })) git(['branch', '-D', frente.ramo], { cwd: amb.raiz, env: amb.env });
-      if (frente.reserva) desfazerReserva({ frente, login, sessao: amb.sessaoId, rotulo, dirEstado, motivo: 'o git não criou o worktree' }, oGh);
-      throw recusa(`O git não criou o worktree: ${(g.erro.trim() || 'sem mensagem').slice(0, 300)}`, 'resolva o que o git descreve (ou escolha outro nome) e rode ah open de novo');
+      removerFrente(dirEstado, frente.nome);
+      const como = desfazer('o git não criou o worktree');
+      throw recusa(`O git não criou o worktree: ${(g.erro.trim() || 'sem mensagem').slice(0, 300)}${como}`, 'resolva o que o git descreve (ou escolha outro nome) e rode ah open de novo');
     }
 
+    frente.estado = 'ativa';
     gravarFrente(dirEstado, frente);
-    sessao.frente = frente.nome;
-    gravarSessao(dirEstado, sessao);
+    const sessao = lerSessao(dirEstado, amb.sessaoId);
+    if (sessao) {
+      sessao.frente = frente.nome;
+      gravarSessao(dirEstado, sessao);
+    }
     registrarEvento(dirEstado, { tipo: 'abertura', sessao: amb.sessaoId, frente: frente.nome, id, tickets });
     if (reserva) registrarEvento(dirEstado, { tipo: 'reserva', sessao: amb.sessaoId, frente: frente.nome, id, tickets: reserva.reservados, fechados: reserva.fechados });
 
@@ -201,4 +253,13 @@ export async function executar(args, amb) {
     amb.escrever(`Frente ${id} ${frente.nome} aberta.\nTrabalhe em: ${frente.worktree}\n`);
     return 0;
   }, { venceMs: 120000 });
+}
+
+// A sessão está viva? Arquivo ilegível conta como não viva.
+function donaViva(dirEstado, id, config) {
+  try {
+    return vidaDaSessao(dirEstado, id, { config }).estado === 'viva';
+  } catch {
+    return false;
+  }
 }

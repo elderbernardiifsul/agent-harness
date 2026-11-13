@@ -215,6 +215,7 @@ export async function executar(args, amb) {
         for (const ticket of r.edicoesNaFila) {
           amb.avisar(`Aviso: não consegui tirar responsável e rótulo do ticket #${ticket}; a edição ficou na fila; sai no próximo comando com rede.\n`);
         }
+        // Os perdidos (nem a fila aceitou) já foram avisados com o comando para fazer à mão.
       }
       frente.fechamentoComentado = true;
       gravarFrente(dirEstado, frente);

@@ -70,7 +70,7 @@ export function linhaDoHistorico(frente, resumo, agora) {
 
 const arquivoDaFrente = (dirEstado, nome) => path.join(dirEstado, 'frentes', `${validarNomeSeguro(nome, 'Nome da frente')}.json`);
 
-// Esquema 2: `estado` é 'ativa' ou 'passada'; `reserva` é {logins, tickets} ou null; opcionais
+// Esquema 2: `estado` é 'ativa', 'passada' ou 'abrindo' (open em andamento: registro sem worktree ainda); `reserva` é {logins, tickets} ou null; opcionais
 // `passadaEm`, `passadaPor`, `retomadaEm`, `tomadaEm`, `tomadaDe`, `atribuidaPor`, `reconstruida`.
 export function migrarFrente(obj, arquivo = null) {
   if (conferirEsquema(obj, 'A frente', arquivo) === ESQUEMA_DO_ESTADO) return obj;
@@ -123,7 +123,8 @@ export function listarFrentesTolerante(dirEstado) {
   return { frentes: frentes.sort(porAbertura), ilegiveis };
 }
 
-// Frentes ativas de que a sessão é dona.
-export function frentesDa(frentes, sessaoId) {
-  return frentes.filter(f => f.estado === 'ativa' && f.dona === sessaoId);
+// Frentes ativas de que a sessão é dona. `comAbrindo` conta também as que ela está abrindo (estado
+// `abrindo`, o registro do open entre a reserva e o worktree): é o que vale para a regra do executor.
+export function frentesDa(frentes, sessaoId, { comAbrindo = false } = {}) {
+  return frentes.filter(f => (f.estado === 'ativa' || (comAbrindo && f.estado === 'abrindo')) && f.dona === sessaoId);
 }

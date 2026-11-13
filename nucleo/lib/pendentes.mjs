@@ -63,31 +63,36 @@ const executarOp = (op, o) => (op.tipo === 'comentario'
   ? gh(['issue', 'comment', String(op.ticket), '--body-file', '-'], { ...o, entrada: op.corpo })
   : gh(['issue', 'edit', String(op.ticket), ...op.args], o));
 
+export const ENVIADO = 'enviado';
+export const NA_FILA = 'na-fila';
+export const PERDIDO = 'perdido';
+
 const avisoPadrao = texto => process.stderr.write(texto);
 
 const comoFazerAMao = op => (op.tipo === 'comentario'
   ? `gh issue comment ${op.ticket} (com o texto que o comando mostraria)`
   : `gh issue edit ${op.ticket} ${op.args.join(' ')}`);
 
-// Tenta já; na falha (ou com operação do mesmo ticket esperando na fila) enfileira, registra e devolve false.
-// Nunca lança: se nem a fila aceitar, avisa (`o.avisar`, senão a saída de erro) que é preciso fazer à mão.
+// Tenta já; na falha (ou com operação do mesmo ticket esperando na fila) enfileira e registra.
+// Devolve 'enviado' (chegou ao servidor), 'na-fila' (guardada para o reenvio) ou 'perdido' (nem a fila
+// aceitou: já avisou por `o.avisar`, senão pela saída de erro, que é preciso fazer à mão). Nunca lança.
 // `o.evento` (opcional): campos a mais no evento de falha (sessão, frente).
 function tentarOuEnfileirar(dirEstado, op, o) {
   const { evento = {}, avisar = avisoPadrao, ...opcoesDoGh } = o;
   let naFila = false;
   try { naFila = temDoTicket(dirEstado, op.ticket); } catch { naFila = false; }
-  if (!naFila && executarOp(op, opcoesDoGh).codigo === 0) return true;
+  if (!naFila && executarOp(op, opcoesDoGh).codigo === 0) return ENVIADO;
   const tipo = op.tipo === 'comentario' ? 'comentario-falhou' : 'edicao-falhou';
   try {
     enfileirar(dirEstado, op);
   } catch (e) {
     const motivo = String(e?.message ?? e).split('\n')[0].slice(0, 200);
-    avisar(`Aviso: a ${op.tipo === 'comentario' ? 'operação de comentário' : 'edição'} no ticket #${op.ticket} não foi enviada nem guardada na fila (${motivo}); se outro aviso disser que ficou na fila, não ficou. Faça à mão: ${comoFazerAMao(op)}\n`);
+    avisar(`Aviso: a ${op.tipo === 'comentario' ? 'operação de comentário' : 'edição'} no ticket #${op.ticket} não foi enviada nem guardada na fila (${motivo}). Faça à mão: ${comoFazerAMao(op)}\n`);
     try { registrarEvento(dirEstado, { ...evento, tipo, ticket: op.ticket, guardada: false, motivo }); } catch { /* já avisado */ }
-    return false;
+    return PERDIDO;
   }
   try { registrarEvento(dirEstado, { ...evento, tipo, ticket: op.ticket }); } catch { /* a operação está na fila */ }
-  return false;
+  return NA_FILA;
 }
 
 export function comentarOuEnfileirar(dirEstado, ticket, corpo, o = {}) {

@@ -38,7 +38,7 @@ export async function executar(args, amb) {
       return 0;
     }
     if (novo === 'executor') {
-      const minhas = frentesDa(listarFrentes(dirEstado), amb.sessaoId);
+      const minhas = frentesDa(listarFrentes(dirEstado), amb.sessaoId, { comAbrindo: true });
       if (minhas.length > 1) {
         // Fica a frente em foco (ou a mais nova); as outras precisam sair desta sessão.
         const foco = nomeDoFoco(sessao);

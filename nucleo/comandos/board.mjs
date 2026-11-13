@@ -17,8 +17,10 @@ function linhaUnica(texto, limite) {
 }
 
 // Ativa sem dona viva (dona morta, ilegível ou nenhuma) é órfã: alguém pode tomá-la.
+// Em abertura sem dona viva é um open que parou no meio: outro `ah open <nome>` o toma.
 function estadoNoQuadro(f, donaViva) {
   if (f.estado === 'ativa' && !donaViva) return 'órfã';
+  if (f.estado === 'abrindo') return donaViva ? 'abrindo' : 'abrindo (parada)';
   return f.estado ?? '—';
 }
 

@@ -1,7 +1,7 @@
 // gh de mentira para os testes: grava cada chamada e responde conforme um arquivo JSON.
 // Com GH_FALSO_TICKETS, guarda os tickets nesse arquivo ({"<n>": {state, assignees, labels, comments, apagado?}})
 // e responde a issue view/comment/edit/list e label create como o gh faria.
-import { appendFileSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 
 const argv = process.argv.slice(2);
 let entrada = '';
@@ -67,6 +67,15 @@ function camposPedidos(padrao) {
   if (errado) responder(1, '', `Unknown JSON field: "${errado}"\nAvailable fields:\n${CAMPOS.map(c => `  ${c}`).join('\n')}\n`);
   return campos;
 }
+// GH_FALSO_PAUSA=<arquivo>: o `issue view` cria <arquivo>.chegou e espera <arquivo>.solta (até 10 s).
+function pausar() {
+  const base = process.env.GH_FALSO_PAUSA;
+  if (!base) return;
+  writeFileSync(`${base}.chegou`, '');
+  const ate = Date.now() + 10000;
+  const espera = new Int32Array(new SharedArrayBuffer(4));
+  while (!existsSync(`${base}.solta`) && Date.now() < ate) Atomics.wait(espera, 0, 0, 50);
+}
 const vazio = () => ({ state: 'OPEN', assignees: [], labels: [], comments: [] });
 const ticketDe = (t, n) => ({ ...vazio(), ...(t[n] ?? {}) });
 const opcao = nome => {
@@ -84,7 +93,8 @@ function noFormatoDoGh(n, tk, campos) {
     state: tk.state,
     assignees: tk.assignees.map(l => ({ login: l })),
     labels: tk.labels.map(l => ({ name: l })),
-    comments: tk.comments.map(c => ({ author: { login: c.author }, body: c.body })),
+    // url com issuecomment-<n>: n cresce no repositório inteiro (os semeados sem número ficam antes, pela posição).
+    comments: tk.comments.map((c, i) => ({ author: { login: c.author }, body: c.body, url: `https://github.com/exemplo/loja/issues/${n}#issuecomment-${c.numero ?? i + 1}` })),
   };
   return Object.fromEntries(campos.map(c => [c, tudo[c] ?? null]));
 }
@@ -122,24 +132,40 @@ if (argv[0] === 'issue' && ['view', 'comment', 'edit'].includes(argv[1])) {
   const tk = ticketDe(t, n);
 
   if (argv[1] === 'view') {
+    pausar();
     const campos = camposPedidos('number,state');
     responder(0, `${JSON.stringify(noFormatoDoGh(n, tk, campos))}\n`);
   }
 
   if (argv[1] === 'comment') {
     const corpo = opcao('--body-file') === '-' ? entrada : (opcao('--body') ?? '');
-    // Corrida: no primeiro comentário do ticket, outra abertura comenta e se põe de responsável antes.
-    let corrida = null;
-    try { corrida = process.env.GH_FALSO_CORRIDA ? JSON.parse(process.env.GH_FALSO_CORRIDA) : null; } catch { corrida = null; }
-    if (corrida && String(corrida.ticket) === n && !tk.corridaFeita) {
-      tk.comments.push({ author: corrida.autor, body: corrida.body });
-      if (!tk.assignees.includes(corrida.autor)) tk.assignees.push(corrida.autor);
-      tk.corridaFeita = true;
-    }
-    tk.comments.push({ author: login, body: corpo });
+    // Corrida: outra abertura comenta (e se põe de responsável) no meio desta. GH_FALSO_CORRIDA é um objeto ou
+    // uma lista de {ticket, autor, body, antesDe?, depoisDe?}: sem os dois, entra antes do primeiro comentário
+    // deste login no `ticket`; com `antesDe`/`depoisDe` (número de ticket), antes/depois do comentário deste
+    // login naquele ticket. Cada uma acontece uma vez (`_corridas`).
+    let corridas = [];
+    try { corridas = process.env.GH_FALSO_CORRIDA ? [JSON.parse(process.env.GH_FALSO_CORRIDA)].flat() : []; } catch { corridas = []; }
+    const feitas = new Set(t._corridas ?? []);
     t[n] = tk;
+    const proximo = () => (t._seq = (t._seq ?? 1000) + 1);
+    const aplicar = momento => corridas.forEach((c, i) => {
+      if (feitas.has(i)) return;
+      const gatilho = momento === 'antes' ? (c.antesDe ?? (c.depoisDe === undefined ? c.ticket : undefined)) : c.depoisDe;
+      if (gatilho === undefined || String(gatilho) !== n) return;
+      const alvo = String(c.ticket);
+      const ta = alvo === n ? tk : ticketDe(t, alvo);
+      ta.comments.push({ author: c.autor, body: c.body, numero: proximo() });
+      if (!ta.assignees.includes(c.autor)) ta.assignees.push(c.autor);
+      t[alvo] = ta;
+      feitas.add(i);
+    });
+    aplicar('antes');
+    tk.comments.push({ author: login, body: corpo, numero: proximo() });
+    const meu = tk.comments.at(-1).numero;
+    aplicar('depois');
+    t._corridas = [...feitas];
     gravarTickets(t);
-    responder(0, `https://github.com/exemplo/loja/issues/${n}#issuecomment-${tk.comments.length}\n`);
+    responder(0, `https://github.com/exemplo/loja/issues/${n}#issuecomment-${meu}\n`);
   }
 
   // edit
