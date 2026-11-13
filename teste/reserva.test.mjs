@@ -192,9 +192,9 @@ const projeto = t => {
   return p;
 };
 
-test('corrida cruzada em dois tickets: exatamente uma frente fica, pela ordem única dos comentários', t => {
-  // Ordem no servidor: A#1, B#2, A#2, B#1. Pela posição em cada ticket, cada uma veria a outra antes em algum
-  // ticket e as duas desistiriam; pelo número do comentário, A (1001) chega antes de B (1002).
+test('corrida cruzada em dois tickets: as duas veem a outra antes em algum ticket e desistem; nenhuma fica', t => {
+  // Ordem no servidor: A#1, B#2, A#2, B#1. No #1 A chegou antes; no #2, B. Cada uma perde num dos seus tickets e
+  // desiste de todos (aceito: tentam de novo); o que não pode é as duas ficarem.
   const A = { id: 'as-1', nome: 'carrinho', ramo: 'feat/carrinho', tickets: [1, 2] };
   const B = { id: 'cd-1', nome: 'frete', ramo: 'feat/frete', tickets: [2, 1] };
   const pa = projeto(t);
@@ -204,9 +204,9 @@ test('corrida cruzada em dois tickets: exatamente uma frente fica, pela ordem ú
   ];
   const ra = reservar({ tickets: [1, 2], frente: A, login: 'ana-souza', sessao: 'sessao-teste-0001', rotulo: 'em-andamento', dirEstado: dirDoTeste(pa) },
     { cwd: pa.raiz, env: { ...pa.env, GH_FALSO_CORRIDA: JSON.stringify(corridaDeA) } });
-  assert.equal(ra.ok, true, ra.motivo);
-  assert.deepEqual(pa.ghTicket(1).comments.map(c => c.numero), [1001, 1004]);
-  assert.deepEqual(pa.ghTicket(2).comments.map(c => c.numero), [1002, 1003]);
+  assert.deepEqual(pa.ghTicket(1).comments.slice(0, 2).map(c => c.numero), [1001, 1004]);
+  assert.deepEqual(pa.ghTicket(2).comments.slice(0, 2).map(c => c.numero), [1002, 1003]);
+  assert.deepEqual([ra.ok, ra.desistiu, ra.id], [false, true, 'cd-1']);
 
   const pb = projeto(t);
   const corridaDeB = [
@@ -215,9 +215,7 @@ test('corrida cruzada em dois tickets: exatamente uma frente fica, pela ordem ú
   ];
   const rb = reservar({ tickets: [2, 1], frente: B, login: 'carla-dias', sessao: 'sessao-b-0002', rotulo: 'em-andamento', dirEstado: dirDoTeste(pb) },
     { cwd: pb.raiz, env: { ...pb.env, GH_FALSO_LOGIN: 'carla-dias', GH_FALSO_CORRIDA: JSON.stringify(corridaDeB) } });
-  assert.equal(rb.ok, false);
-  assert.equal(rb.desistiu, true);
-  assert.equal(rb.id, 'as-1');
+  assert.deepEqual([rb.ok, rb.desistiu, rb.id], [false, true, 'as-1']);
   for (const n of [1, 2]) {
     const tk = pb.ghTicket(n);
     assert.match(tk.comments.at(-1).body, /ah:desistencia id=cd-1 /);
@@ -428,41 +426,44 @@ async function pidMorto() {
   return pid;
 }
 
-test('três frentes: A quer #1, B quer #1 e #2, C quer #2; no máximo uma fica em cada ticket', t => {
-  // Servidor: B#1=1001, A#1=1002, C#2=1003, B#2=1004. Pela ordem dos comentários, B (1001) e C (só lê o #2, onde
-  // B vale 1004) ficariam as duas com o #2. Pela chave do marcador (abertaEm, id, sessão), que todo leitor vê igual, não.
-  const ordens = [
-    { A: '2026-11-13T10:00:02-03:00', B: '2026-11-13T10:00:01-03:00', C: '2026-11-13T10:00:03-03:00', fica: ['B'] },
-    { A: '2026-11-13T10:00:03-03:00', B: '2026-11-13T10:00:02-03:00', C: '2026-11-13T10:00:01-03:00', fica: ['C'] },
-    { A: '2026-11-13T10:00:01-03:00', B: '2026-11-13T10:00:02-03:00', C: '2026-11-13T10:00:03-03:00', fica: ['A'] },
-  ];
-  for (const ordem of ordens) {
-    const A = { id: 'as-1', nome: 'carrinho', ramo: 'feat/carrinho', tickets: [1], abertaEm: ordem.A };
-    const B = { id: 'cd-1', nome: 'frete', ramo: 'feat/frete', tickets: [1, 2], abertaEm: ordem.B };
-    const C = { id: 'as-2', nome: 'cupom', ramo: 'feat/cupom', tickets: [2], abertaEm: ordem.C };
-    const mA = marcadorCompleto(A, 'ana-souza', 'sessao-teste-0001');
-    const mB = marcadorCompleto(B, 'carla-dias', 'sessao-b-0002');
-    const mC = marcadorCompleto(C, 'ana-souza', 'sessao-c-0003');
-    const rodar = (frente, login, sessao, corrida) => {
-      const p = projeto(t);
-      const env = { ...p.env, GH_FALSO_LOGIN: login, GH_FALSO_CORRIDA: JSON.stringify(corrida) };
-      const r = reservar({ tickets: frente.tickets, frente, login, sessao, rotulo: 'em-andamento', dirEstado: dirDoTeste(p) }, { cwd: p.raiz, env });
-      const numeros = [1, 2].map(n => p.ghTicket(n).comments.filter(c => /ah:frente/.test(c.body)).map(c => c.numero));
-      return { ok: r.ok, numeros };
+test('três frentes: A quer #1, B quer #1 e #2, C quer #2; em nenhum ticket duas ficam', t => {
+  // Servidor: B#1=1001, A#1=1002, C#2=1003, B#2=1004. Duas variantes: cada frente relê logo depois das próprias
+  // escritas (só vê o que já estava lá), ou todas relêem no fim (veem tudo). Em ambas: A perde no #1 para B; B
+  // perde no #2 para C; C é a primeira no #2 e fica.
+  const A = { id: 'as-1', nome: 'carrinho', ramo: 'feat/carrinho', tickets: [1], abertaEm: '2026-11-13T10:00:01-03:00' };
+  const B = { id: 'cd-1', nome: 'frete', ramo: 'feat/frete', tickets: [1, 2], abertaEm: '2026-11-13T10:00:00-03:00' };
+  const C = { id: 'as-2', nome: 'cupom', ramo: 'feat/cupom', tickets: [2], abertaEm: '2026-11-13T10:00:02-03:00' };
+  const mA = marcadorCompleto(A, 'ana-souza', 'sessao-teste-0001');
+  const mB = marcadorCompleto(B, 'carla-dias', 'sessao-b-0002');
+  const mC = marcadorCompleto(C, 'ana-souza', 'sessao-c-0003');
+  const rodar = (frente, login, sessao, corrida) => {
+    const p = projeto(t);
+    const env = { ...p.env, GH_FALSO_LOGIN: login, GH_FALSO_CORRIDA: JSON.stringify(corrida) };
+    return reservar({ tickets: frente.tickets, frente, login, sessao, rotulo: 'em-andamento', dirEstado: dirDoTeste(p) }, { cwd: p.raiz, env }).ok;
+  };
+  const variantes = {
+    logoDepois: {
+      A: [{ ticket: 1, autor: 'carla-dias', body: mB, antesDe: 1 }],
+      B: [{ ticket: 1, autor: 'ana-souza', body: mA, depoisDe: 1 }, { ticket: 2, autor: 'ana-souza', body: mC, depoisDe: 1 }],
+      C: [{ ticket: 1, autor: 'carla-dias', body: mB, antesDe: 2 }, { ticket: 1, autor: 'ana-souza', body: mA, antesDe: 2 }],
+    },
+    noFim: {
+      A: [{ ticket: 1, autor: 'carla-dias', body: mB, antesDe: 1 }, { ticket: 2, autor: 'ana-souza', body: mC, depoisDe: 1 },
+        { ticket: 2, autor: 'carla-dias', body: mB, depoisDe: 1 }],
+      B: [{ ticket: 1, autor: 'ana-souza', body: mA, depoisDe: 1 }, { ticket: 2, autor: 'ana-souza', body: mC, depoisDe: 1 }],
+      C: [{ ticket: 1, autor: 'carla-dias', body: mB, antesDe: 2 }, { ticket: 1, autor: 'ana-souza', body: mA, antesDe: 2 },
+        { ticket: 2, autor: 'carla-dias', body: mB, depoisDe: 2 }],
+    },
+  };
+  for (const [nome, v] of Object.entries(variantes)) {
+    const ok = {
+      A: rodar(A, 'ana-souza', 'sessao-teste-0001', v.A),
+      B: rodar(B, 'carla-dias', 'sessao-b-0002', v.B),
+      C: rodar(C, 'ana-souza', 'sessao-c-0003', v.C),
     };
-    const b = rodar(B, 'carla-dias', 'sessao-b-0002', [
-      { ticket: 1, autor: 'ana-souza', body: mA, depoisDe: 1 }, { ticket: 2, autor: 'ana-souza', body: mC, depoisDe: 1 }]);
-    const a = rodar(A, 'ana-souza', 'sessao-teste-0001', [
-      { ticket: 1, autor: 'carla-dias', body: mB, antesDe: 1 }, { ticket: 2, autor: 'ana-souza', body: mC, depoisDe: 1 },
-      { ticket: 2, autor: 'carla-dias', body: mB, depoisDe: 1 }]);
-    const c = rodar(C, 'ana-souza', 'sessao-c-0003', [
-      { ticket: 1, autor: 'carla-dias', body: mB, antesDe: 2 }, { ticket: 1, autor: 'ana-souza', body: mA, antesDe: 2 },
-      { ticket: 2, autor: 'carla-dias', body: mB, depoisDe: 2 }]);
-    // os três viram o servidor na mesma ordem
-    for (const x of [a, b, c]) assert.deepEqual(x.numeros, [[1001, 1002], [1003, 1004]]);
-    const ficaram = Object.entries({ A: a.ok, B: b.ok, C: c.ok }).filter(([, ok]) => ok).map(([k]) => k);
-    assert.deepEqual(ficaram, ordem.fica);
-    assert.ok(!(a.ok && b.ok) && !(b.ok && c.ok), 'duas frentes ficaram com o mesmo ticket');
+    assert.ok(!(ok.A && ok.B), `${nome}: A e B ficaram com o #1`);
+    assert.ok(!(ok.B && ok.C), `${nome}: B e C ficaram com o #2`);
+    assert.deepEqual(ok, { A: false, B: false, C: true }, nome);
   }
 });
 
@@ -574,4 +575,59 @@ test('close de abertura parada: desfaz só onde o marcador ativo é dela, sem hi
   assert.equal(p.git(['rev-list', '--count', 'HEAD']).saida.trim(), antes);
   const hist = path.join(p.raiz, 'docs', 'agents', 'historico-das-frentes.md');
   assert.ok(!fs.existsSync(hist) || !fs.readFileSync(hist, 'utf8').includes('as-7'));
+});
+
+// ---- Consertos da revisão da tarefa 5, rodada 3 ----
+
+test('quem escreve depois desiste mesmo tendo aberto antes e com id menor (ordem do servidor no ticket)', async t => {
+  const p = projeto(t);
+  const pausa = path.join(path.dirname(p.raiz), 'pausa-y');
+  // Y lê o #1 (vazio) e para; X reserva, confirma e sai; Y segue, escreve depois de X e tem de desistir.
+  const Y = { AH_SESSAO: 'sessao-b-0002', GH_FALSO_LOGIN: 'carla-dias' };
+  const y = ahAssinc(p, ['open', 'frete', '--tickets', '1'], { ...Y, GH_FALSO_PAUSA: pausa });
+  let x;
+  try {
+    await esperarArquivo(`${pausa}.chegou`);
+    x = p.ah(['open', 'carrinho', '--tickets', '1']);
+  } finally {
+    fs.writeFileSync(`${pausa}.solta`, '');
+  }
+  assert.equal(x.codigo, 0, x.erro);
+  assert.match(x.saida, /Frente as-2 carrinho aberta/);
+  const ry = await y;
+  assert.equal(ry.codigo, 1);
+  assert.match(ry.erro, /as-2/);
+  const tk = p.ghTicket(1);
+  assert.match(tk.comments.at(-1).body, /ah:desistencia id=as-1 /);
+  assert.deepEqual([tk.assignees, tk.labels], [['ana-souza'], ['em-andamento']]);
+  const s = situacaoDoTicket(lerTicket(1, { cwd: p.raiz, env: p.env }).ticket, { rotulo: 'em-andamento', frenteId: 'cd-9', login: 'carla-dias' });
+  assert.deepEqual([s.livre, s.id], [false, 'as-2']);
+  assert.equal(lerFrenteDoTeste(p, 'frete'), null);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').estado, 'ativa');
+});
+
+test('close de abertura parada com outro login tira a responsável que a reserva pôs', async t => {
+  const p = projeto(t);
+  gravarAbrindo(p, { id: 'as-7', tickets: [1], processo: { pid: await pidMorto(), inicio: null } });
+  p.ghSemear(1, { assignees: ['ana-souza'], labels: ['em-andamento'], comments: [{ author: 'ana-souza', body: marcadorDe('as-7', 'carrinho', 'ana-souza') }] });
+  const r = p.ah(['close', 'carrinho'], { env: { GH_FALSO_LOGIN: 'carla-dias', AH_SESSAO: 'sessao-b-0002' } });
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Abertura de as-7 carrinho desfeita/);
+  const tk = p.ghTicket(1);
+  assert.deepEqual([tk.assignees, tk.labels], [[], []]);
+  assert.match(tk.comments.at(-1).body, /ah:desistencia id=as-7 .*login=carla-dias/);
+  assert.equal(situacaoDoTicket(lerTicket(1, { cwd: p.raiz, env: p.env }).ticket, { rotulo: 'em-andamento', frenteId: 'cd-9', login: 'carla-dias' }).livre, true);
+});
+
+test('close de abertura parada diz qual responsável ficou quando outra frente do mesmo login segura o ticket', async t => {
+  const p = projeto(t);
+  gravarAbrindo(p, { id: 'as-7', tickets: [1], processo: { pid: await pidMorto(), inicio: null } });
+  p.ghSemear(1, { assignees: ['ana-souza'], labels: ['em-andamento'], comments: [
+    { author: 'ana-souza', body: marcadorDe('as-7', 'carrinho', 'ana-souza') },
+    { author: 'ana-souza', body: marcadorDe('as-3', 'cupom', 'ana-souza') },
+  ] });
+  const r = p.ah(['close', 'carrinho']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.erro, /@ana-souza continua de responsável no ticket #1 \(outra frente do mesmo login segura o ticket\)/);
+  assert.deepEqual([p.ghTicket(1).assignees, p.ghTicket(1).labels], [['ana-souza'], ['em-andamento']]);
 });

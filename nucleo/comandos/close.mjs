@@ -117,6 +117,9 @@ export async function executar(args, amb) {
       if (r.naoLidos.length) {
         amb.avisar(`Aviso: não consegui ler ${r.naoLidos.map(n => `#${n}`).join(', ')}; confira à mão se a frente ${frente.id} ainda está de responsável e com o rótulo lá.\n`);
       }
+      for (const f of r.ficaram) {
+        amb.avisar(`Aviso: @${f.login} continua de responsável no ticket #${f.ticket} (${f.motivo}).${f.motivo.startsWith('outra') ? '' : ` Se precisar, tire à mão: gh issue edit ${f.ticket} --remove-assignee ${f.login}`}\n`);
+      }
       removerFrente(dirEstado, frente.nome);
       for (const s of [sessao, frente.dona && frente.dona !== amb.sessaoId ? lerSessao(dirEstado, frente.dona) : null]) {
         if (s && (s.frente?.nome ?? s.frente) === frente.nome) gravarSessao(dirEstado, { ...s, frente: null });
