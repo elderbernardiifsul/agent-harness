@@ -431,10 +431,13 @@ export async function executar(args, amb) {
       const relida = lerFrente(dirEstado, frente.nome);
       if (!relida || relida.id !== frente.id || !eDeste(relida) || relida.estado !== frente.estado) {
         tirarMarca();
-        // A marca do comentário é do id desta frente: sem o registro dela, é sobra.
-        if (relida?.id !== frente.id) apagarFechamento(dirEstado, frente.nome, frente.id);
+        // A marca do comentário só vale para o mesmo id e o mesmo estado; senão é sobra, e o close seguinte confere
+        // e comenta de novo.
+        const valeAMarca = relida?.id === frente.id && relida.estado === frente.estado;
+        if (!valeAMarca) apagarFechamento(dirEstado, frente.nome, frente.id);
+        const depois = !ticketsComentados || valeAMarca ? depoisDoComentario : '; os tickets já receberam o comentário de fechamento deste close';
         throw recusa(`A frente ${frente.nome} mudou durante o fechamento (agora: ${relida ? `${relida.id}, ${relida.estado}` : 'sem registro'}).`,
-          `rode ah board para ver como ela está${depoisDoComentario}`);
+          `rode ah board para ver como ela está${depois}`);
       }
       // Vale o registro relido (notas, dona e campos de extensão gravados no meio), com a reserva que a fase de rede decidiu.
       frente = { ...relida, reserva: frente.reserva };

@@ -14,12 +14,14 @@ export function gravarFechamento(dirEstado, frente, situacao) {
   gravarJson(arquivo(dirEstado, frente.nome), { id: frente.id, nome: frente.nome, estado: frente.estado, situacao, em: new Date().toISOString() });
 }
 
-// A marca que vale para a frente: a do mesmo id. Sem marca, ou ilegível: null.
+// A marca que vale para a frente: a do mesmo id e do mesmo estado (`ativa` ou `passada`) de quando o close comentou.
+// A frente que mudou de estado depois do comentário (uma passagem chegou aos tickets depois dele) volta a pedir a
+// conferência de quem a tem e o comentário. Sem marca, ou ilegível: null.
 export function fechamentoDa(dirEstado, frente) {
   if (!frente?.nome || !frente.id) return null;
   let m;
   try { m = lerJson(arquivo(dirEstado, frente.nome), null); } catch { return null; }
-  if (!m || m.id !== frente.id) return null;
+  if (!m || m.id !== frente.id || m.estado !== frente.estado) return null;
   return m.situacao === 'comentado' || m.situacao === 'comentando' ? m : null;
 }
 
