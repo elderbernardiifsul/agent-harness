@@ -313,14 +313,22 @@ export async function executar(args, amb) {
     }
 
     // O ramo remoto da frente integrada (o handoff o empurra) sai também, senão o nome fica preso no open. Só quando
-    // ele está contido na base e não avançou no remoto (lease no topo conhecido); falha vira aviso, nunca recusa.
-    if (temRamoRemoto && !soLocal && g(['merge-base', '--is-ancestor', refRemoto, `refs/heads/${base}`]).codigo === 0) {
-      const topo = g(['rev-parse', '--verify', '-q', refRemoto]).saida.trim();
-      const r = git(['push', `--force-with-lease=refs/heads/${frente.ramo}:${topo}`, remoto, '--delete', frente.ramo], { cwd: raiz, env, timeoutMs: PRAZO_DO_PUSH_MS });
-      if (r.codigo !== 0) {
-        const porque = (r.erro || r.saida || `código ${r.codigo}`).trim().split('\n')[0].slice(0, 200);
-        amb.avisar(`Aviso: não apaguei o ramo remoto ${frente.ramo} (${porque}); enquanto ele existir, o nome ${frente.nome} não abre de novo.\n`
-          + `Faça: git fetch ${remoto}, confira que git log ${base}..${remoto}/${frente.ramo} vem vazio (nada fora da ${base}) e apague: git push ${remoto} --delete ${frente.ramo}\n`);
+    // o topo dele está contido em <remoto>/<base> (a referência de acompanhamento, sem fetch novo: o trabalho já está
+    // no remoto) e não avançou lá (lease no topo conhecido). Contido só na base local: fica, com aviso. Nunca recusa.
+    if (temRamoRemoto && !soLocal) {
+      const refBaseRemota = `refs/remotes/${remoto}/${base}`;
+      const naBaseRemota = g(['merge-base', '--is-ancestor', refRemoto, refBaseRemota]).codigo === 0;
+      if (naBaseRemota) {
+        const topo = g(['rev-parse', '--verify', '-q', refRemoto]).saida.trim();
+        const r = git(['push', `--force-with-lease=refs/heads/${frente.ramo}:${topo}`, remoto, '--delete', frente.ramo], { cwd: raiz, env, timeoutMs: PRAZO_DO_PUSH_MS });
+        if (r.codigo !== 0) {
+          const porque = (r.erro || r.saida || `código ${r.codigo}`).trim().split('\n')[0].slice(0, 200);
+          amb.avisar(`Aviso: não apaguei o ramo remoto ${frente.ramo} (${porque}); enquanto ele existir, o nome ${frente.nome} não abre de novo.\n`
+            + `Faça: git fetch ${remoto}, confira que git log ${remoto}/${base}..${remoto}/${frente.ramo} vem vazio (nada fora da ${base}) e apague: git push ${remoto} --delete ${frente.ramo}\n`);
+        }
+      } else if (g(['merge-base', '--is-ancestor', refRemoto, `refs/heads/${base}`]).codigo === 0) {
+        amb.avisar(`Aviso: o ramo remoto ${frente.ramo} ficou porque a ${base} ainda não foi enviada (o trabalho dele está só na ${base} local); enquanto ele existir, o nome ${frente.nome} não abre de novo.\n`
+          + `Faça: git push ${remoto} ${base} e depois git push ${remoto} --delete ${frente.ramo}\n`);
       }
     }
 

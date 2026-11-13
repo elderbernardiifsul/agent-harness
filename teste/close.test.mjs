@@ -521,8 +521,10 @@ test('close de frente integrada apaga o ramo remoto dela, e o nome volta a valer
   t.after(() => p.limpar());
   assert.equal(p.git(['push', '-u', 'origin', 'feat/carrinho'], { cwd: wt }).codigo, 0);
   mescla(p);
+  assert.equal(p.git(['push', 'origin', 'dev']).codigo, 0);
   const r = p.ah(['close']);
   assert.equal(r.codigo, 0, r.erro);
+  assert.doesNotMatch(r.erro, /ramo remoto/);
   assert.equal(temRamoNoRemoto(p, 'feat/carrinho'), false);
   assert.equal(p.git(['show-ref', '--verify', '--quiet', 'refs/remotes/origin/feat/carrinho']).codigo, 1);
   const o = p.ah(['open', 'carrinho']);
@@ -542,6 +544,7 @@ test('close não apaga o ramo remoto que não está na base, nem o que avançou 
   t.after(() => q.p.limpar());
   assert.equal(q.p.git(['push', '-u', 'origin', 'feat/frete'], { cwd: q.wt }).codigo, 0);
   mescla(q.p, 'frete');
+  assert.equal(q.p.git(['push', 'origin', 'dev']).codigo, 0);
   assert.equal(q.p.git(['push', 'origin', 'main']).codigo, 0);
   const outro = q.p.git(['rev-parse', 'main']).saida.trim();
   assert.equal(q.p.git(['--git-dir', q.p.remoto, 'update-ref', 'refs/heads/feat/frete', outro]).codigo, 0);
@@ -549,4 +552,16 @@ test('close não apaga o ramo remoto que não está na base, nem o que avançou 
   assert.equal(r.codigo, 0, r.erro);
   assert.match(r.erro, /Aviso: não apaguei o ramo remoto feat\/frete .*\nFaça: .*git push origin --delete feat\/frete/);
   assert.equal(temRamoNoRemoto(q.p, 'feat/frete'), true);
+});
+
+test('frente integrada só na base local (a base não foi enviada): o ramo remoto fica, com aviso e o que fazer', t => {
+  const { p, wt } = comFrente();
+  t.after(() => p.limpar());
+  assert.equal(p.git(['push', '-u', 'origin', 'feat/carrinho'], { cwd: wt }).codigo, 0);
+  assert.equal(p.git(['push', 'origin', 'dev']).codigo, 0);
+  mescla(p);
+  const r = p.ah(['close']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.erro, /Aviso: o ramo remoto feat\/carrinho ficou porque a dev ainda não foi enviada .*\nFaça: git push origin dev e depois git push origin --delete feat\/carrinho/);
+  assert.equal(temRamoNoRemoto(p, 'feat/carrinho'), true);
 });
