@@ -877,11 +877,38 @@ function travasDeExtensao(acao, comandos, ctx, liberadaAntes) {
   return liberada ? { permite: true, liberada } : { permite: true };
 }
 
+// ---------------------------------------------------------------- dotglob na linha
+// Com dotglob (bash, ou GLOBIGNORE) ou globdots (zsh) ligado na própria linha, o curinga casa o ponto (T4).
+// O nome é procurado no texto cru e nos argumentos já lidos, sem aspas, escapes, caixa nem `_` (o zsh ignora
+// caixa e `_` no nome da opção: GLOB_DOTS, NO_GLOB_DOTS). `shopt`, `setopt`, `unsetopt` ou `set` com opção
+// que não dá para ler, ou o `-4` do zsh (GLOB_DOTS), ligam por precaução.
+const OPCAO_DO_PONTO = /dotglob|globdots|globignore/;
+const semEnfeite = s => s.replace(/['"\\_]/g, '').toLowerCase();
+const ilegivelOuQuatro = a => naoLiteral(a) || /^[-+][^-]*4/.test(a);
+
+function opcaoDoPontoIncerta(nome, args) {
+  if (nome === 'shopt') return args.some(naoLiteral);
+  if (nome === 'setopt' || nome === 'unsetopt') return args.some(ilegivelOuQuatro);
+  if (nome !== 'set') return false;
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    if (a === '--' || a === '-') return false; // o resto são os parâmetros posicionais
+    if (naoLiteral(a)) return true;
+    if (!/^[-+]/.test(a)) return false;
+    if (/^[-+]o$/.test(a)) { if (naoLiteral(args[k + 1] ?? '')) return true; k++; continue; }
+    if (ilegivelOuQuatro(a)) return true;
+  }
+  return false;
+}
+
+function ligaDotglob(texto, comandos) {
+  if (OPCAO_DO_PONTO.test(semEnfeite(texto))) return true;
+  return comandos.some(c => c.argv.some(a => OPCAO_DO_PONTO.test(semEnfeite(a))) || opcaoDoPontoIncerta(nomeDe(c.argv[0]), c.argv.slice(1)));
+}
+
 export function avaliar(acao, ctx) {
   if (acao?.tipo === 'edicao') return travaT4Edicao(acao, ctx) ?? travasDeExtensao(acao, null, ctx);
   if (acao?.tipo !== 'comando') throw new TypeError(`avaliar: tipo de ação desconhecido: ${acao?.tipo}`);
-  // Com dotglob (bash, ou GLOBIGNORE) ou globdots (zsh) ligado na própria linha, o curinga casa o ponto.
-  if (/(?<![A-Za-z0-9_])(dotglob|globdots|GLOBIGNORE)(?![A-Za-z0-9_])/.test(acao.comando)) ctx = { ...ctx, dotglob: true };
   let comandos;
   try {
     comandos = comandosSimples(acao.comando, acao.cwd ?? null);
@@ -889,6 +916,7 @@ export function avaliar(acao, ctx) {
     if (!(e instanceof ErroDeShell)) throw e;
     return PALAVRA_GIT.test(acao.comando) ? recusaT0(`não consegui ler o comando (${e.message}) e ele menciona git ou gh`) : travasDeExtensao(acao, null, ctx);
   }
+  if (ligaDotglob(acao.comando, comandos)) ctx = { ...ctx, dotglob: true };
   let liberada;
   const trocas = novasTrocas(ctx);
   for (const [indice, cmd] of comandos.entries()) {

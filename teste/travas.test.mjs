@@ -455,6 +455,17 @@ test('T4: *, ? e [!…] não casam o ponto do começo de um nome (pendência 9)'
   assert.equal(avaliar({ tipo: 'comando', comando: 'rm -rf /loja/*', cwd: '/r' }, funda).trava, 'T4', 'rm -r de uma pasta comum leva o oculto junto');
   assert.ok(avaliar({ tipo: 'comando', comando: 'rm -rf /loja/*/*', cwd: '/r' }, funda).permite);
 });
+test('T4: dotglob escrito com aspas, escape, caixa ou _ também liga o ponto (terceira revisão)', () => {
+  const oculto = { ...ctx4, frentes: [{ ...ctx4.frentes[0], worktree: '/loja/.wt/frete' }] };
+  const av = c => avaliar({ tipo: 'comando', comando: c, cwd: '/loja' }, oculto);
+  // zsh ignora caixa e `_` no nome da opção; argumento ilegível de shopt/setopt/set liga por precaução.
+  for (const c of ['shopt -s dot\\glob; rm -rf *', "shopt -s dotg''lob; rm -rf *", 'setopt GLOB_DOTS; rm -rf *', 'setopt glob_dots; rm -rf *',
+    'setopt Glob_Dots; rm -rf *', 'unsetopt NO_GLOB_DOTS; rm -rf *', "shopt -s $'dot\\x67lob'; rm -rf *", 'o=dot; shopt -s ${o}glob; rm -rf *',
+    'shopt -s "$o"; rm -rf *', 'set -o $o; rm -rf *', 'set -4; rm -rf *', 'export GLOB""IGNORE=x; rm -rf *'])
+    assert.equal(av(c).trava, 'T4', c);
+  for (const c of ['shopt -s nullglob; rm -rf *', 'setopt extendedglob; rm -rf *', 'set -e; rm -rf *', 'set -o pipefail; rm -rf *', 'set -- $x; rm -rf *'])
+    assert.ok(av(c).permite, c);
+});
 
 test('T4: recusa própria para git branch sobre o ramo de frente alheia', () => {
   assert.equal(textoDaRecusa(av4('git branch -D feat/frete')),
