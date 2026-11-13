@@ -441,9 +441,10 @@ function recusaT4(caminho, f) {
 
 const temFrentes = ctx => Array.isArray(ctx.frentes) && ctx.frentes.length > 0 && typeof ctx.viva === 'function';
 
-// A frente viva de outra sessão em cujo worktree `alvo` (relativo a `base`) cai, ou null.
+// A frente viva de outra sessão em cujo worktree `alvo` (relativo a `base`) cai, ou null. Com `arvore`
+// (o comando age na árvore inteira: rm -r, mv, chmod -R), vale também `alvo` que contém o worktree.
 // Caminho com variável, crase ou `~`, ou relativo com base desconhecida, não é avaliado.
-function frenteDoCaminho(alvo, base, ctx) {
+function frenteDoCaminho(alvo, base, ctx, arvore = false) {
   if (typeof alvo !== 'string' || alvo === '' || /[$`]/.test(alvo) || alvo.startsWith('~')) return null;
   let bruto;
   if (path.isAbsolute(alvo)) bruto = alvo;
@@ -451,13 +452,13 @@ function frenteDoCaminho(alvo, base, ctx) {
   else bruto = `${base}${path.sep}${alvo}`;
   const normalizar = typeof ctx.normalizar === 'function' ? ctx.normalizar : x => x;
   const n = normalizar(bruto);
-  const f = ctx.frentes.find(fr => fr.worktree && dentroDe(n, fr.worktree) && ctx.viva(fr.dona));
+  const f = ctx.frentes.find(fr => fr.worktree && (dentroDe(n, fr.worktree) || (arvore && dentroDe(fr.worktree, n))) && ctx.viva(fr.dona));
   return f ? { frente: f, caminho: path.resolve(bruto) } : null;
 }
 
-function primeiraRecusa(alvos, base, ctx) {
+function primeiraRecusa(alvos, base, ctx, arvore = false) {
   for (const a of alvos) {
-    const achado = frenteDoCaminho(a, base, ctx);
+    const achado = frenteDoCaminho(a, base, ctx, arvore);
     if (achado) return recusaT4(achado.caminho, achado.frente);
   }
   return null;
@@ -469,6 +470,21 @@ const BRANCH_CURTAS = new Set(['u', 't']);
 const BRANCH_LONGAS = new Set(['--set-upstream-to', '--contains', '--no-contains', '--merged', '--no-merged', '--points-at', '--sort', '--format', '--color', '--track']);
 const BRANCH_MEXE = o => ['-d', '-D', '-m', '-M', '-f'].includes(o) || ehLonga(o, '--delete', 5) || ehLonga(o, '--move', 4) || ehLonga(o, '--force', 4);
 const nomeDoRamo = r => r.replace(/^refs\/heads\//, '');
+const TAG_CURTAS = new Set(['m', 'F', 'u', 'n']);
+const TAG_LONGAS = new Set(['--message', '--file', '--local-user', '--sort', '--format', '--contains', '--no-contains', '--points-at', '--merged', '--no-merged', '--cleanup', '--color']);
+
+// Subcomandos da lista de escrita que, nesta forma, só leem.
+function gitSoLe(sub, args) {
+  if (sub === 'stash') return args[0] === 'list' || args[0] === 'show';
+  if (sub === 'notes') return args.length === 0 || args[0] === 'show' || args[0] === 'list';
+  if (sub === 'checkout') return args.length === 0;
+  if (sub === 'tag') {
+    const { opcoes, posicionais, depois } = lerArgs(args, TAG_CURTAS, TAG_LONGAS);
+    if (opcoes.some(o => o === '-d' || ehLonga(o, '--delete', 3))) return false;
+    return opcoes.some(o => o === '-l' || ehLonga(o, '--list', 3)) || posicionais.length + depois.length === 0;
+  }
+  return false;
+}
 
 function t4Git(cmd, ctx) {
   const g = subcomandoGit(cmd.argv, cmd.env);
@@ -488,9 +504,9 @@ function t4Git(cmd, ctx) {
     const [acao, ...resto] = g.args;
     if (acao !== 'remove' && acao !== 'move') return null;
     const { posicionais, depois } = lerArgs(resto);
-    return primeiraRecusa([...posicionais, ...depois], cwd, ctx);
+    return primeiraRecusa([...posicionais, ...depois], cwd, ctx, true);
   }
-  if (GIT_ESCRITA.has(g.sub) && cwd != null) return primeiraRecusa([cwd], null, ctx);
+  if (GIT_ESCRITA.has(g.sub) && cwd != null && !gitSoLe(g.sub, g.args)) return primeiraRecusa([cwd], null, ctx);
   return null;
 }
 
@@ -557,8 +573,21 @@ function arquivosNoLugar(args, perl) {
   return script ? pos : pos.slice(1);
 }
 
-const ESCREVE_TODO_POSICIONAL = new Set(['rm', 'rmdir', 'touch', 'mkdir', 'tee', 'truncate', 'chmod', 'chown', 'mv']);
+const ESCREVE_TODO_POSICIONAL = new Set(['rm', 'rmdir', 'touch', 'mkdir', 'tee', 'truncate', 'chmod', 'chown', 'chgrp', 'mv']);
 const ESCREVE_O_ULTIMO = new Set(['cp', 'install', 'ln']);
+
+// O comando age na árvore inteira de cada caminho: rm -r, rmdir, mv, chmod/chown/chgrp -R.
+function emArvore(nome, args) {
+  if (nome === 'rmdir' || nome === 'mv') return true;
+  const letra = nome === 'rm' ? /[rR]/ : /R/;
+  if (nome !== 'rm' && nome !== 'chmod' && nome !== 'chown' && nome !== 'chgrp') return false;
+  for (const a of args) {
+    if (a === '--') break;
+    if (a.startsWith('--')) { if (ehLonga(a, '--recursive', 3)) return true; continue; }
+    if (a.startsWith('-') && letra.test(a.slice(1))) return true;
+  }
+  return false;
+}
 
 // Caminhos em que o comando escreve, pelos argumentos; [] quando não escreve ou não sei.
 function caminhosEscritos(cmd) {
@@ -580,7 +609,7 @@ function caminhosEscritos(cmd) {
 function travaT4(cmd, ctx) {
   if (!temFrentes(ctx)) return null;
   if (nomeDe(cmd.argv[0]) === 'git') return t4Git(cmd, ctx);
-  return primeiraRecusa(caminhosEscritos(cmd), cmd.cwd, ctx);
+  return primeiraRecusa(caminhosEscritos(cmd), cmd.cwd, ctx, emArvore(nomeDe(cmd.argv[0]), cmd.argv.slice(1)));
 }
 
 // Destinos de redirecionamento: valem para qualquer comando, mesmo o só de redirecionamento.

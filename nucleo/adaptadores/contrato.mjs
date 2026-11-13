@@ -6,7 +6,7 @@
 //   {tipo: 'antes', sessao, cwd, acao}                                           -> {decisao: 'permite'} | {decisao: 'recusa', mensagem}
 //   {tipo: 'fim', sessao}                                                        -> {}
 //
-// `acao` é {tipo: 'comando', comando} | {tipo: 'edicao', arquivo} | {tipo: 'outra'}.
+// `acao` é {tipo: 'comando', comando} | {tipo: 'edicao', arquivo, ferramenta?} | {tipo: 'outra'}.
 // As travas recebem também a sessão, as frentes ativas das outras e a vida das donas (T4).
 // `amb` é o do despacho (raiz, config, dirEstado, env), mais, opcionais, `topoDe`,
 // `ramoAtual`, `baseDoPr`, `tempoDoGhMs`, `ehRef`, `existeCaminho` (para as travas), `pid` (padrão: o pid do agente,
@@ -19,7 +19,7 @@ import path from 'node:path';
 import { avaliar } from '../lib/travas.mjs';
 import { textoDaRecusa } from '../lib/recusa.mjs';
 import { comandosSimples } from '../lib/shell.mjs';
-import { registrarEvento, comTrava } from '../lib/estado.mjs';
+import { registrarEvento, comTrava, lerJson, gravarJson } from '../lib/estado.mjs';
 import { registrarSessao, tocarSinal, encerrarSessao, lerSessao, gravarSessao, idCurto } from '../lib/sessao.mjs';
 import { listarFrentesTolerante } from '../lib/frente.mjs';
 import { continuarSessao } from '../lib/heranca.mjs';
@@ -68,21 +68,47 @@ function ehRefPeloGit(env, remoto) {
 // Para a T4: as frentes ativas de outras sessões (worktree já normalizado) e a vida das donas, com
 // memória por id dentro do evento. Arquivo de frente ilegível é pulado e registrado (não pode travar
 // toda ferramenta do agente); registro ilegível da dona conta como viva (na dúvida, protege).
+// O evento `estado-ilegivel` sai só quando o conjunto de ilegíveis muda (o último avisado fica em
+// `ilegiveis-avisados.json`), para não encher os eventos a cada ferramenta.
+function avisarIlegiveis(sessao, ilegiveis, amb) {
+  const arquivo = path.join(amb.dirEstado, 'ilegiveis-avisados.json');
+  const caminhos = ilegiveis.map(nome => path.join(amb.dirEstado, 'frentes', `${nome}.json`)).sort();
+  let avisados = null;
+  try { avisados = lerJson(arquivo); } catch { /* carimbo ilegível: avisa de novo */ }
+  if (Array.isArray(avisados) && avisados.length === caminhos.length && avisados.every((c, i) => c === caminhos[i])) return;
+  if (!caminhos.length && avisados == null) return;
+  try {
+    if (caminhos.length) gravarJson(arquivo, caminhos); else fs.rmSync(arquivo, { force: true });
+  } catch { /* sem o carimbo, o aviso só se repete */ }
+  if (caminhos.length) registrarEvento(amb.dirEstado, { tipo: 'estado-ilegivel', sessao, caminhos });
+}
+
 function frentesDeOutras(sessao, amb) {
   const { frentes, ilegiveis } = listarFrentesTolerante(amb.dirEstado);
-  if (ilegiveis.length) {
-    registrarEvento(amb.dirEstado, {
-      tipo: 'estado-ilegivel', sessao, caminhos: ilegiveis.map(nome => path.join(amb.dirEstado, 'frentes', `${nome}.json`)),
-    });
-  }
+  avisarIlegiveis(sessao, ilegiveis, amb);
   return frentes
     .filter(f => f.estado === 'ativa' && f.dona != null && f.dona !== sessao && typeof f.worktree === 'string' && f.worktree !== '')
     .map(f => ({ id: f.id, nome: f.nome, ramo: f.ramo, worktree: normalizarCaminho(f.worktree), dona: f.dona }));
 }
 
+// Dona no mesmo processo do agente deste evento, sem hora de início gravada (Windows, ps que falhou): é a
+// sessão anterior da mesma conversa (/clear, continuação que não herdou por falta da hora), não outra
+// sessão viva. Com a hora gravada, o mesmo pid não basta.
+function mesmoAgente(id, amb) {
+  const meu = pidDe(amb);
+  if (meu == null) return false;
+  try {
+    const s = lerSessao(amb.dirEstado, id);
+    return Boolean(s && !s.fim && s.pid === meu && s.pidInicio == null);
+  } catch {
+    return false;
+  }
+}
+
 function vidaDasDonas(amb) {
   const memoria = new Map();
   return id => {
+    if (!memoria.has(id) && mesmoAgente(id, amb)) memoria.set(id, false);
     if (!memoria.has(id)) {
       const opcoes = { config: amb.config, existe: existeDe(amb), inicio: inicioDe(amb) };
       if (amb.agora !== undefined) opcoes.agora = amb.agora;
@@ -272,7 +298,10 @@ async function antes(evento, amb) {
   const r = avaliar({ ...acao, cwd: evento.cwd ?? null }, contextoDasTravas(amb, evento.sessao));
   const comando = acao.tipo === 'comando' ? cortar(acao.comando, LIMITE_COMANDO_NO_EVENTO) : undefined;
   if (!r.permite) {
-    registrarEvento(amb.dirEstado, { tipo: 'recusa', sessao: evento.sessao, trava: r.trava, comando });
+    const daEdicao = acao.tipo === 'edicao'
+      ? { ferramenta: acao.ferramenta, caminho: typeof acao.arquivo === 'string' ? path.resolve(evento.cwd ?? amb.raiz, acao.arquivo) : undefined }
+      : {};
+    registrarEvento(amb.dirEstado, { tipo: 'recusa', sessao: evento.sessao, trava: r.trava, comando, ...daEdicao });
     return { decisao: 'recusa', mensagem: textoDaRecusa(r) };
   }
   if (r.liberada) registrarEvento(amb.dirEstado, { tipo: 'liberacao', sessao: evento.sessao, trava: r.liberada, comando });

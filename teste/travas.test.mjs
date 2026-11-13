@@ -344,3 +344,20 @@ test('T4 pega o worktree alheio por link simbólico e por ..', { skip: process.p
   assert.equal(avaliar({ tipo: 'comando', comando: `touch '${tmp}/wt/frete/a\\..\\..\\x'`, cwd: '/r' }, c).trava, 'T4');
   assert.ok(avaliar({ tipo: 'comando', comando: `touch ${tmp}/atalho/x/b.js`, cwd: '/r' }, c).permite);
 });
+
+// ---- Consertos da revisão da T4
+test('T4: apagar, mover ou mudar permissão em árvore de uma pasta que contém o worktree alheio recusa', () => {
+  for (const c of ['rm -rf /wt', 'rm -r /', 'rm --recursive /wt', 'rm -R -- /wt', 'mv /wt /tmp/x', 'mv a /wt', 'cd /wt/frete/src && rm -rf ../..', 'rmdir /wt',
+    'chmod -R 700 /wt', 'chown --recursive x /wt', 'mv -t /wt a'])
+    assert.equal(av4(c).trava, 'T4', c);
+  for (const c of ['rm /wt', 'chmod 700 /wt', 'rm -rf /wt2', 'rm -rf /wt/outra', 'touch /wt', 'cp -r /wt /tmp/copia'])
+    assert.ok(av4(c).permite, c);
+});
+test('T4: leituras do git no worktree alheio passam', () => {
+  for (const c of ['git -C /wt/frete stash list', 'git -C /wt/frete stash show -p', 'git -C /wt/frete tag', 'git -C /wt/frete tag -l "v*"', 'git -C /wt/frete tag --list',
+    'git -C /wt/frete notes', 'git -C /wt/frete notes show HEAD', 'git -C /wt/frete notes list', 'git -C /wt/frete checkout'])
+    assert.ok(av4(c).permite, c);
+  for (const c of ['git -C /wt/frete stash', 'git -C /wt/frete stash pop', 'git -C /wt/frete tag v1', 'git -C /wt/frete tag -d v1', 'git -C /wt/frete notes add -m x',
+    'git -C /wt/frete checkout x'])
+    assert.equal(av4(c).trava, 'T4', c);
+});

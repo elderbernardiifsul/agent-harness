@@ -48,7 +48,7 @@ function acaoDe(json, tipo) {
   if (Object.hasOwn(EDICOES, nome)) {
     const arquivo = json.tool_input[EDICOES[nome]];
     if (typeof arquivo !== 'string' || arquivo === '') throw new ErroDeEntrada(`tool_input.${EDICOES[nome]} de ${nome} não é um caminho`, tipo);
-    return { tipo: 'edicao', arquivo };
+    return { tipo: 'edicao', arquivo, ferramenta: nome };
   }
   throw new ErroDeEntrada(`ferramenta desconhecida: ${descrever(nome)}`, tipo);
 }

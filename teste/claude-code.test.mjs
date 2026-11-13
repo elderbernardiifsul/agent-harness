@@ -25,9 +25,9 @@ test('claude-code: PreToolUse de Bash vira acao de comando', () => {
 });
 
 test('claude-code: Edit, Write e NotebookEdit viram edição com o arquivo', () => {
-  assert.deepEqual(traduzirEntrada(g('pre-edit.json')).acao, { tipo: 'edicao', arquivo: '/tmp/loja/nota.txt' });
-  assert.deepEqual(traduzirEntrada(g('pre-write.json')).acao, { tipo: 'edicao', arquivo: '/tmp/loja/nota.txt' });
-  assert.deepEqual(traduzirEntrada(g('pre-notebookedit.json')).acao, { tipo: 'edicao', arquivo: '/tmp/loja/nb.ipynb' });
+  assert.deepEqual(traduzirEntrada(g('pre-edit.json')).acao, { tipo: 'edicao', arquivo: '/tmp/loja/nota.txt', ferramenta: 'Edit' });
+  assert.deepEqual(traduzirEntrada(g('pre-write.json')).acao, { tipo: 'edicao', arquivo: '/tmp/loja/nota.txt', ferramenta: 'Write' });
+  assert.deepEqual(traduzirEntrada(g('pre-notebookedit.json')).acao, { tipo: 'edicao', arquivo: '/tmp/loja/nb.ipynb', ferramenta: 'NotebookEdit' });
 });
 
 test('claude-code: PowerShell e Monitor são comandos', () => {
@@ -341,9 +341,11 @@ test('gancho: a sessão B não edita no worktree da sessão A, viva; edita no pr
   assert.equal(r.codigo, 2);
   assert.match(r.erro, /Recusado \(T4\): .*carrinho.*sessao-a/);
   assert.equal(ganchoPre(q, { command: `rm -f ${path.join(wt('carrinho'), 'a.txt')}` }).codigo, 2);
+  assert.match(ganchoPre(q, { command: `rm -rf ${path.dirname(wt('carrinho'))}` }).erro, /Recusado \(T4\)/);
   assert.equal(ganchoPre(q, { file_path: path.join(wt('frete'), 'a.txt') }, 'Edit', { env: { AH_SESSAO: ID } }).codigo, 0);
   assert.equal(ganchoPre(q, { file_path: path.join(q.raiz, 'a.txt') }, 'Edit').codigo, 0);
-  assert.ok(eventosDe(q).some(e => e.tipo === 'recusa' && e.trava === 'T4'));
+  const recusa = eventosDe(q).find(e => e.tipo === 'recusa' && e.trava === 'T4');
+  assert.deepEqual([recusa.ferramenta, recusa.caminho, recusa.comando], ['Edit', path.join(wt('carrinho'), 'a.txt'), undefined]);
 });
 
 test('arquivo de frente ilegível não trava o gancho: a edição comum passa e o evento registra', t => {
@@ -353,7 +355,17 @@ test('arquivo de frente ilegível não trava o gancho: a edição comum passa e 
   fs.writeFileSync(path.join(dirDoTeste(q), 'frentes', 'x.json'), '{');
   assert.equal(ganchoPre(q, { file_path: path.join(q.raiz, 'a.txt') }, 'Edit').codigo, 0);
   assert.equal(ganchoPre(q, { command: 'rm -f a.txt' }).codigo, 0);
-  assert.ok(eventosDe(q).some(e => e.tipo === 'estado-ilegivel'));
+  const ilegiveis = () => eventosDe(q).filter(e => e.tipo === 'estado-ilegivel');
+  assert.equal(ilegiveis().length, 1, 'o mesmo conjunto de ilegíveis registra uma vez só');
+  assert.deepEqual(ilegiveis()[0].caminhos, [path.join(dirDoTeste(q), 'frentes', 'x.json')]);
+  fs.writeFileSync(path.join(dirDoTeste(q), 'frentes', 'y.json'), '[');
+  ganchoPre(q, { command: 'true' });
+  assert.equal(ilegiveis().length, 2, 'conjunto novo registra de novo');
+  fs.rmSync(path.join(dirDoTeste(q), 'frentes', 'x.json')); fs.rmSync(path.join(dirDoTeste(q), 'frentes', 'y.json'));
+  ganchoPre(q, { command: 'true' });
+  fs.writeFileSync(path.join(dirDoTeste(q), 'frentes', 'x.json'), '{');
+  ganchoPre(q, { command: 'true' });
+  assert.equal(ilegiveis().length, 3, 'consertado e quebrado de novo registra de novo');
 });
 
 test('registro ilegível da dona conta como viva para a T4 (na dúvida, protege)', t => {

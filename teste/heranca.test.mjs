@@ -61,6 +61,22 @@ for (const origem of ['novo', 'continuacao']) {
   });
 }
 
+test('hora de início desconhecida: a continuação no mesmo pid edita no worktree da frente da anterior (T4 não barra)', async () => {
+  const a = { ...amb(p), pid: proc.pid, inicioDoProcesso: () => null };
+  await tratar(inicio('sessao-a-0001', 'novo'), a); gravarFrente(dir, frenteDe('sessao-a-0001'));
+  await tratar(inicio('sessao-a-0002', 'continuacao'), a);
+  const arquivo = path.join(frenteDe('x').worktree, 'a.txt');
+  const e = await tratar({ tipo: 'antes', sessao: 'sessao-a-0002', cwd: p.raiz, acao: { tipo: 'edicao', arquivo } }, a);
+  assert.equal(e.decisao, 'permite', e.mensagem);
+  // Outro processo (pid diferente) continua barrado.
+  const outro = await tratar({ tipo: 'antes', sessao: 'sessao-c-0003', cwd: p.raiz, acao: { tipo: 'edicao', arquivo } }, { ...a, pid: process.pid });
+  assert.equal(outro.decisao, 'recusa');
+  // Com a hora de início conhecida na dona, o mesmo pid não basta (seria a continuação já herdada, ou pid reaproveitado).
+  gravarSessao(dir, { ...lerSessao(dir, 'sessao-a-0001'), pidInicio: '100' });
+  const comHoraNaDona = await tratar({ tipo: 'antes', sessao: 'sessao-a-0002', cwd: p.raiz, acao: { tipo: 'edicao', arquivo } }, a);
+  assert.equal(comHoraNaDona.decisao, 'recusa');
+});
+
 test('hora de início conhecida só de um lado não substitui', async () => {
   await tratar(inicio('s-a', 'novo'), { ...amb(p), pid: proc.pid, inicioDoProcesso: () => null });
   gravarFrente(dir, frenteDe('s-a'));
