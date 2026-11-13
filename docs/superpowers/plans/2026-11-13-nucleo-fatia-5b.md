@@ -165,4 +165,5 @@ Achados da revisão independente da tarefa 8, cada um com teste que falhava ante
 
 - O caminho `abrindo` do close (abertura desfeita) não chama `antesDeFechar` nem `depoisDeFechar`.
 - `fuso` inválido na configuração derruba `ah deps` e `ah board --numeros` com "Erro inesperado" (padrão anterior em `frente.mjs`).
-- `docs/extensoes/interface.md` ainda não descreve `ctx.donaViva` nem a opção `vivas` do `ctxFalso` (item 2), e `docs/referencia/comandos.md` não descreve o aviso de cache parcial, o "ver acima" do `deps` nem as continuações do `--numeros`.
+
+Na integração (13/11): `interface.md` passou a descrever `ctx.donaViva` e a opção `vivas`; `comandos.md`, o cache parcial, o "ver acima", as continuações e a recusa de `--frente` em frente de sessão viva; a trava fictícia `recursos/porta` do registro de exemplo virou `revisao/gerados`, a da extensão do guia.

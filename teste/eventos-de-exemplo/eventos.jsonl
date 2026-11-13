@@ -14,7 +14,7 @@
 {"tipo":"sessao-inicio","sessao":"sessao-carla-0001","agente":"claude-code","origem":"novo","modelo":"modelo-a","em":"2026-11-10T15:20:01.000Z"}
 {"tipo":"retomada","sessao":"sessao-carla-0001","frente":"cupom","id":"as-2","de":"sessao-ana-0002","login":"carla-dias","em":"2026-11-10T15:30:00.000Z"}
 {"tipo":"recusa","sessao":"sessao-carla-0001","trava":"T2","comando":"git add .","em":"2026-11-10T16:00:00.000Z"}
-{"tipo":"recusa","sessao":"sessao-carla-0001","trava":"recursos/porta","comando":"npm run dev","em":"2026-11-10T16:10:00.000Z"}
+{"tipo":"recusa","sessao":"sessao-carla-0001","trava":"revisao/gerados","comando":"npm run dev","em":"2026-11-10T16:10:00.000Z"}
 {"tipo":"recusa-de-comando","comando":"open","sessao":"sessao-carla-0001","motivo":"Recusado: a frente cupom já existe","em":"2026-11-10T16:20:00.000Z"}
 {"tipo":"pesado","sessao":"sessao-carla-0001","senha":2,"classe":"testes","esperaMs":3000,"duracaoMs":120000,"codigo":1,"em":"2026-11-10T16:32:03.000Z"}
 {"tipo":"abertura","sessao":

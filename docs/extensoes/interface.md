@@ -71,7 +71,7 @@ Toda função da extensão recebe o mesmo formato de contexto:
 | `gravarCampos(nome, campos)` | Grava em `frente.extensoes[<extensão>]` da frente `nome`; ver abaixo |
 | `git(args, opcoes)`, `gh(args, opcoes)` | Os auxiliares do núcleo, na raiz do projeto; devolvem `{codigo, saida, erro}` e não lançam |
 | `ErroDeUso` | Classe para recusar dentro de um comando |
-| *(acréscimo da revisão: a confirmar)* | Meio de saber se a sessão dona de uma frente está viva |
+| `donaViva(frente)` | `true` quando a sessão `frente.dona` está viva, pela mesma regra do `board` e do `takeover` (processo e sinal de vida); registro de sessão ilegível conta como viva; frente sem dona conta como `false` |
 
 ### Registro da frente
 
@@ -204,6 +204,7 @@ Cada reação é `async (ctx)`. Em todas, `ctx.frente` é a frente do comando.
 - `frente` (o registro de partida, montado à mão; basta trazer os campos que a função lê) e `frentes` formam o estado em memória; `ctx.frente` sai congelado, como no núcleo.
 - `saida` e `avisos` são listas com cada texto passado a `escrever` e `avisar`, na ordem (`['Frente as-1 carrinho: aberta há 2 h 13 min\n']`); `gravados` lista cada `gravarCampos` como `{frente, secao}`; `chamadas` lista cada `git`/`gh` como `{programa, args, opcoes}`, que respondem `{codigo: 0, saida: '', erro: ''}` salvo funções `git`/`gh` dadas.
 - `ErroDeUso` é a mesma classe do núcleo: `assert.rejects(() => cmd.executar([], ctx), ctx.ErroDeUso)` confere uma recusa.
+- `donaViva(frente)` responde pela opção `vivas`, lista dos ids de sessão dados como vivos; o padrão é `[sessaoId]`: `ctxFalso({frente, vivas: ['sessao-b-0002']})`.
 - `sessaoId` vale `sessao-teste-0001` por padrão; `env` é `{}`; `dirEstado` é `null`; outros campos (`retomada`, `reparar`, `soLocal`) entram pelo resto do objeto: `ctxFalso({frente, retomada: true})`.
 
 `projetoDeTeste` não usa o estado da máquina: `AH_ESTADO`, `AH_WORKTREES` e `AH_GH` (um `gh` falso que responde o login `ana-souza`) apontam para uma pasta temporária, e `CLAUDE_CODE_SESSION_ID` é removida do ambiente. `p.ah(args)` roda com `AH_SESSAO=sessao-teste-0001`; outra sessão entra por `p.ah(args, {env: {AH_SESSAO: 'sessao-b-0002'}})`. A sigla da máquina é `as`, de modo que a primeira frente aberta é `as-1`. `p.ah` devolve `{codigo, saida, erro}`.

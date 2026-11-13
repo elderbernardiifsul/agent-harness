@@ -37,7 +37,7 @@ test('números de todo o registro', () => {
   // continuações (compact da sessao-ana-0001, clear que deu id novo à sessao-ana-0005) ficam à parte.
   assert.deepEqual(n.sessoes, { iniciadas: 4, continuacoes: 2, porModelo: { 'modelo-a': 2, 'não informado': 1, 'modelo-b': 1 } });
   assert.deepEqual(n.recusas, {
-    porTrava: { T2: 2, 'recursos/porta': 1 },
+    porTrava: { T2: 2, 'revisao/gerados': 1 },
     liberacoesPorTrava: { T5: 1 },
     deComando: { open: 2, close: 1 },
   });
@@ -85,7 +85,7 @@ test('ah board --numeros em texto', t => {
   assert.match(s, /^Tempo por frente fechada: médio 7 h 0 min, mediano 6 h 0 min \(3 frentes\)$/m);
   assert.match(s, /^Passagens de bastão: 1; tomadas: 1; retomadas: 1$/m);
   assert.match(s, /^Sessões iniciadas: 4 \(modelo-a 2, modelo-b 1, não informado 1\); continuações: 2$/m);
-  assert.match(s, /^Recusas por trava: T2 2, recursos\/porta 1$/m);
+  assert.match(s, /^Recusas por trava: T2 2, revisao\/gerados 1$/m);
   assert.match(s, /^Liberações por trava: T5 1$/m);
   assert.match(s, /^Recusas de comando: open 2, close 1$/m);
   assert.match(s, /^Pesado: 2 execuções; espera média 2 s, máxima 3 s; duração média 1 min 30 s$/m);

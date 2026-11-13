@@ -382,7 +382,7 @@ Com `--numeros`, o `board` não mostra o quadro: agrega `<estado>/eventos.jsonl`
 | Frentes abertas e fechadas | `abertura`; `fechamento` e `fechamento-local` (estes contados também à parte, como "só local") |
 | Tempo por frente fechada (médio e mediano) | de `aberta` a `fechada` nos eventos de fechamento do período |
 | Passagens de bastão, tomadas, retomadas | `passagem`, `tomada`, `retomada` |
-| Sessões iniciadas, por modelo | `sessao-inicio`, agrupado por `modelo` (`não informado` quando o agente não o envia) |
+| Sessões iniciadas, por modelo | `sessao-inicio` com `origem` `novo` (ou sem origem), contado por id de sessão distinto e agrupado por `modelo` (`não informado` quando o agente não o envia); os começos com `origem` `continuacao` (limpeza, compactação, retomada) contam à parte, como continuações, porque a limpeza no Claude Code dá id novo à mesma conversa |
 | Recusas por trava | `recusa`, por `trava` (inclusive as de extensão, `<extensão>/<id>`) |
 | Liberações por trava | `liberacao`, por `trava` |
 | Recusas de comando | `recusa-de-comando`, por `comando` |
@@ -392,7 +392,7 @@ Com `--numeros`, o `board` não mostra o quadro: agrega `<estado>/eventos.jsonl`
 
 **Linhas ilegíveis.** Uma linha de `eventos.jsonl` que não é JSON não interrompe o comando: fica fora da conta e é informada à parte (`Linhas ilegíveis em eventos.jsonl: N`), com qualquer período, porque não tem data legível.
 
-`--json` imprime `{"periodo","frentes","passagens","tomadas","retomadas","sessoes","recusas","pesado","linhasIlegiveis"}`; os tempos vêm em milissegundos (`tempoMedioMs`, `tempoMedianoMs`, `esperaMediaMs`, `esperaMaximaMs`, `duracaoMediaMs`, `null` quando não há o que medir) e as contagens por chave em objetos (`sessoes.porModelo`, `recusas.porTrava`, `recusas.liberacoesPorTrava`, `recusas.deComando`).
+`--json` imprime `{"periodo","frentes","passagens","tomadas","retomadas","sessoes","recusas","pesado","linhasIlegiveis"}`; os tempos vêm em milissegundos (`tempoMedioMs`, `tempoMedianoMs`, `esperaMediaMs`, `esperaMaximaMs`, `duracaoMediaMs`, `null` quando não há o que medir) e as contagens por chave em objetos (`sessoes.iniciadas`, `sessoes.continuacoes`, `sessoes.porModelo`, `recusas.porTrava`, `recusas.liberacoesPorTrava`, `recusas.deComando`).
 
 | Recusa | Próximo passo |
 |---|---|
@@ -407,15 +407,15 @@ Números de 2026-11-09 a 2026-11-11 (fuso America/Sao_Paulo)
 Frentes: 3 abertas, 3 fechadas (1 só local)
 Tempo por frente fechada: médio 7 h 0 min, mediano 6 h 0 min (3 frentes)
 Passagens de bastão: 1; tomadas: 1; retomadas: 1
-Sessões iniciadas: 4 (modelo-a 2, modelo-b 1, não informado 1)
-Recusas por trava: T2 2, recursos/porta 1
+Sessões iniciadas: 4 (modelo-a 2, modelo-b 1, não informado 1); continuações: 2
+Recusas por trava: T2 2, revisao/gerados 1
 Liberações por trava: T5 1
 Recusas de comando: open 2, close 1
 Pesado: 2 execuções; espera média 2 s, máxima 3 s; duração média 1 min 30 s
 Linhas ilegíveis em eventos.jsonl: 1 (fora da conta)
 ```
 
-O exemplo corresponde ao registro de teste `teste/eventos-de-exemplo/eventos.jsonl`. A trava `recursos/porta` desse registro é fictícia e serve para mostrar o formato `<extensão>/<id>`: a extensão `recursos` que acompanha o harness não declara travas.
+O exemplo corresponde ao registro de teste `teste/eventos-de-exemplo/eventos.jsonl`. A trava `revisao/gerados` desse registro é a da extensão de exemplo do guia (`docs/extensoes/como-estender.md`) e mostra o formato `<extensão>/<id>`.
 
 ## deps
 
@@ -442,7 +442,11 @@ A linha `Bloqueado por: #N[, #M]` no corpo da issue (sem diferenciar maiúsculas
 
 **Leitura guardada.** Toda leitura bem-sucedida grava `<estado>/deps.json` com a data (`lidoEm`). A leitura sem argumento substitui o retrato; a leitura de uma issue soma ao que estava guardado. Sem acesso ao GitHub, o comando usa o arquivo e informa a data no cabeçalho (`leitura guardada de AAAA-MM-DD HH:MM`, no fuso da configuração). O `open` usa o mesmo arquivo para avisar de tickets bloqueados.
 
-`--json` imprime, sem argumento, `{"repo","lidoEm","deCache","fonte","completa","issues","livres","avisos"}` (cada issue com `numero`, `titulo`, `estado`, `frente`, `pendente` e a árvore `bloqueadaPor`) e, com ticket, `{"repo","lidoEm","deCache","fonte","ticket","bloqueadaPor","bloqueia","avisos"}`. O estado vem como `aberta`, `fechada` ou `null` (desconhecido).
+**Leitura guardada parcial.** O arquivo gravado só por `ah deps <n>`, sem uma leitura sem argumento por baixo, é marcado como parcial (`parcial: true`). Sem acesso ao GitHub, `ah deps` sobre ele avisa que a lista de livres para começar foi calculada só com as issues visitadas e pode ser outra.
+
+**Árvore.** Cada subárvore sai uma vez na saída inteira; a repetição aparece como `(aberta, ver acima)` no texto e com `verAcima: true` e `bloqueadaPor: []` no JSON. Assim um grafo denso de bloqueios não multiplica a saída.
+
+`--json` imprime, sem argumento, `{"repo","lidoEm","deCache","fonte","completa","parcial","issues","livres","avisos"}` (cada issue com `numero`, `titulo`, `estado`, `frente`, `pendente` e a árvore `bloqueadaPor`) e, com ticket, `{"repo","lidoEm","deCache","fonte","ticket","bloqueadaPor","bloqueia","avisos"}`. O estado vem como `aberta`, `fechada` ou `null` (desconhecido).
 
 | Recusa | Próximo passo |
 |---|---|
@@ -461,8 +465,7 @@ Bloqueios de exemplo/loja (lidos agora)
       bloqueada por #11 Base do catálogo (fechada)
     bloqueada por exemplo/pagamentos#5 API de pagamento (aberta)
 #13 Cupom no checkout
-  bloqueada por #12 Carrinho persistente (aberta)
-    bloqueada por #11 Base do catálogo (fechada)
+  bloqueada por #12 Carrinho persistente (aberta, ver acima)
   bloqueada por exemplo/pagamentos#5 API de pagamento (aberta)
 Livres para começar: #15 Página de ajuda; #12 Carrinho persistente
 Sem bloqueio, já com frente: #16 Revisão do layout (as-1)
@@ -518,6 +521,7 @@ Comando da extensão `recursos`, que acompanha o harness e só existe com `"recu
 
 - **`reservar`.** Grava o recurso na frente da sessão (ou na dada em `--frente`, por nome ou id). A conferência e a gravação ocorrem sob a trava das frentes; um valor já reservado por outra frente do estado (ativa, passada ou abrindo) é recusado com o nome dela. Reservar de novo o mesmo recurso na mesma frente não muda nada.
 - **`liberar`.** Retira um recurso, ou todos com `--todos`. `--frente` permite liberar os recursos de uma frente de outra sessão, por exemplo antes de fechar uma frente órfã ou passada.
+- **`--frente` em frente alheia.** Vale para frente passada, órfã (dona morta) ou sem dona. Frente ativa de outra sessão viva é recusada em `reservar` e `liberar`: só a sessão dona mexe nos recursos dela. A conferência ocorre sob a trava das frentes.
 - **`listar`.** Mostra os recursos de cada frente que tem algum, com o estado da frente quando não é `ativa`. `--json` imprime `{"recursos":[{"id","frente","estado","tipo","valor","em"}]}`, com `em` em UTC.
 - **Sessão.** `reservar` e `liberar` exigem sessão; `listar` não.
 - **Ciclo.** O `close` recusa a frente que ainda tem recursos e indica o `liberar --todos`. O `handoff` não libera: a frente passada continua dona dos recursos.
@@ -529,6 +533,7 @@ Comando da extensão `recursos`, que acompanha o harness e só existe com `"recu
 | `não sei qual é a sessão` (em `reservar` e `liberar`) | defina AH_SESSAO ou ligue o adaptador do agente |
 | `Esta sessão não tem frente.` | abra uma com ah open <nome>, ou diga qual com --frente <nome> |
 | `Não achei a frente <nome>.` | rode ah board para ver as frentes abertas |
+| `A frente <id> <nome> é da sessão <s>, que está viva.` | peça à sessão dona (<s>) que reserve ou libere ela mesma; com a sessão morta (frente órfã) ou a frente passada, o --frente vale |
 | `Faltam ou sobram argumentos.` / `Opção desconhecida: …` / `Argumento a mais: …` / `A opção --frente precisa do nome da frente.` | use o uso acima |
 | `Tipo inválido: …` | use minúsculas, números e hífen, começando por letra (ex.: porta) |
 | `Valor inválido: precisa ter de 1 a 100 caracteres, sem espaço.` | escreva o valor sem espaço (ex.: 3001) |
