@@ -12,6 +12,7 @@ import { comTrava } from './estado.mjs';
 import { gravarFrente, lerFrente, listarFrentesTolerante } from './frente.mjs';
 import { git } from './git.mjs';
 import { gh } from './github.mjs';
+import { vidaDaDona } from './vida.mjs';
 
 export const VERSAO_DA_INTERFACE = 1;
 export const DIR_DO_NUCLEO = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'extensoes');
@@ -236,6 +237,14 @@ export function montarCtx(ext, amb, extra = {}) {
     avisar: amb.avisar ?? (() => {}),
     frente: copiaSoDeLeitura(frente),
     frentes: () => (dirEstado ? listarFrentesTolerante(dirEstado).frentes.map(copiaSoDeLeitura) : []),
+    // A sessão dona da frente (`frente.dona`) está viva? Mesma regra do takeover e do board (vida.mjs): registro
+    // ilegível conta como viva (pode estar), e frente sem dona, como não. Para a extensão não mexer em frente
+    // ativa de outra sessão de pé.
+    donaViva(frente) {
+      if (!dirEstado || !frente?.dona) return false;
+      const estado = vidaDaDona(dirEstado, frente.dona, { config: amb.config })?.estado;
+      return estado === 'viva' || estado === 'ilegivel';
+    },
     // Grava em frente.extensoes[<nome>] os campos dados (undefined apaga o campo) e devolve a seção como ficou.
     // `campos` também pode ser uma função (seçãoAtual, {frentes}) -> campos, chamada sob a trava das frentes: o
     // que ela confere não muda até a gravação; se ela lança, nada é gravado.

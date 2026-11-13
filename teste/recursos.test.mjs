@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { criarProjeto, dirDoTeste } from './apoio/repo.mjs';
+import { criarProjeto, dirDoTeste, envelhecerSinal } from './apoio/repo.mjs';
 import { arquivosDaCopia } from '../nucleo/lib/copia.mjs';
 import { fileURLToPath } from 'node:url';
 
@@ -91,6 +91,34 @@ test('close recusa com recursos reservados e passa depois de liberar', t => {
   assert.ok(fs.existsSync(frenteDoTeste(p, 'carrinho').worktree));
   ok(p.ah(['recursos', 'liberar', '--todos', '--frente', 'carrinho']));
   ok(p.ah(['close']));
+});
+
+test('--frente não mexe em frente ativa de outra sessão viva; aceita a passada, a órfã e a da própria sessão', t => {
+  const p = projeto(t);
+  ok(p.ah(['open', 'carrinho']));
+  ok(p.ah(['open', 'frete'], B));
+  ok(p.ah(['recursos', 'reservar', 'porta', '3002'], B));
+  const viva = /^Recusado: A frente as-2 frete é da sessão sessao-b-0002, que está viva\.\nFaça: peça à sessão dona \(sessao-b-0002\) que reserve ou libere ela mesma; com a sessão morta \(frente órfã\) ou a frente passada, o --frente vale\n$/;
+  for (const args of [['reservar', 'porta', '3001'], ['liberar', 'porta', '3002'], ['liberar', '--todos']]) {
+    const r = p.ah(['recursos', ...args, '--frente', 'frete']);
+    assert.equal(r.codigo, 1, args.join(' '));
+    assert.match(r.erro, viva, args.join(' '));
+  }
+  assert.deepEqual(frenteDoTeste(p, 'frete').extensoes.recursos.itens.map(i => i.valor), ['3002']);
+  // a da própria sessão, por nome
+  ok(p.ah(['recursos', 'reservar', 'porta', '3001', '--frente', 'carrinho']));
+  // a órfã (dona com o sinal vencido)
+  envelhecerSinal(p, 'sessao-b-0002', 24 * 60);
+  ok(p.ah(['recursos', 'liberar', 'porta', '3002', '--frente', 'frete']));
+});
+
+test('--frente aceita a frente passada de outra sessão viva', t => {
+  const p = projeto(t);
+  ok(p.ah(['open', 'frete'], B));
+  ok(p.ah(['recursos', 'reservar', 'porta', '3002'], B));
+  ok(p.ah(['handoff'], B));
+  ok(p.ah(['recursos', 'liberar', '--todos', '--frente', 'frete']));
+  assert.deepEqual(frenteDoTeste(p, 'frete').extensoes.recursos.itens, []);
 });
 
 test('handoff mantém a reserva: a frente passada segue dona dos recursos', t => {

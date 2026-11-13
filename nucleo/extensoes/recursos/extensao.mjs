@@ -43,6 +43,16 @@ function frenteAlvo(ctx, nome) {
   return ctx.frente;
 }
 
+// Com --frente, a frente pode ser de outra sessão: vale a passada, a órfã (dona morta) e a sem dona, mas não a
+// ativa de uma sessão viva, que é quem sabe o que os recursos dela sustentam. Chamada sob a trava das frentes,
+// com a frente lida ali (`atual`), para a dona não mudar entre a conferência e a gravação.
+function conferirDona(ctx, atual) {
+  if (!atual || atual.estado !== 'ativa' || !atual.dona || atual.dona === ctx.sessaoId || !ctx.donaViva(atual)) return;
+  throw recusa(ctx, `A frente ${atual.id} ${atual.nome} é da sessão ${atual.dona}, que está viva.`,
+    `peça à sessão dona (${atual.dona}) que reserve ou libere ela mesma; com a sessão morta (frente órfã) ou a frente passada, o --frente vale`);
+}
+const daFrente = (frentes, f) => frentes.find(x => x.nome === f.nome);
+
 function lerItem(ctx, [tipo, valor, ...resto]) {
   if (tipo === undefined || valor === undefined || resto.length) throw recusa(ctx, 'Faltam ou sobram argumentos.', `use ${USO}`);
   if (!TIPO.test(tipo)) throw recusa(ctx, `Tipo inválido: ${tipo.slice(0, 40)}`, 'use minúsculas, números e hífen, começando por letra (ex.: porta)');
@@ -61,6 +71,7 @@ async function reservar(args, ctx) {
   let ja = false;
   // Sob a trava das frentes: a conferência e a gravação não se separam.
   await ctx.gravarCampos(f.nome, (secao, { frentes }) => {
+    conferirDona(ctx, daFrente(frentes, f));
     const dona = frentes.find(x => x.nome !== f.nome && itensDe(x).some(i => mesmo(i, item)));
     if (dona) {
       throw recusa(ctx, `${texto(item)} já está reservado pela frente ${dona.id} ${dona.nome}.`,
@@ -80,12 +91,17 @@ async function liberar(args, ctx) {
   if (o.todos) {
     if (o.posicionais.length) throw recusa(ctx, 'Com --todos não vão tipo nem valor.', `use ${USO}`);
     let n = 0;
-    await ctx.gravarCampos(f.nome, secao => { n = Array.isArray(secao.itens) ? secao.itens.length : 0; return { itens: [] }; });
+    await ctx.gravarCampos(f.nome, (secao, { frentes }) => {
+      conferirDona(ctx, daFrente(frentes, f));
+      n = Array.isArray(secao.itens) ? secao.itens.length : 0;
+      return { itens: [] };
+    });
     ctx.escrever(`Liberados ${n} recurso(s) da frente ${f.id} ${f.nome}.\n`);
     return 0;
   }
   const item = lerItem(ctx, o.posicionais);
-  await ctx.gravarCampos(f.nome, secao => {
+  await ctx.gravarCampos(f.nome, (secao, { frentes }) => {
+    conferirDona(ctx, daFrente(frentes, f));
     const itens = Array.isArray(secao.itens) ? secao.itens : [];
     if (!itens.some(i => mesmo(i, item))) throw recusa(ctx, `${texto(item)} não está reservado pela frente ${f.id} ${f.nome}.`, 'ah recursos listar mostra o que cada frente tem');
     return { itens: itens.filter(i => !mesmo(i, item)) };
