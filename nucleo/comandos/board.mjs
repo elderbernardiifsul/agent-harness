@@ -7,6 +7,7 @@ import { aberturaParada, fechamentoEmCurso, frenteOrfa, vidaDaDona } from '../li
 import { dirDaFila, duracaoCurta, retratoDaFila } from '../lib/fila.mjs';
 import { ativasOuNada, colunasDasExtensoes } from '../lib/extensoes.mjs';
 import { executarNumeros, USO_NUMEROS } from '../lib/numeros.mjs';
+import { bloqueiosAbertos, lerCache, quando, refDoBloqueio } from '../lib/deps.mjs';
 
 export const descricao = 'mostra as frentes abertas e as sessões vivas';
 export const uso = `ah board [--json] | ${USO_NUMEROS}`;
@@ -14,6 +15,7 @@ export const requisitos = { config: true, sessao: false };
 
 const LIMITE_PLANO = 30;
 const LIMITE_NOTA = 40;
+const LIMITE_BLOQUEIOS = 40;
 const LIMITE_SOBREPOSICOES = 20;
 // Um git que trava numa frente não pode prender o quadro.
 const TEMPO_DO_GIT_POR_CHAMADA_MS = 5000;
@@ -124,6 +126,10 @@ export async function executar(args, amb) {
   const conferida = f => !naoConferidas.has(f.id);
   // Colunas das extensões ligadas: valor por frente, já cortado ('!' quando a extensão falha).
   const colunas = colunasDasExtensoes(await ativasOuNada(amb, { avisar: amb.avisar }), amb);
+  // Bloqueios pela leitura guardada do `ah deps` (sem rede, decisão 19); sem leitura guardada, nem coluna nem rodapé.
+  let deps = null;
+  try { deps = lerCache(dirEstado).cache ?? null; } catch { deps = null; }
+  const bloqueiosDe = f => [...new Set((Array.isArray(f.tickets) ? f.tickets : []).flatMap(t => bloqueiosAbertos(deps, t).map(refDoBloqueio)))];
   const valoresDe = new Map();
   for (const f of frentes) valoresDe.set(f, await Promise.all(colunas.map(c => c.valor(f))));
   if (json) {
@@ -136,9 +142,11 @@ export async function executar(args, amb) {
       ...f, donaViva: donaViva(f), donaIlegivel: donaIlegivel(f), sobrepoe: sobrepoe(f), sobreposicaoConferida: conferida(f),
       ...(f.estado === 'abrindo' ? { aberturaParada: aberturaParada(f, donaViva(f)) } : {}),
       ...(f.fechando ? { fechamentoEmCurso: fechamentoEmCurso(f) } : {}),
+      ...(deps ? { bloqueios: bloqueiosDe(f) } : {}),
       ...(colunas.length ? { colunas: porExtensao(f) } : {}),
     }));
-    amb.escrever(`${JSON.stringify({ frentes: lista, sessoes, sessoesIlegiveis, sobreposicoes, sobreposicaoIncompleta, fila })}\n`);
+    const extra = deps ? { bloqueiosLidosEm: deps.lidoEm } : {};
+    amb.escrever(`${JSON.stringify({ frentes: lista, sessoes, sessoesIlegiveis, sobreposicoes, sobreposicaoIncompleta, fila, ...extra })}\n`);
     return 0;
   }
   const linhaDasSessoes = () => {
@@ -159,7 +167,7 @@ export async function executar(args, amb) {
     linhaDasSessoes();
     return 0;
   }
-  const linhas = [['ID', 'NOME', 'DONA', 'ESTADO', 'TICKETS', 'SOBREPÕE', 'PLANO', 'ÚLTIMA NOTA', ...colunas.map(c => c.titulo)]];
+  const linhas = [['ID', 'NOME', 'DONA', 'ESTADO', 'TICKETS', 'SOBREPÕE', 'PLANO', 'ÚLTIMA NOTA', ...(deps ? ['BLOQUEIOS'] : []), ...colunas.map(c => c.titulo)]];
   for (const f of frentes) {
     const ultima = (f.notas ?? []).at(-1)?.texto;
     linhas.push([
@@ -171,6 +179,7 @@ export async function executar(args, amb) {
       !conferida(f) ? '?' : (ids => (ids.length ? linhaUnica(ids.join(','), 40) : '—'))(sobrepoe(f)),
       f.plano ? linhaUnica(f.plano, LIMITE_PLANO) : '—',
       ultima ? linhaUnica(ultima, LIMITE_NOTA) : '—',
+      ...(deps ? [(l => (l.length ? linhaUnica(l.join(','), LIMITE_BLOQUEIOS) : '—'))(bloqueiosDe(f))] : []),
       ...valoresDe.get(f),
     ]);
   }
@@ -183,6 +192,11 @@ export async function executar(args, amb) {
       .map(s => `  ${linhaUnica(s.arquivo, 200)}: ${s.frentes.map(id => linhaUnica(id, 20)).join(', ')}`);
     if (sobreposicoes.length > LIMITE_SOBREPOSICOES) mostradas.push(`  … e mais ${sobreposicoes.length - LIMITE_SOBREPOSICOES}`);
     amb.escrever(`Sobreposições:\n${mostradas.join('\n')}\n`);
+  }
+  if (deps) {
+    let em;
+    try { em = quando(deps.lidoEm, amb.config.fuso); } catch { em = linhaUnica(deps.lidoEm, 30); }
+    amb.escrever(`Bloqueios: leitura de ah deps de ${em} (rode ah deps para atualizar).\n`);
   }
   linhaDasSessoes();
   return 0;

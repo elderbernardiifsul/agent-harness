@@ -154,3 +154,36 @@ test('board mostra a fila de pesado: quem roda, quem espera, classe e há quanto
   assert.equal(v.codigo, 0);
   assert.match(v.saida, /Fila de pesado: O estado da fila tem formato 7.*\(rode ah doctor\)/);
 });
+
+test('coluna BLOQUEIOS: só com a leitura guardada do ah deps, sem rede, e o rodapé diz de quando ela é', t => {
+  const p = criarProjeto();
+  t.after(() => p.limpar());
+  assert.equal(p.ah(['open', 'carrinho', '--tickets', '1,2']).codigo, 0);
+  assert.equal(p.ah(['open', 'frete', '--tickets', '4'], { env: { AH_SESSAO: 'sessao-teste-0002' } }).codigo, 0);
+  // Sem leitura guardada: sem coluna e sem rodapé.
+  let r = p.ah(['board']);
+  assert.doesNotMatch(r.saida, /BLOQUEIOS|Bloqueios:/);
+  assert.equal(JSON.parse(p.ah(['board', '--json']).saida).bloqueiosLidosEm, undefined);
+
+  const b = (numero, estado, repo = null) => ({ numero, repo, titulo: null, estado });
+  fs.writeFileSync(path.join(p.estado, 'loja', 'deps.json'), JSON.stringify({
+    esquema: 1, lidoEm: '2026-11-13T13:05:00Z', completa: true, parcial: false,
+    issues: {
+      1: { numero: 1, titulo: 'Um', estado: 'aberta', bloqueadoPor: [b(3, 'aberta'), b(5, 'fechada')] },
+      2: { numero: 2, titulo: 'Dois', estado: 'aberta', bloqueadoPor: [b(7, 'aberta', 'dono/outro')] },
+      3: { numero: 3, titulo: 'Três', estado: 'aberta', bloqueadoPor: [] },
+      4: { numero: 4, titulo: 'Quatro', estado: 'aberta', bloqueadoPor: [b(5, 'fechada')] },
+    },
+  }));
+  const antes = p.ghChamadas().length;
+  r = p.ah(['board']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.equal(p.ghChamadas().length, antes, 'o quadro foi à rede');
+  assert.match(r.saida, /^ID .* ÚLTIMA NOTA +BLOQUEIOS$/m);
+  assert.match(r.saida, /^as-1 +carrinho .* #3,dono\/outro#7$/m);
+  assert.match(r.saida, /^as-2 +frete .* —$/m);
+  assert.match(r.saida, /^Bloqueios: leitura de ah deps de 2026-11-13 10:05 \(rode ah deps para atualizar\)\.$/m);
+  const j = JSON.parse(p.ah(['board', '--json']).saida);
+  assert.equal(j.bloqueiosLidosEm, '2026-11-13T13:05:00Z');
+  assert.deepEqual(j.frentes.map(f => [f.nome, f.bloqueios]), [['carrinho', ['#3', 'dono/outro#7']], ['frete', []]]);
+});
