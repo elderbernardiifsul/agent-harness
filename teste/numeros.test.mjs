@@ -23,7 +23,7 @@ function projetoComExemplo(t) {
 test('lerEventosTolerante conta à parte a linha ilegível', () => {
   const { eventos, ilegiveis } = lerEventosTolerante(EXEMPLO);
   assert.equal(ilegiveis, 1);
-  assert.equal(eventos.length, 24);
+  assert.equal(eventos.length, 27);
   assert.deepEqual(lerEventosTolerante(path.join(path.dirname(EXEMPLO), 'nao-existe.jsonl')), { eventos: [], ilegiveis: 0 });
 });
 
@@ -33,7 +33,9 @@ test('números de todo o registro', () => {
   assert.deepEqual(n.periodo, { desde: null, ate: null, fuso: FUSO });
   assert.deepEqual(n.frentes, { abertas: 3, fechadas: 3, fechadasSoLocal: 1, comTempo: 3, tempoMedioMs: 7 * H, tempoMedianoMs: 6 * H });
   assert.deepEqual([n.passagens, n.tomadas, n.retomadas], [1, 1, 1]);
-  assert.deepEqual(n.sessoes, { iniciadas: 4, porModelo: { 'modelo-a': 2, 'não informado': 1, 'modelo-b': 1 } });
+  // Sessões distintas (ids com origem 'novo'): o início repetido da sessao-carla-0001 conta uma vez; as
+  // continuações (compact da sessao-ana-0001, clear que deu id novo à sessao-ana-0005) ficam à parte.
+  assert.deepEqual(n.sessoes, { iniciadas: 4, continuacoes: 2, porModelo: { 'modelo-a': 2, 'não informado': 1, 'modelo-b': 1 } });
   assert.deepEqual(n.recusas, {
     porTrava: { T2: 2, 'recursos/porta': 1 },
     liberacoesPorTrava: { T5: 1 },
@@ -48,13 +50,14 @@ test('período fecha nos dois lados e segue o fuso da configuração', () => {
   // 2026-11-12T01:30Z e 02:00Z são 11/11 em São Paulo
   const n = calcularNumeros(eventos, { desde: '2026-11-11', ate: '2026-11-11', fuso: FUSO });
   assert.deepEqual(n.frentes, { abertas: 1, fechadas: 1, fechadasSoLocal: 0, comTempo: 1, tempoMedioMs: 13 * H, tempoMedianoMs: 13 * H });
-  assert.deepEqual(n.sessoes, { iniciadas: 1, porModelo: { 'modelo-b': 1 } });
+  assert.deepEqual(n.sessoes, { iniciadas: 1, continuacoes: 1, porModelo: { 'modelo-b': 1 } });
   assert.deepEqual(n.recusas.deComando, { close: 1, open: 1 });
   assert.deepEqual([n.passagens, n.tomadas, n.retomadas], [0, 1, 0]);
   assert.deepEqual(n.pesado, { execucoes: 0, esperaMediaMs: null, esperaMaximaMs: null, duracaoMediaMs: null });
   // em UTC as duas últimas caem no dia 12
   const utc = calcularNumeros(eventos, { desde: '2026-11-11', ate: '2026-11-11', fuso: 'UTC' });
   assert.equal(utc.sessoes.iniciadas, 0);
+  assert.equal(utc.sessoes.continuacoes, 0);
   assert.equal(utc.frentes.fechadas, 0);
   // só --desde e só --ate
   assert.equal(calcularNumeros(eventos, { desde: '2026-11-10', fuso: FUSO }).frentes.abertas, 2);
@@ -81,7 +84,7 @@ test('ah board --numeros em texto', t => {
   assert.match(s, /^Frentes: 3 abertas, 3 fechadas \(1 só local\)$/m);
   assert.match(s, /^Tempo por frente fechada: médio 7 h 0 min, mediano 6 h 0 min \(3 frentes\)$/m);
   assert.match(s, /^Passagens de bastão: 1; tomadas: 1; retomadas: 1$/m);
-  assert.match(s, /^Sessões iniciadas: 4 \(modelo-a 2, modelo-b 1, não informado 1\)$/m);
+  assert.match(s, /^Sessões iniciadas: 4 \(modelo-a 2, modelo-b 1, não informado 1\); continuações: 2$/m);
   assert.match(s, /^Recusas por trava: T2 2, recursos\/porta 1$/m);
   assert.match(s, /^Liberações por trava: T5 1$/m);
   assert.match(s, /^Recusas de comando: open 2, close 1$/m);
@@ -101,7 +104,7 @@ test('ah board --numeros com período e --json', t => {
   assert.match(texto, /^Números de 2026-11-12 em diante \(fuso America\/Sao_Paulo\)$/m);
   assert.match(texto, /^Frentes: 0 abertas, 0 fechadas$/m);
   assert.match(texto, /^Tempo por frente fechada: sem frente fechada no período$/m);
-  assert.match(texto, /^Sessões iniciadas: 0$/m);
+  assert.match(texto, /^Sessões iniciadas: 0; continuações: 0$/m);
   assert.match(texto, /^Recusas por trava: nenhuma$/m);
   assert.match(texto, /^Pesado: nenhuma execução$/m);
   // a linha ilegível não tem data: conta sempre, com qualquer período
