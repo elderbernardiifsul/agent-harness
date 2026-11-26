@@ -56,6 +56,8 @@ Testes: `teste/init.test.mjs`, novo (recusa sem mudar configuração nem CI; com
 
 Observado e não tratado: `--projeto` e `--agentes` também são ignorados em silêncio quando a configuração existe. Fica para registro, fora do item 18.
 
+Tratado em 26/11/2026 (`fix: init recusa --projeto e --agentes que a configuração existente não tem`): a mesma escolha do item 18. Valor diferente do gravado recusa antes de gravar, e o mesmo valor passa; em `--agentes`, a ordem e os espaços da lista não contam. Teste novo em `teste/init.test.mjs`.
+
 ### 19. `.harness` que é link simbólico (`fix: gancho e doctor recusam .harness que é link simbólico`)
 
 - Gancho (`nucleo/comandos/gancho.mjs`): achada a raiz, `lstat` em `.harness`; se for link, o evento cai na regra de quebra (`respostaNaQuebra`). No evento "antes", isso dá `Recusado (T0): o harness não conseguiu avaliar (.harness é um link simbólico; o harness não segue o link)` com `Faça: rode tools/ah doctor`, e o `tools/ah doctor` continua liberado (`passaNaQuebra`). Nos demais eventos, sai um aviso.

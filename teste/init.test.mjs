@@ -456,3 +456,33 @@ test('--teste com a configuração já existente: recusa antes de gravar e diz c
     p.limpar();
   }
 });
+
+test('--projeto e --agentes com a configuração já existente: recusa o valor diferente antes de gravar; igual ao atual, passa', () => {
+  const p = criarProjeto();
+  try {
+    const cfgAntes = ler(p, '.harness/config.json');
+    const r = p.ah(['init', '--projeto', 'outra', '--sigla', 'as', '--sem-protecao']);
+    assert.equal(r.codigo, 1, r.saida);
+    assert.match(r.erro, /Recusado: .*--projeto "outra" não seria aplicado \(projeto atual: "loja"\)/);
+    assert.match(r.erro, /Faça: .*projeto.*\.harness\/config\.json/);
+    assert.equal(ler(p, '.harness/config.json'), cfgAntes);
+
+    const cfg = JSON.parse(cfgAntes);
+    cfg.agentes = [];
+    gravar(p, '.harness/config.json', `${JSON.stringify(cfg, null, 2)}\n`);
+    const cfgSemAgentes = ler(p, '.harness/config.json');
+    const s = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao', '--agentes', 'claude-code']);
+    assert.equal(s.codigo, 1, s.saida);
+    assert.match(s.erro, /Recusado: .*--agentes claude-code não seria aplicado \(agentes atuais: nenhum\)/);
+    assert.match(s.erro, /Faça: .*agentes.*\.harness\/config\.json/);
+    assert.equal(ler(p, '.harness/config.json'), cfgSemAgentes);
+
+    // Com os valores que a configuração já tem, o init segue (a ordem e os espaços da lista não contam).
+    cfg.agentes = ['claude-code'];
+    gravar(p, '.harness/config.json', `${JSON.stringify(cfg, null, 2)}\n`);
+    const t = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao', '--agentes', ' claude-code ']);
+    assert.equal(t.codigo, 0, t.erro);
+  } finally {
+    p.limpar();
+  }
+});

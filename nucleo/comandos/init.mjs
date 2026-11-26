@@ -232,6 +232,18 @@ export async function executar(args, amb) {
     const atual = configLida?.ci?.comandoDeTeste;
     throw new ErroDeUso(`a configuração já existe e o init não a reescreve: --teste ${JSON.stringify(o.teste.slice(0, 80))} não seria aplicado (ci.comandoDeTeste atual: ${typeof atual === 'string' ? JSON.stringify(atual.slice(0, 80)) : 'nenhum'})\nPróximo passo: ponha o comando em ci.comandoDeTeste no .harness/config.json e rode ah init de novo; o init reescreve a CI com ele`);
   }
+  // Pela mesma razão, --projeto e --agentes diferentes do que a configuração tem são recusados (igual, passa).
+  if (configExiste && o.projeto !== undefined && o.projeto !== configLida?.projeto) {
+    const atual = configLida?.projeto;
+    throw new ErroDeUso(`a configuração já existe e o init não a reescreve: --projeto ${JSON.stringify(o.projeto.slice(0, 40))} não seria aplicado (projeto atual: ${typeof atual === 'string' ? JSON.stringify(atual.slice(0, 40)) : 'nenhum'})\nPróximo passo: rode sem --projeto, ou mude projeto no .harness/config.json (o estado local fica na pasta do nome antigo)`);
+  }
+  if (configExiste && o.agentes !== undefined) {
+    const atuais = Array.isArray(configLida?.agentes) ? configLida.agentes : [];
+    const igual = cfg.agentes.length === atuais.length && cfg.agentes.every(a => atuais.includes(a));
+    if (!igual) {
+      throw new ErroDeUso(`a configuração já existe e o init não a reescreve: --agentes ${cfg.agentes.join(',')} não seria aplicado (agentes atuais: ${atuais.length ? atuais.join(',').slice(0, 80) : 'nenhum'})\nPróximo passo: ponha a lista em agentes no .harness/config.json e rode ah init de novo; o init instala os ganchos dos agentes de lá`);
+    }
+  }
   const configFinal = configExiste
     ? { git: { ...PADROES.git, ...(configLida?.git ?? {}) }, github: { ...PADROES.github, ...(configLida?.github ?? {}) }, ci: { ...PADROES.ci, ...(configLida?.ci ?? {}) } }
     : cfg;
