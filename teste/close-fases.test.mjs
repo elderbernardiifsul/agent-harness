@@ -366,3 +366,27 @@ test('continuação de sessão durante o fechamento: a fase 3 vale pelo registro
   assert.equal(r.codigo, 0, r.erro);
   assert.equal(lerSessao(dirDe(p), 'sessao-nova-0009').frente, null);
 });
+
+// ---- Retomada pelo open de frente passada com o fechamento parado
+
+test('open de frente passada com o fechamento parado recusa sem consultar os tickets e diz para terminar com ah close', async t => {
+  const { p } = comFrente();
+  t.after(() => p.limpar());
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  assert.equal(lerF(p).estado, 'passada');
+  const c = closeParado(t, p, ['close', 'carrinho'], { AH_CLOSE_ESPERA_DA_TRAVA_MS: '300' });
+  await c.chegou();
+  const r = await comTrava(dirDe(p), 'frentes', async () => { c.soltar(); return c.fim; }, { venceMs: 120000 });
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, JA_COMENTADO);
+  assert.equal(lerF(p).estado, 'passada');
+  const antes = p.ghChamadas().length;
+  const o = p.ah(['open', 'carrinho']);
+  assert.equal(o.codigo, 1, o.saida);
+  assert.match(o.erro, /^Recusado: A frente as-1 carrinho está com o fechamento parado: os tickets já receberam \(ou estavam recebendo\) o comentário de fechamento\.\nFaça: termine com ah close carrinho \(não comenta de novo\)/);
+  assert.equal(p.ghChamadas().length, antes, 'o open foi ao GitHub');
+  assert.equal(lerF(p).estado, 'passada');
+  const f = p.ah(['close', 'carrinho']);
+  assert.equal(f.codigo, 0, f.erro);
+  assert.equal(chamadasDeFechamento(p).length, 1);
+});

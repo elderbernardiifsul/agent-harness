@@ -181,6 +181,7 @@ A marca de outro processo e a troca do registro `abrindo` no meio são simuladas
 - A seção "Vida da sessão" de `docs/referencia/comandos.md` não foi mexida (fora das seções combinadas): a regra nova da herança está descrita na seção `close`. Vale acrescentar lá uma frase na próxima revisão do documento.
 - `AH_CLOSE_ESPERA_DA_TRAVA_MS` está documentada na seção `close`, não na tabela de variáveis de ambiente, pelo mesmo motivo.
 - A retomada pelo `open` de uma frente passada com o fechamento parado continua recusando pela releitura dos tickets (`… não está passada (foi fechada …)`, com a saída `ah close`), sem mensagem própria.
+  Tratado em 26/11/2026 (`fix: open de frente passada com o fechamento parado recusa com mensagem própria`): o `open` confere a marca antes de qualquer rede e recusa como o `handoff` (`… está com o fechamento parado …`, saída `termine com ah close <nome>`). Com um `close` vivo entre as fases, a recusa `… está sendo fechada agora` também sai antes da rede. Teste novo em `teste/close-fases.test.mjs`.
 
 ### Verificação final
 
