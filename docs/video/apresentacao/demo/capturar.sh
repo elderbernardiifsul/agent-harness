@@ -2,11 +2,12 @@
 # Roda o ciclo do harness num repositório descartável e grava cada comando com a saída real
 # em saidas/<passo>.txt. Sem rede: o gh é trocado por um script que falha (AH_GH), o estado,
 # os worktrees e a fila ficam dentro da pasta do ensaio (AH_ESTADO, AH_WORKTREES).
-# Uso: bash capturar.sh <pasta do ensaio>   (a pasta é apagada e recriada)
+# Uso: bash capturar.sh <pasta do ensaio> [<pasta das saídas>]   (as duas são apagadas e recriadas)
+# Sem a segunda, as saídas vão para demo/saidas/, que o vídeo usa. Para laboratório, passe outra pasta.
 set -u
 CLONE="$(cd "$(dirname "$0")/../../../.." && pwd)"
 DEMO="${1:?passe a pasta do ensaio}"
-SAIDAS="$(cd "$(dirname "$0")" && pwd)/saidas"
+SAIDAS="${2:-$(cd "$(dirname "$0")" && pwd)/saidas}"
 rm -rf "$DEMO" "$SAIDAS"
 mkdir -p "$DEMO" "$SAIDAS"
 
