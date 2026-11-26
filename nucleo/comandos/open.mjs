@@ -5,6 +5,7 @@ import { ErroDeUso, arquivoDaMaquina, dirWorktrees } from '../lib/caminhos.mjs';
 import { comTrava, lerJson, registrarEvento } from '../lib/estado.mjs';
 import { reagir } from '../lib/extensoes.mjs';
 import { frentesDa, gravarFrente, lerFrente, listarFrentesTolerante, nomeValido, novaFrente, proximoId, removerFrente, siglaValida } from '../lib/frente.mjs';
+import { fechamentoDa } from '../lib/fechamento.mjs';
 import { existeRamo, git, recusaDoWorktree } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
 import { reenviarComAviso, reenviarPendentes, temDoTicket } from '../lib/pendentes.mjs';
@@ -103,6 +104,14 @@ function lerHistorico(amb, refs) {
 
 const recusa = (motivo, saida) => new ErroDeUso(`${motivo}\nPróximo passo: ${saida}`);
 
+// Um `ah close` dela entre as fases (marca `fechando` de processo vivo): retomar agora brigaria com ele.
+const recusaDoFechamento = f => recusa(`A frente ${f.id} ${f.nome} está sendo fechada agora (processo ${f.fechando.pid}).`,
+  `espere esse ah close terminar (ah board mostra fechando enquanto ele roda); se a frente continuar no quadro, rode ah open ${f.nome} de novo`);
+// Um `ah close` que começou a comentar o fechamento nos tickets e parou (marca em fechamentos/): retomar poria a
+// frente ativa depois do comentário de fechamento. O caminho é terminar o fechamento (como no handoff).
+const recusaDoFechamentoParado = f => recusa(`A frente ${f.id} ${f.nome} está com o fechamento parado: os tickets já receberam (ou estavam recebendo) o comentário de fechamento.`,
+  `termine com ah close ${f.nome} (não comenta de novo)`);
+
 // As frentes que se leem: um arquivo de frente ilegível não para o open de outra frente (o doctor aponta qual) e
 // fica como está. Ele não entra na regra do executor nem na conta do próximo id.
 const legiveis = dirEstado => listarFrentesTolerante(dirEstado).frentes;
@@ -150,6 +159,13 @@ export async function executar(args, amb) {
   if (!siglaValida(maquina?.sigla)) {
     throw recusa('Esta máquina ainda não tem sigla.', 'rode ah init --sigla <sigla>, com 2 a 4 letras minúsculas');
   }
+  // Frente passada no meio de um fechamento: recusa antes de qualquer rede (a leitura dos tickets diria só que ela
+  // não está passada, e a saída sugerida seria a da frente fechada em outra máquina).
+  const passadaAqui = lerFrente(dirEstado, o.nome);
+  if (passadaAqui?.estado === 'passada') {
+    if (fechamentoEmCurso(passadaAqui)) throw recusaDoFechamento(passadaAqui);
+    if (fechamentoDa(dirEstado, passadaAqui)) throw recusaDoFechamentoParado(passadaAqui);
+  }
   const login = loginAtual({ cwd: amb.raiz, env: amb.env }) ?? (typeof maquina.login === 'string' ? maquina.login : 'local');
   const remoto = cfg.git.remoto;
   const ramo = cfg.git.prefixo + o.nome;
@@ -193,10 +209,7 @@ export async function executar(args, amb) {
     // há uma abertura em curso. Registro sem processo (anterior a este campo): vale a vida da sessão dona.
     const existente = lerFrente(dirEstado, o.nome);
     // Um `ah close` dela entre as fases (rede): retomar agora brigaria com ele.
-    if (existente && fechamentoEmCurso(existente)) {
-      throw recusa(`A frente ${existente.id} ${o.nome} está sendo fechada agora (processo ${existente.fechando.pid}).`,
-        `espere esse ah close terminar (ah board mostra fechando enquanto ele roda); se a frente continuar no quadro, rode ah open ${o.nome} de novo`);
-    }
+    if (existente && fechamentoEmCurso(existente)) throw recusaDoFechamento(existente);
     // Frente ativa com o mesmo nome: não se abre nem se retoma; a saída depende da dona.
     if (existente?.estado === 'ativa') {
       const qual = `${existente.id} ${existente.nome}`;
