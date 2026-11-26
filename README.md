@@ -1,61 +1,38 @@
 # agent-harness
 
-Harness de programação com vários agentes. Várias sessões de agentes de código trabalham ao mesmo tempo no mesmo repositório, cada uma na própria frente, e um conjunto de comandos coordena os ramos, as travas e o estado local. Requer Node 22 ou mais novo e não tem dependências.
+Harness para várias sessões de agentes de código no mesmo repositório. Cada sessão trabalha numa frente própria, com ramo e worktree, e um conjunto de comandos coordena os ramos, as travas no gancho do agente, o estado local e os tickets no GitHub. Requer Node 22 ou mais novo e não tem dependências.
 
-> Situação: as fatias 1 a 5 estão entregues (versão 0.2.0). A atualização do harness instalado (`ah atualizar`) e as travas de extensão não foram ensaiadas com agente real; o guia de extensão foi ensaiado por um agente sem contexto (`docs/referencia/ensaio-guia-de-extensao.md`).
+## Para que serve este repositório
 
-## Entregas da fatia 1
+1. **Base para iniciar projetos.** O `ah init` instala o harness num repositório novo ou existente. A partir daí, as sessões do agente trabalham no projeto sob as regras do harness. Veja "Iniciar um projeto com o harness".
+2. **Laboratório.** Instalado num projeto descartável, o harness permite observar várias sessões em paralelo, as recusas das travas, a passagem de bastão e a fila de trabalho pesado, sem rede e sem tocar em projeto real. Veja "Laboratório".
+3. **Objeto de estudo.** O repositório guarda o desenho, os planos de cada etapa, os registros de execução e de revisão e os ensaios com agente real. Dá para estudar que problemas o harness ataca, com que mecanismo e onde ele para. Veja [`docs/estudo/`](docs/estudo/README.md).
 
-- `ah init`: instala o harness em um projeto (núcleo, configuração, ganchos do agente, CI e proteção dos ramos no servidor).
-- `ah open`, `ah nota`, `ah board`, `ah whoami`, `ah close`: ciclo de uma frente de trabalho, com ramo e worktree próprios, registro no estado local e comentário nos tickets.
-- `ah doctor`: verificação da preparação do projeto.
-- Travas no gancho do agente: T0 (recusa o comando que não consegue ler), T2 (`git add -A` e `git commit -a` no checkout principal) e T5 (push e `gh pr merge` em ramo protegido).
-- Adaptador do Claude Code, ensaiado com o agente real (`docs/referencia/ensaio-claude-code.md`).
+As regras do harness valem nos projetos que o instalam. O desenvolvimento deste repositório não passa por elas: aqui não há frentes, travas nem PR obrigatório ([`AGENTS.md`](AGENTS.md)).
 
-## Entregas da fatia 2
+## Situação
 
-Suporte a várias sessões e várias pessoas no mesmo repositório:
+Versão 0.2.0. As fatias 0 a 5 do desenho estão entregues, e as pendências registradas nelas foram tratadas. A `dev` tem o estado mais recente; `stage` e `main` recebem a `dev` quando o autor publica.
 
-- Sessão viva: processo do agente em execução e sinal de vida dentro do prazo (`sessoes.prazoDoSinalMin`, 120 minutos por padrão). Um `/clear` ou uma conversa retomada no mesmo processo herda a frente.
-- Reserva de ticket no `ah open --tickets` (comentário, responsável e rótulo), liberada no `ah close`, com fila para as operações que falham por falta de rede.
-- `ah handoff`: passa a frente adiante sem fechá-la; `ah open <nome>` a retoma, na mesma máquina ou em outra.
-- `ah takeover`: assume a frente de uma sessão morta, com `--confirmado` (ordem do executivo).
-- `ah papel`: executor (uma frente) ou orquestrador (várias frentes, e `ah open --para` para abrir frente para outra sessão).
-- `ah sweep`: lista o que está fora do lugar e, com `--reparar`, corrige o estado.
-- Detecção de arquivos em comum entre frentes no `open`, no `board` e no começo da sessão.
-- Travas novas: T1 (troca de ramo no checkout principal), T3 (descarte de trabalho no checkout principal) e T4 (escrita no worktree ou no ramo de outra sessão viva).
+Limites conhecidos:
 
-## Trabalho pesado (fatia 3)
+- Só o Claude Code tem adaptador, ensaiado com o agente real ([`docs/referencia/ensaio-claude-code.md`](docs/referencia/ensaio-claude-code.md)). Codex, OpenCode e outros agentes escrevem o próprio adaptador pelo roteiro de [`docs/agentes/`](docs/agentes/README.md); esse roteiro não foi ensaiado com eles.
+- Windows e macOS não foram executados. A CI tem a matriz com os três sistemas (`.github/workflows/ci.yml`).
+- As travas leem o texto do comando: são aviso cedo para enganos do agente, não caixa de areia. A barreira de verdade é a proteção de ramo no servidor, que o `init` aplica. Detalhes na seção "Limites" de [`docs/referencia/comandos.md`](docs/referencia/comandos.md).
+- O `ah atualizar` não foi ensaiado com agente real.
 
-Builds e testes ponta a ponta de várias sessões simultâneas esgotam a memória da máquina. `tools/ah pesado -- <comando>` coloca o comando numa fila da máquina, comum a todos os projetos com o harness; o comando aguarda a vez, executa e devolve a saída e o código de saída. O número de vagas e a memória livre mínima são configurações da máquina; as classes (quais comandos são pesados e quantas vagas cada um ocupa) ficam em `pesado.classes` no `.harness/config.json`. Com classes configuradas, a trava T6 recusa a execução de um desses comandos fora da fila e indica como executá-lo pela fila. O `board` mostra os comandos em execução e os que aguardam. Detalhes e limites: `docs/referencia/comandos.md`, seção "pesado".
+## Iniciar um projeto com o harness
 
-## Outros agentes (fatia 4)
+Requisitos do projeto: repositório git com pelo menos um commit e Node 22 ou mais novo. Para tickets e proteção de ramo, o `gh` autenticado e o repositório no GitHub.
 
-Somente o Claude Code tem adaptador. Os adaptadores do Codex e do OpenCode não acompanham o harness, por decisão do autor (seção 15 de `docs/superpowers/specs/2026-11-12-nucleo-design.md`): o agente que chega ao projeto escreve o próprio adaptador conforme o roteiro em `docs/agentes/`, que contém o contrato dos quatro eventos, o adaptador do Claude Code como exemplo, o passo a passo e o procedimento de prova. Os testes de contrato que todo adaptador deve passar rodam com `AH_ADAPTADOR=<agente> node --test teste/contrato-adaptadores.test.mjs`. O `AGENTS.md` instalado pelo `init` aponta para o roteiro (`.harness/nucleo/docs/agentes/README.md`), e o `doctor` informa, no item "Adaptador do agente em uso", quando o agente em uso não tem adaptador e as travas automáticas não se aplicam. O roteiro não foi ensaiado com o Codex nem com o OpenCode.
-
-## Atualização do harness instalado (fatia 5)
-
-Com o clone do agent-harness atualizado (`git pull` no clone), na pasta do projeto:
+Para um projeto que ainda não existe:
 
 ```
-tools/ah atualizar --de <clone> --simular
-tools/ah atualizar --de <clone>
+mkdir meu-projeto && cd meu-projeto
+git init -b main
+git commit --allow-empty -m "começo"
+gh repo create <dono>/meu-projeto --private --source . --push   # opcional: tickets e proteção de ramo
 ```
-
-O primeiro comando apenas lista o que mudaria. O segundo substitui `.harness/nucleo/` pela cópia do clone (montada ao lado e trocada de uma só vez) e reaplica o trecho do harness no `AGENTS.md`; configuração, extensões e estado (frentes, sessões, fila) permanecem inalterados. O `atualizar` recusa a operação quando algum arquivo do núcleo foi alterado à mão no projeto e lista o que se perderia (`--forcar` descarta essas alterações). Também recusa quando não há como fazer essa conferência (manifesto antigo e clone sem o commit instalado) e quando o clone é mais antigo que a cópia instalada, critério avaliado pela versão ou, com git, pela anterioridade do commit do clone em relação ao instalado. Assim como o `init`, o `atualizar` não faz commit e termina com os comandos do commit no ramo base. O `doctor` avisa, no item "Núcleo igual ao clone de origem", quando o clone registrado na máquina tem um núcleo diferente do instalado. Detalhes: `docs/referencia/comandos.md`, seção "atualizar".
-
-## Extensões, dependências e números (fatia 5)
-
-- **Extensões do projeto.** Uma pasta `.harness/extensoes/<nome>/` com `extensao.mjs`, ligada em `extensoes` no `.harness/config.json`, acrescenta comandos (`tools/ah <nome>`), travas avaliadas depois das do núcleo, verificações do `doctor`, reações ao ciclo da frente (inclusive recusar o `close`), linhas no resumo e colunas no quadro, sem alterar o núcleo. Uma extensão que não carrega não derruba os comandos do núcleo, e o `doctor` mostra o motivo. Guia: [`docs/extensoes/como-estender.md`](docs/extensoes/como-estender.md); interface (versão 1): [`docs/extensoes/interface.md`](docs/extensoes/interface.md).
-- **Extensão `recursos`.** Acompanha o harness: `tools/ah recursos reservar porta 3001` registra um recurso (porta, banco) na frente, recusa o valor já reservado por outra frente, aparece no `board` e faz o `close` recusar a frente com recursos ainda reservados.
-- **`tools/ah deps`.** Lê a relação de bloqueio entre as issues no GitHub (API de dependências, ou a linha `Bloqueado por: #N` no corpo) e mostra a árvore de bloqueios e as issues livres para começar; `tools/ah deps <n>` mostra uma issue. Guarda a última leitura para uso sem rede; o `open` avisa quando um ticket da frente está bloqueado.
-- **`tools/ah board --numeros`.** Agrega o registro de eventos da máquina: frentes abertas e fechadas, tempo médio e mediano por frente, passagens, tomadas, sessões por modelo, recusas por trava e trabalho pesado, com período opcional (`--desde`, `--ate`).
-
-Detalhes: `docs/referencia/comandos.md`, seções "Extensões", "recursos", "deps" e "board".
-
-## Preparação de um projeto pelo agente
-
-Requisitos do projeto: repositório git com pelo menos um commit (sem commit o `init` recusa; num repositório recém-criado, execute antes `git commit --allow-empty -m "começo"`), Node 22 ou mais novo e, para tickets e proteção de ramo, o `gh` autenticado.
 
 Clone este repositório, abra o agente na pasta do projeto e faça o pedido: "prepare meu projeto com o harness, a partir do clone em `<caminho>`". O agente executa, na pasta do projeto:
 
@@ -65,11 +42,13 @@ node <clone>/nucleo/bin/ah.mjs init
 
 Sem o `gh`, ou sem autenticação nele, o `init` não consegue propor a sigla. Nesse caso, use `node <clone>/nucleo/bin/ah.mjs init --sigla <sigla>`, com 2 a 4 letras minúsculas (por exemplo, `--sigla as` para `ana-souza`).
 
-O `init` não faz commit. Ele termina com os comandos exatos do commit, que deve ser feito **no ramo base** (`dev`), pois as frentes partem dele. Se o projeto estiver em outro ramo (por exemplo, `main`), execute primeiro `git switch dev` e depois o `git add -- …` com os caminhos gravados e o `git commit`. Por fim:
+O `init` cria os ramos que faltam (`dev` e `stage`, localmente) e não faz commit. Ele termina com os comandos exatos do commit, que deve ser feito **no ramo base** (`dev`), pois as frentes partem dele. Se o projeto estiver em outro ramo (por exemplo, `main`), execute primeiro `git switch dev` e depois o `git add -- …` com os caminhos gravados e o `git commit`. Por fim:
 
 ```
 tools/ah doctor
 ```
+
+A proteção de ramo no servidor só é aplicada aos ramos que já estão no remoto. Depois do primeiro push de `dev`, `stage` e `main`, rode o `init` de novo; o `doctor` acusa enquanto faltar.
 
 A partir daí, cada sessão do agente abre a própria frente com `tools/ah open <nome>`, trabalha no worktree, integra na `dev` e fecha com `tools/ah close` (ou interrompe no meio com `tools/ah handoff`). Esses comandos são executados pelo agente, e a identificação da sessão vem do gancho dele. Para executá-los à mão, num terminal, informe a sessão em `AH_SESSAO` (um nome qualquer, o mesmo no `open` e no `close`):
 
@@ -78,23 +57,51 @@ AH_SESSAO=ana-terminal tools/ah open carrinho
 AH_SESSAO=ana-terminal tools/ah close
 ```
 
-`tools/ah --help` lista os comandos, e `tools/ah <comando> --help` mostra o uso de cada um.
+`tools/ah --help` lista os comandos, e `tools/ah <comando> --help` mostra o uso de cada um. O projeto recebe a referência de uso em `docs/agents/sessoes-paralelas.md`, e o `AGENTS.md` dele ganha um trecho que aponta para ela.
+
+Para levar ao projeto uma versão mais nova do harness, atualize o clone (`git pull`) e, na pasta do projeto, rode `tools/ah atualizar --de <clone> --simular` para ver o que mudaria e `tools/ah atualizar --de <clone>` para trocar. Configuração, extensões e estado não são tocados.
+
+## Laboratório
+
+O laboratório é um projeto descartável com estado, worktrees, fila de pesado e `gh` isolados numa pasta temporária. Nada do que acontece nele chega à máquina real nem ao GitHub.
+
+O jeito mais rápido é rodar o ciclo completo da demonstração:
+
+```
+LAB=$(mktemp -d)
+bash docs/video/apresentacao/demo/capturar.sh $LAB/demo $LAB/saidas
+```
+
+O script cria a loja de exemplo, instala o harness, abre frentes de duas sessões, provoca as travas T4, T5 e T2, passa uma frente de uma sessão para a outra, integra e fecha. Cada passo fica gravado com a saída real em `$LAB/saidas/`, e a loja em `$LAB/demo/loja` fica para continuar experimentando (com `AH_ESTADO=$LAB/demo/estado`, `AH_WORKTREES=$LAB/demo/wt` e `AH_GH=$LAB/demo/gh-ausente.mjs` exportadas). Sem o segundo argumento, o script regrava as saídas que o vídeo usa, em `docs/video/apresentacao/demo/saidas/`.
+
+Para montar à mão:
+
+```
+LAB=$(mktemp -d)
+export AH_ESTADO=$LAB/estado AH_WORKTREES=$LAB/wt AH_FILA=$LAB/fila AH_GH=<clone>/teste/apoio/gh-falso.mjs
+mkdir $LAB/loja && cd $LAB/loja
+git init -b main && git commit --allow-empty -m "começo"
+node <clone>/nucleo/bin/ah.mjs init --projeto loja --sigla as --sem-protecao
+```
+
+Em seguida, faça o commit que o `init` indica, na `dev`, e rode `tools/ah doctor`. As variáveis precisam estar exportadas em todo terminal que usar o laboratório. Para ver o gancho recusar sem abrir um agente, mande a ele o evento que o Claude Code mandaria (exemplos nas saídas da demonstração, passos 09 a 11). Para ver com o agente real, abra o Claude Code na pasta da loja.
+
+O guia de estudo traz uma lista de experimentos para o laboratório.
+
+## Estudo
+
+[`docs/estudo/`](docs/estudo/README.md) é a porta de entrada: a ordem de leitura, a tabela de problemas e respostas (mecanismo, código, teste e limite de cada um), as decisões de desenho, o caminho pelo código, os experimentos e como o harness foi construído, com o [histórico das fatias](docs/estudo/historico-das-fatias.md).
 
 ## Referência
 
-- `docs/referencia/comandos.md`: cada comando, as recusas e exemplos; a vida da sessão, os eventos, os limites das travas e o procedimento de publicação.
-- `docs/referencia/capacidades-por-agente.md`: recursos que cada agente de código oferece ao harness.
-- `docs/referencia/ensaio-claude-code.md`: ensaios com o Claude Code 2.1.319.
-- `docs/referencia/ensaio-guia-de-extensao.md`: prova do guia de extensão com um agente sem contexto.
-- `docs/extensoes/`: guia de criação e referência da interface de extensão.
+- [`docs/referencia/comandos.md`](docs/referencia/comandos.md): cada comando, as recusas e exemplos; a vida da sessão, os eventos, os limites das travas e o procedimento de publicação nos projetos.
+- [`docs/referencia/capacidades-por-agente.md`](docs/referencia/capacidades-por-agente.md): recursos que cada agente de código oferece ao harness.
+- [`docs/referencia/ensaio-claude-code.md`](docs/referencia/ensaio-claude-code.md): ensaios com o Claude Code.
+- [`docs/referencia/ensaio-guia-de-extensao.md`](docs/referencia/ensaio-guia-de-extensao.md): prova do guia de extensão com um agente sem contexto.
+- [`docs/agentes/`](docs/agentes/README.md): roteiro para escrever o adaptador de outro agente.
+- [`docs/extensoes/`](docs/extensoes/como-estender.md): guia de criação e referência da interface de extensão.
+- [`docs/aula/`](docs/aula/): levantamento, material de apoio e apresentação da aula.
 
-Testes: `node --test teste/`.
+## Desenvolvimento
 
-## Pendências
-
-As cinco fatias da seção 12.1 do desenho estão entregues (planos em `docs/superpowers/plans/`). Ficam fora, registrados nos planos:
-
-- a coluna de bloqueios no `board` (exigiria rede ou cache a cada execução);
-- extensões instaladas por pacote ou por URL (só pasta local) e o isolamento da extensão, que roda com os mesmos poderes do `ah`;
-- o ensaio com agente real das travas de extensão e do `atualizar`, e os ensaios em Windows e macOS;
-- as pendências das fatias anteriores, nas seções "Pendências" e nos arquivos `*-pendencias.md` dos planos.
+Testes: `npm test` (ou `node --test teste/`). Regras de trabalho neste repositório: [`AGENTS.md`](AGENTS.md). Licença MIT.
