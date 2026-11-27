@@ -7,6 +7,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { skillsCitadas, skillsConhecidas, skillsNoLugar } from '../nucleo/extensoes/metodo/citadas.mjs';
 import { lerColecoes } from '../nucleo/extensoes/metodo/colecoes.mjs';
+import { dirDoCache } from '../nucleo/extensoes/metodo/origem.mjs';
+import { spawnSync } from 'node:child_process';
 import { MARCA_FIM, MARCA_INICIO, trechoDe } from '../nucleo/extensoes/metodo/trecho.mjs';
 
 const RAIZ = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -136,4 +138,42 @@ test('trechoDe devolve o trecho entre as marcas do método, ou null', () => {
   assert.equal(trechoDe('# Projeto sem marcas\n'), null);
   assert.equal(trechoDe(`${MARCA_INICIO}\nsem fim\n`), null);
   assert.equal(trechoDe(null), null);
+});
+
+// Arquivos comuns de uma pasta, em qualquer nível, sem .git: caminhos relativos com '/'.
+function arquivosDe(dir, rel = '') {
+  return fs.readdirSync(path.join(dir, rel), { withFileTypes: true }).flatMap(e => {
+    const filho = rel ? `${rel}/${e.name}` : e.name;
+    if (e.isDirectory()) return e.name === '.git' ? [] : arquivosDe(dir, filho);
+    return e.isFile() ? [filho] : [];
+  });
+}
+
+test('toda skill citada por uma skill instalada está instalada ou na tabela "No lugar"', t => {
+  const { colecoes } = lerColecoes(path.join(EXT, 'colecoes.json'));
+  const ok = new Set([...skillsConhecidas(colecoes), ...skillsNoLugar(ler(TRECHO))]);
+  const foraDaLista = [];
+  for (const [nome, c] of Object.entries(colecoes)) {
+    if (nome === 'agent-harness') continue;
+    const dir = path.join(dirDoCache(process.env), nome);
+    const cabeca = fs.existsSync(dir) ? spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim() : '';
+    if (cabeca !== c.commit) {
+      t.skip(`sem a coleção ${nome} no commit fixado em ${dir}; rode tools/ah metodo instalar num projeto descartável`);
+      return;
+    }
+    // Nome solto entre crases ou depois de barra só conta quando é skill da própria coleção ("implement" aparece em prosa).
+    const daColecao = new Set(arquivosDe(dir).filter(a => a.endsWith('/SKILL.md')).map(a => a.split('/').at(-2)));
+    for (const pasta of Object.values(c.skills)) {
+      for (const arquivo of arquivosDe(path.join(dir, pasta))) {
+        const texto = fs.readFileSync(path.join(dir, pasta, arquivo), 'utf8');
+        if (texto.includes('\0')) continue;
+        const citadas = new Set([...texto.matchAll(/(?:superpowers|mattpocock-skills):([a-z0-9-]+)/g)].map(m => m[1]));
+        for (const re of [/`\/?([a-z0-9-]+)`/g, /(?:^|\s)\/([a-z0-9-]+)\b/gm]) {
+          for (const m of texto.matchAll(re)) if (daColecao.has(m[1])) citadas.add(m[1]);
+        }
+        for (const s of citadas) if (!ok.has(s)) foraDaLista.push(`${s} em ${nome}/${pasta}/${arquivo}`);
+      }
+    }
+  }
+  assert.deepEqual(foraDaLista, [], 'acrescente a linha na tabela "No lugar" do agents-metodo.md ou a skill em colecoes.json');
 });
