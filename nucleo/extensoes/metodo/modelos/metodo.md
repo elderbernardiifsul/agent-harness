@@ -15,12 +15,13 @@ Antes de começar, responda em ordem; a primeira resposta que decide vale:
 3. Cabe num commit (um comportamento, sem decisão de desenho)? Sim → Um commit.
 4. Senão → Plano de partida.
 
-Na dúvida entre duas, a mais leve: a trilha padrão é a leve. Diga ao humano a trilha escolhida em uma linha antes de começar. Trocar de trilha no meio é normal: diga no ticket por quê. Carregue só as skills da trilha (a linha **Skills:** de cada uma).
+Na dúvida entre duas, a mais leve: a trilha padrão é a leve. Diga ao humano a trilha escolhida em uma linha antes de começar. Trocar de trilha no meio é normal: diga no ticket por quê. Carregue só as skills da trilha (a linha **Skills:** de cada uma). Antes do primeiro arquivo do projeto (spec, plano, relatório ou código), abra a frente: `tools/ah open <nome> --tickets <n>`.
 
 ### Antes da trilha: triar
 
 - Pedido sem ticket, vago ou de fora: `triage` (sai um ticket com rótulo; os rótulos estão em `docs/agents/triage-labels.md`).
 - Spec ou plano grande que precisa virar vários tickets: `to-tickets`.
+- `triage`, `to-tickets` e `wayfinder` só o humano chama (no Claude Code, `/triage`, `/to-tickets` e `/wayfinder`; no Codex, o equivalente dele, se houver): o agente diz qual chamar e por quê, e segue depois que o humano chamar.
 - **Skills:** `triage`, `to-tickets`.
 
 ## As trilhas
@@ -36,19 +37,20 @@ Cada trilha diz quando usar, a sequência e as skills que entram.
 ### Plano de partida
 
 - Quando: várias tarefas, desenho que não muda.
-- Sequência: plano curto (`writing-plans`), com a linha `Nível: …` em cada tarefa (seção "Nível de modelo") e, no topo, a linha de partida para colar numa sessão nova: `tools/ah open <nome> --tickets <n> --plano <arquivo do plano>`, seguida de "execute o plano" → execução por subagentes (`subagent-driven-development`) ou na própria conversa (`executing-plans`), sempre com `test-driven-development` → revisão (`requesting-code-review`) → verificação → registros (seção "Registros da execução por subagentes") → merge na base e `tools/ah close`.
+- Sequência: `tools/ah open <nome> --tickets <n>` → plano curto (`writing-plans`), com a linha `Nível: …` em cada tarefa (seção "Nível de modelo") e, no topo, a linha de partida para uma sessão nova: `tools/ah open <nome>` seguida de "execute o plano <arquivo do plano>" → commit do plano e `tools/ah handoff` nesta sessão; na nova, a linha de partida → execução por subagentes (`subagent-driven-development`) ou na própria conversa (`executing-plans`), sempre com `test-driven-development` → revisão (`requesting-code-review`) → verificação → registros (seção "Registros da execução por subagentes") → merge na base e `tools/ah close`.
+- O `--plano <arquivo>` do `tools/ah open` só vale quando o plano já está na base; o plano escrito na frente está no worktree que a retomada devolve.
 - **Skills:** `writing-plans`, `subagent-driven-development`, `executing-plans`, `test-driven-development`, `requesting-code-review`, `verification-before-completion`, `systematic-debugging`.
 
 ### Spec e plano
 
 - Quando: muda contrato, dado ou fronteira.
-- Sequência: desenho com o humano (`brainstorming`); perguntas de decisão por exceção, no ticket (`grilling`; silêncio = padrão); vocabulário e decisões (`domain-modeling`: `GLOSSARY.md` e `docs/adr/`) → spec → a partir do plano, siga o Plano de partida.
+- Sequência: `tools/ah open <nome> --tickets <n>` → desenho com o humano (`brainstorming`); perguntas de decisão por exceção, no ticket (`grilling`; silêncio = padrão); vocabulário e decisões (`domain-modeling`: `GLOSSARY.md` e `docs/adr/`) → spec → a partir do plano, siga o Plano de partida.
 - **Skills:** `brainstorming`, `grilling`, `domain-modeling`, `writing-plans`.
 
 ### Investigação longa
 
 - Quando: ainda não se sabe o que fazer.
-- Sequência: mapa de decisões em tickets (`wayfinder`); leitura de fontes primárias com relatório no repositório (`research`); protótipo descartável para uma pergunta de desenho (`prototype`); decisões com o humano (`grilling`). Sai um mapa e tickets; cada ticket volta a "Escolha a trilha". A frente só abre quando um ticket vira trabalho de código.
+- Sequência: mapa de decisões em tickets (`wayfinder`, que o humano chama: ver "Antes da trilha"); leitura de fontes primárias com relatório no repositório (`research`); protótipo descartável para uma pergunta de desenho (`prototype`); decisões com o humano (`grilling`). Sai um mapa e tickets; cada ticket volta a "Escolha a trilha". O mapa e os tickets ficam no rastreador, sem frente; o relatório e o protótipo, que são arquivos, pedem a frente antes.
 - **Skills:** `wayfinder`, `research`, `prototype`, `grilling`.
 
 ## Um dono por etapa
@@ -60,7 +62,7 @@ Cada trilha diz quando usar, a sequência e as skills que entram.
 | Decisão com o humano | `grilling` | Ticket de decisões por exceção (silêncio = padrão) | — |
 | Vocabulário e decisões | `domain-modeling` | `GLOSSARY.md`, `docs/adr/` | — |
 | Desenho | `brainstorming` | Spec | — |
-| Plano | `writing-plans` | Plano com o nível de cada tarefa e a linha de partida | `tools/ah open --tickets --plano` |
+| Plano | `writing-plans` | Plano com o nível de cada tarefa e a linha de partida | `tools/ah open --tickets` antes; `tools/ah handoff` e a linha de partida na sessão nova |
 | Execução | `subagent-driven-development` (ou `executing-plans`, na conversa) com `test-driven-development` | Commits e diário da execução | Worktree da frente, fila de pesado, `tools/ah registros guardar` (extensão registros) |
 | Depuração | `systematic-debugging` | Teste de regressão | — |
 | Revisão | `requesting-code-review` | Commit de consertos | — |

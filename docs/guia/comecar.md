@@ -27,7 +27,8 @@ Abra uma sessão nova no projeto. Nela, o agente deve:
 - ler o `AGENTS.md` (o `CLAUDE.md` aponta para ele);
 - rodar `tools/ah doctor`;
 - a cada pedido, escolher a trilha pelo `docs/agents/metodo.md` e dizê-la em uma linha antes de começar;
-- abrir a frente (`tools/ah open`) antes de mudar código.
+- abrir a frente (`tools/ah open`) antes de mudar código;
+- num pedido sem ticket, ou grande demais para um ticket, dizer que skill de triagem você deve chamar e por quê: `triage`, `to-tickets` e `wayfinder` só o humano chama (no Claude Code, `/triage`, `/to-tickets` e `/wayfinder`; no Codex, o equivalente dele, se houver): o agente diz qual chamar e por quê, e segue depois que o humano chamar.
 
 Para testar se ele entendeu, sem deixar que execute nada:
 
@@ -48,21 +49,21 @@ Cada exemplo traz o pedido, o que dizer ao agente, a sequência de skills e coma
 
 - **Pedido.** Carla quer cupons no carrinho; o desenho do sistema não muda (ticket 15).
 - **O que dizer.** "Planeje o ticket 15." Depois, numa sessão nova, cole a linha de partida que está no topo do plano.
-- **Sequência.** `writing-plans` (cada tarefa com `Nível: …` e a linha de partida no topo) → na sessão nova, `tools/ah open cupom --tickets 15 --plano <arquivo do plano>` → `subagent-driven-development` com `test-driven-development` (com a extensão modelo ligada, `tools/ah modelo medio` diz o modelo de cada subagente) → `requesting-code-review` → `verification-before-completion` → `tools/ah registros guardar` → merge na base → `tools/ah close`.
+- **Sequência.** `tools/ah open cupom --tickets 15` → `writing-plans` (cada tarefa com `Nível: …` e a linha de partida no topo) → commit do plano e `tools/ah handoff` → na sessão nova, a linha de partida: `tools/ah open cupom` e "execute o plano <arquivo do plano>" → `subagent-driven-development` com `test-driven-development` (com a extensão modelo ligada, `tools/ah modelo medio` diz o modelo de cada subagente) → `requesting-code-review` → `verification-before-completion` → `tools/ah registros guardar` → merge na base → `tools/ah close`.
 - **Fica escrito.** O plano, os commits de cada tarefa, o diário da execução no ticket e a linha do histórico.
 
 ### Spec e plano: pagamento parcelado
 
 - **Pedido.** Carla quer pagamento parcelado; muda o contrato com o meio de pagamento e o dado do pedido (ticket 20).
 - **O que dizer.** "Vamos desenhar o parcelamento do ticket 20."
-- **Sequência.** `brainstorming`, com `grilling` (as decisões vão para o ticket; silêncio vale o padrão) e `domain-modeling` ("parcela" entra no `GLOSSARY.md`, a decisão vira ADR em `docs/adr/`) → spec → `writing-plans` → `tools/ah open parcelado --tickets 20 --plano <arquivo do plano>` e o resto como no cupom, até o merge e o `tools/ah close`.
+- **Sequência.** `tools/ah open parcelado --tickets 20` → `brainstorming`, com `grilling` (as decisões vão para o ticket; silêncio vale o padrão) e `domain-modeling` ("parcela" entra no `GLOSSARY.md`, a decisão vira ADR em `docs/adr/`) → spec → `writing-plans` → o resto como no cupom (`tools/ah handoff`, a linha de partida na sessão nova), até o merge e o `tools/ah close`.
 - **Fica escrito.** A spec, o glossário, o ADR, o plano e os commits.
 
 ### Investigação longa: vender também num marketplace
 
 - **Pedido.** Ana não sabe se vale vender num marketplace, nem em qual.
-- **O que dizer.** "Investigue se vale vender num marketplace; não escreva código ainda."
-- **Sequência.** `wayfinder` (um mapa de tickets de decisão) → `research` (relatório no repositório, com as fontes) → `prototype` (protótipo descartável da integração, para responder uma pergunta de desenho) → `grilling` com Ana nas decisões. Os tickets que saem voltam à escolha da trilha; a frente só é aberta quando um deles vira trabalho de código.
+- **O que dizer.** "Investigue se vale vender num marketplace; não escreva código ainda." O agente vai pedir que você chame o `wayfinder` (no Claude Code, `/wayfinder`), porque essa skill só o humano chama.
+- **Sequência.** `wayfinder` (um mapa de tickets de decisão) → `research` (relatório no repositório, com as fontes, numa frente aberta antes do relatório: `tools/ah open marketplace --tickets <n>`) → `prototype` (protótipo descartável da integração, para responder uma pergunta de desenho) → `grilling` com Ana nas decisões. O relatório entra na base pelo merge e `tools/ah close`; os tickets que saem voltam à escolha da trilha.
 - **Fica escrito.** O mapa, o relatório em `docs/research/` e os tickets.
 
 ## 4. Ligar as extensões opcionais

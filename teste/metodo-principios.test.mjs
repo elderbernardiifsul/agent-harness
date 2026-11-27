@@ -122,6 +122,8 @@ test('o metodo.md usa GLOSSARY.md, aponta em vez de repetir e é curto', () => {
   assert.doesNotMatch(texto, /superpowers:|mattpocock-skills:/);
   assert.ok(texto.includes('docs/agents/sessoes-paralelas.md'));
   assert.ok(texto.includes('`tools/ah modelo <nível>`'));
+  assert.match(texto, /Antes do primeiro arquivo do projeto .* abra a frente/);
+  assert.match(texto, /só o humano chama/);
   assert.ok(texto.split('\n').length <= 160, `metodo.md com ${texto.split('\n').length} linhas`);
 });
 
@@ -201,12 +203,13 @@ test('o guia tem as seções na ordem e aponta em vez de repetir', () => {
   assert.ok(!instalar.includes('metodo instalar'), 'o procedimento de instalação é do README');
   assert.ok(g.includes('docs/agents/metodo.md'));
   assert.ok(g.includes('`tools/ah doctor`'));
-  for (const titulo of TITULOS_DO_GUIA.slice(4, 7)) {
+  for (const titulo of TITULOS_DO_GUIA.slice(4, 8)) {
     const s = secao(g, titulo);
     assert.ok(s.includes('`tools/ah open'), `${titulo} sem tools/ah open`);
     assert.ok(s.includes('`tools/ah close`'), `${titulo} sem tools/ah close`);
   }
-  assert.ok(!secao(g, '### Investigação longa: vender também num marketplace').includes('`tools/ah open'), 'a investigação abre frente só quando um ticket vira código');
+  // A frente abre antes do primeiro arquivo (decisão do ensaio da fatia 2); a linha de partida não usa --plano.
+  assert.ok(!g.includes('--plano'), 'o guia não usa --plano: o plano escrito na frente não está na base');
 });
 
 test('toda skill citada no guia existe em colecoes.json ou na tabela "No lugar"', () => {
