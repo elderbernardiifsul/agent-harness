@@ -84,10 +84,11 @@ test('buscar nunca espera credencial: o git roda sem pergunta no terminal e com 
   const c = colecao(t, { skills: { grilling: { 'SKILL.md': 'a\n' } } });
   const opcoesVistas = [];
   const g = (args, opcoes) => { opcoesVistas.push(opcoes); return git(args, opcoes); };
-  buscar({ nome: 'ex', origem: c.origem, ref: c.commit, dirCache: descartavel(t), git: g, env: { ...process.env, ANA: '1' } });
+  buscar({ nome: 'ex', origem: c.origem, ref: c.commit, dirCache: descartavel(t), git: g, env: { ...process.env, ANA: '1', LC_ALL: 'pt_BR.UTF-8' } });
   assert.ok(opcoesVistas.length > 0);
   for (const o of opcoesVistas) {
     assert.equal(o.env.GIT_TERMINAL_PROMPT, '0');
+    assert.equal(o.env.LC_ALL, 'C'); // mensagens do git em inglês, para o `atualizar` reconhecer "ref não achado"
     assert.equal(o.env.ANA, '1');
     assert.ok(o.timeoutMs >= 60000);
   }

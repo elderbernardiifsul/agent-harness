@@ -25,7 +25,8 @@ export function buscar({ nome, origem, ref, dirCache, git, env = process.env }) 
   // Um ref começando por "-" seria lido pelo git como opção.
   if (!ref || ref.startsWith('-') || /\s/.test(ref)) throw new Error(`ref inválido: ${String(ref).slice(0, 40)} (use um commit completo ou o nome de uma tag)`);
   const dir = path.join(dirCache, nome);
-  const opcoes = { env: { ...env, GIT_TERMINAL_PROMPT: '0' }, timeoutMs: TEMPO_DO_GIT_MS };
+  // LC_ALL=C: as mensagens do git saem sempre em inglês, e quem chama reconhece "ref não encontrado" por elas.
+  const opcoes = { env: { ...env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' }, timeoutMs: TEMPO_DO_GIT_MS };
   const g = (...args) => git(['-C', dir, ...args], opcoes);
   const certo = (r, o_que) => {
     if (r.codigo !== 0) throw new Error(`${o_que}: ${(r.erro || r.saida).trim()}`);
