@@ -54,6 +54,11 @@ function buscarFontes(ctx, colecoes, nomes, refs, arquivoColecoes, recusa, coman
       const { dir, commit } = buscar({ nome, origem: c.origem, ref: refs[nome] ?? c.commit, dirCache: dirDoCache(ctx.env), git: gitDoCtx, env: ctx.env });
       fontes[nome] = { dir, commit, versao: refs[nome] ?? c.versao, origem: c.origem };
     } catch (e) {
+      // Tag ou commit que a origem não tem (erro do git, não da rede): o conserto é conferir o ref.
+      if (refs[nome] && /couldn't find remote ref|not our ref|no such remote ref|invalid refspec/i.test(e.message)) {
+        throw recusa(`não achei a referência ${refs[nome]} em ${c.origem}`,
+          `confira a tag ou o commit (git ls-remote --tags ${c.origem}) e rode tools/ah metodo ${comando} --colecao ${nome} --para ${refs[nome]} de novo; nada foi gravado`);
+      }
       throw recusa(`não consegui buscar a coleção ${nome} (${c.origem}): ${umaLinha(e.message)}`,
         `confira a conexão com a internet e o endereço da origem e rode tools/ah metodo ${comando} de novo; nada foi gravado`);
     }
@@ -176,7 +181,7 @@ function diferencas(plano) {
     for (const [rel, h] of Object.entries(desejado)) {
       if (!(rel in e.noDisco)) d.novos.add(`${e.skill}/${rel}`);
       else if (e.noDisco[rel] !== h) d.alterados.add(`${e.skill}/${rel}`);
-      else if (e.arquivos.find(f => f.caminho === rel).modo === 0o755 !== e.bitsNoDisco.includes(rel)) d.alterados.add(`${e.skill}/${rel} (modo)`);
+      else if (e.arquivos.find(f => f.caminho === rel).modo === 0o755 !== e.bitsNoDisco.includes(rel) && process.platform !== 'win32') d.alterados.add(`${e.skill}/${rel} (modo)`);
     }
     for (const rel of Object.keys(e.noDisco)) if (!(rel in desejado)) d.removidos.add(`${e.skill}/${rel}`);
   }

@@ -152,7 +152,8 @@ test('atualizar --para com ref inexistente recusa e não muda nada', t => {
   const trava = ler(p, '.harness/skills.lock.json');
   const r = p.ah(['metodo', 'atualizar', '--colecao', 'falsa', '--para', 'v99']);
   assert.notEqual(r.codigo, 0);
-  assert.match(r.erro, /^Recusado: [^]*v99[^]*Faça:/);
+  assert.match(r.erro, /^Recusado: não achei a referência v99 em file:\/\/[^]*Faça: confira a tag ou o commit \(git ls-remote --tags [^]*--colecao falsa --para v99/);
+  assert.doesNotMatch(r.erro, /internet/);
   assert.equal(ler(p, '.harness/skills.lock.json'), trava);
   assert.equal(ler(p, '.claude/skills/alfa/SKILL.md'), 'alfa v1\n');
 });
