@@ -73,6 +73,7 @@ test('a configuração do projeto muda campo a campo e pode acrescentar um agent
   assert.equal(ok(p.ah(['modelo', 'alto', '--agente', 'agente-da-loja'])).saida.split('\n')[0], 'alto (agente-da-loja): modelo grande, esforço max');
   // Nível que o agente novo não traduz: aparece sem modelo, sem recusar.
   assert.equal(ok(p.ah(['modelo', 'leve', '--agente', 'agente-da-loja'])).saida.split('\n')[0], 'leve (agente-da-loja): sem tradução (acrescente em extensoes.modelo.agentes)');
+  assert.equal(JSON.parse(ok(p.ah(['modelo', 'leve', '--agente', 'agente-da-loja', '--json'])).saida).traducoes[0].origem, null);
 });
 
 test('nível ou agente desconhecido é erro de uso, com o próximo passo', t => {

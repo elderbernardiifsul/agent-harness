@@ -54,7 +54,8 @@ function traduzir(nivel, agente, ctx) {
     agente, nivel,
     modelo: t.modelo ?? null,
     esforco: t.esforco ?? null,
-    origem: Object.keys(doProjeto).length ? 'projeto' : 'padrao',
+    // De onde veio: do projeto (algum campo dele), do padrão, ou de nenhum (agente acrescentado sem esse nível).
+    origem: Object.keys(doProjeto).length ? 'projeto' : Object.keys(padrao).length ? 'padrao' : null,
     uso: PADROES.agentes[agente]?.uso ?? null,
   };
 }

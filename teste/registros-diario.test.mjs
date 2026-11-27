@@ -54,6 +54,9 @@ test('corpoDoDiario e a leitura de volta dão o mesmo marcador e o mesmo texto',
   assert.equal(lerMarcador('comentário qualquer'), null);
   assert.equal(lerMarcador('<!-- ah:registro-resumo id=as-1 nome=carrinho v=1 -->'), null);
   assert.equal(diarioDoComentario('sem bloco'), null);
+  // Comentário editado no navegador volta com \r\n: o diário continua legível.
+  const { corpo } = corpoDoDiario({ frente: FRENTE, diario: { pasta: 'carrinho', plano: PLANO, texto: DIARIO }, commit: 'abc1234' });
+  assert.equal(diarioDoComentario(corpo.replace(/\n/g, '\r\n')), DIARIO);
 });
 
 test('diário em formato desconhecido vai cortado em 4000 caracteres, e o comentário diz isso', () => {
@@ -108,6 +111,11 @@ test('acharDiarios e devolverDiario: ida e volta com dois planos, sem reescrever
   assert.deepEqual(acharDiarios(path.join(wt, 'nao-existe')), []);
   // Nome de pasta vindo de fora (marcador de ticket) não sai de .superpowers/sdd/.
   assert.throws(() => devolverDiario(wt, { pasta: '../fora', plano: null, texto: 'x\n' }), /pasta inválida/);
+  // Nem nome que começa por ponto (sombrearia o .gitignore do sdd-workspace), nem plano fora da raiz.
+  assert.throws(() => devolverDiario(wt, { pasta: '.gitignore', plano: null, texto: 'x\n' }), /pasta inválida/);
+  for (const plano of ['../../../etc/x', '/etc/x', 'docs\\x.md']) {
+    assert.throws(() => devolverDiario(wt, { pasta: 'outro', plano, texto: 'x\n' }), /plano inválido/, plano);
+  }
 });
 
 test('limparPastaDoSdd tira só as pastas de plano e o .gitignore do sdd-workspace; o resto fica e é devolvido', t => {

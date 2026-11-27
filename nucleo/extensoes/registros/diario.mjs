@@ -20,7 +20,10 @@ const TAREFA = /^Task (\d+):/;
 // Limites do texto do diário no comentário. O GitHub aceita até 65 536 caracteres por comentário.
 export const LIMITE_RECONHECIDO = 60000;
 export const LIMITE_DESCONHECIDO = 4000;
-const PASTA_VALIDA = /^(?!\.\.?$)[^/\\]+$/;
+// Nome da pasta de plano e caminho do plano vindos de fora (o marcador de um comentário): a pasta não começa por
+// ponto (sombrearia o .gitignore do sdd-workspace) nem tem barra; o plano é relativo à raiz, sem `..` nem `\\`.
+const PASTA_VALIDA = /^[^./\\][^/\\]*$/;
+const planoValido = plano => typeof plano === 'string' && plano !== '' && !path.isAbsolute(plano) && !plano.includes('\\') && !plano.split('/').includes('..');
 
 const sdd = worktree => path.join(worktree, '.superpowers', 'sdd');
 const lerOuNada = arquivo => { try { return fs.readFileSync(arquivo, 'utf8'); } catch { return null; } };
@@ -67,9 +70,16 @@ export function lerDiario(texto) {
 
 // A cerca do bloco de código tem uma crase a mais que a maior sequência de crases do diário (no mínimo quatro),
 // para o texto nunca fechar o bloco antes da hora.
-const cercaPara = texto => '`'.repeat(Math.max(4, ...[...String(texto).matchAll(/`+/g)].map(m => m[0].length + 1)));
+function cercaPara(texto) {
+  const maiores = [...String(texto).matchAll(/`+/g)].map(m => m[0].length + 1);
+  return '`'.repeat(Math.max(4, ...maiores));
+}
 
-const marcador = (tipo, campos) => `<!-- ah:${tipo} ${Object.entries(campos).map(([k, v]) => `${k}=${encodeURIComponent(v ?? '')}`).join(' ')} v=1 -->`;
+// `<!-- ah:<tipo> chave=valor … v=1 -->`, com cada valor em encodeURIComponent (sem espaço, legível por máquina).
+function marcador(tipo, campos) {
+  const pares = Object.entries(campos).map(([k, v]) => `${k}=${encodeURIComponent(v ?? '')}`);
+  return `<!-- ah:${tipo} ${pares.join(' ')} v=1 -->`;
+}
 
 // O comentário com o diário de um plano: {corpo, cortado}.
 export function corpoDoDiario({ frente, diario, commit }) {
@@ -112,7 +122,8 @@ export function lerMarcador(corpo) {
 
 // O texto do diário dentro do bloco do comentário (sempre com uma quebra de linha no fim), ou null.
 export function diarioDoComentario(corpo) {
-  const linhas = String(corpo).split('\n');
+  // Comentário editado no navegador pode voltar com \r\n.
+  const linhas = String(corpo).replace(/\r\n/g, '\n').split('\n');
   const inicio = linhas.findIndex(l => /^`{4,}text$/.test(l));
   if (inicio < 0) return null;
   const cerca = linhas[inicio].slice(0, -4);
@@ -153,12 +164,25 @@ export function resumoDoFechamento({ frente, copias }) {
 // de fora (marcador de um ticket) e não pode sair de `.superpowers/sdd/`.
 export function devolverDiario(worktree, { pasta, plano, texto }) {
   if (!PASTA_VALIDA.test(String(pasta))) throw new Error(`pasta inválida para o diário: ${curta(String(pasta), 60)}`);
+  if (plano != null && !planoValido(plano)) throw new Error(`plano inválido para o diário: ${curta(String(plano), 60)}`);
   const dir = path.join(sdd(worktree), pasta);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'progress.md'), texto);
   if (plano) fs.writeFileSync(path.join(dir, 'plan-path'), `${plano}\n`);
   const ignora = path.join(sdd(worktree), '.gitignore');
   if (!fs.existsSync(ignora)) fs.writeFileSync(ignora, '*\n');
+}
+
+// As pastas do worktree que são do subagent-driven-development: as pastas de plano (com `progress.md` ou
+// `plan-path`), relativas ao worktree e terminadas em /. Lê só o disco: o close a chama sob a trava.
+export function pastasDoSdd(worktree) {
+  try {
+    return fs.readdirSync(sdd(worktree), { withFileTypes: true })
+      .filter(e => e.isDirectory() && ['progress.md', 'plan-path'].some(f => fs.existsSync(path.join(sdd(worktree), e.name, f))))
+      .map(e => `.superpowers/sdd/${e.name}/`).sort();
+  } catch {
+    return [];
+  }
 }
 
 // Tira do worktree o que é do subagent-driven-development e já foi guardado: as pastas de plano (as que têm

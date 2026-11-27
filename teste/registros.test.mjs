@@ -91,7 +91,7 @@ test('sem rede: a cópia vale como guarda, a pasta sai e o ticket fica pendente'
   const p = projeto(t);
   const wt = frenteComDiario(p);
   const r = ok(p.ah(['registros', 'guardar'], { env: { GH_FALSO_FORA: '1' } }));
-  assert.match(r.erro, /Aviso: não consegui comentar em #7 \(.*\); a cópia está em .*registros\/as-1, e o ah close comenta antes de fechar\./);
+  assert.match(r.erro, /Aviso: não consegui comentar em #7 \(.*\); a cópia está em .*registros\/as-1, e o ah close desta máquina comenta antes de fechar\./);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(copia(p, 'as-1', 'carrinho'), 'meta.json'), 'utf8')).tickets, { 7: 'pendente' });
   assert.ok(!fs.existsSync(path.join(wt, '.superpowers')));
 });
@@ -104,10 +104,14 @@ test('arquivo do aluno em .superpowers/sdd/: fica, com o aviso, e o close recusa
   assert.match(r.erro, /Aviso: deixei no worktree o que não é do subagent-driven-development: \.superpowers\/sdd\/minhas-notas\.txt/);
   assert.ok(fs.existsSync(path.join(wt, '.superpowers', 'sdd', 'minhas-notas.txt')));
   assert.ok(!fs.existsSync(path.join(wt, '.superpowers', 'sdd', 'carrinho')));
-  assert.equal(p.ah(['close']).codigo, 1);
+  // O close recusa pelo arquivo do aluno na linha de sempre, sem mandar rodar o guardar de novo.
+  const r2 = p.ah(['close']);
+  assert.equal(r2.codigo, 1);
+  assert.match(r2.erro, /itens ignorados no worktree .*\n(?: {4}.*\n)*? {4}\.superpowers\/sdd\/minhas-notas\.txt$/m);
+  assert.doesNotMatch(r2.erro, /extensão registros guarda/);
 });
 
-test('--frente: recusa a frente ativa de outra sessão viva; guarda a passada', t => {
+test('--frente: recusa a frente ativa de outra sessão viva; guarda a órfã', t => {
   const p = projeto(t);
   ok(p.ah(['open', 'carrinho']));
   frenteComDiario(p, { nome: 'frete', tickets: [], opcoes: B });
@@ -235,7 +239,7 @@ test('fechamento com o gh fora do ar: o close termina, mostra o resumo e mantém
   ok(p.ah(['registros', 'guardar']));
   // Sem rede, o núcleo põe o comentário de fechamento na fila e fecha; a extensão só avisa.
   const r = ok(p.ah(['close'], { env: { GH_FALSO_FORA: '1' } }));
-  assert.match(r.erro, /Aviso: não consegui comentar o resumo em #7 \(sem rede\); a cópia fica em .*registros\/as-1\./);
+  assert.match(r.erro, /Aviso: sem rede \(sem rede\): parei de comentar; o diário e o resumo ficam em .*registros\/as-1\./);
   assert.match(r.saida, /Resumo da execução por subagentes\*\* da frente as-1 carrinho/);
   assert.ok(fs.existsSync(path.join(dirDoTeste(p), 'registros', 'as-1', 'carrinho', 'progress.md')));
   assert.equal(resumosNoTicket(p, 7).length, 0);
@@ -253,4 +257,34 @@ test('começo de sessão: lembra o guardar quando o worktree tem diário não gu
   ok(p.ah(['open', 'carrinho']));
   // Guardado pelo handoff e igual à cópia: sem linha.
   assert.doesNotMatch(await inicio(), /^Registros:/m);
+});
+
+test('handoff sem rede: o aviso diz que outra máquina não terá o diário', t => {
+  const p = projeto(t);
+  frenteComDiario(p);
+  const r = ok(p.ah(['handoff'], { env: { GH_FALSO_FORA: '1' } }));
+  assert.match(r.erro, /Aviso: o diário não chegou a #7 \(.*\): outra máquina que retomar a frente não o terá; a cópia está em .*registros\/as-1\./);
+  assert.doesNotMatch(r.erro, /o ah close comenta antes de fechar/);
+});
+
+test('fechamento com diário cortado: o resumo vai ao ticket, e a cópia inteira fica', t => {
+  const p = projeto(t);
+  frenteComDiario(p, { planos: { notas: `anotações livres\n${'x'.repeat(6000)}\n` } });
+  ok(p.ah(['registros', 'guardar']));
+  const r = ok(p.ah(['close']));
+  assert.match(r.saida, /^Registros: resumo da execução comentado em #7\.$/m);
+  assert.match(r.saida, /^Registros: o diário do plano notas foi cortado no ticket; a cópia inteira fica em .*registros\/as-1\.$/m);
+  assert.ok(fs.readFileSync(path.join(dirDoTeste(p), 'registros', 'as-1', 'notas', 'progress.md'), 'utf8').length > 6000);
+});
+
+test('fechamento: na primeira falha de rede, para de chamar o gh', t => {
+  const p = projeto(t);
+  p.ghSemear(8, {});
+  frenteComDiario(p, { tickets: ['--tickets', '7,8'], planos: { carrinho: DIARIO, frete: FRETE } });
+  ok(p.ah(['registros', 'guardar'], { env: { GH_FALSO_FORA: '1' } }));
+  const antes = p.ghChamadas().length;
+  const r = ok(p.ah(['close'], { env: { GH_FALSO_FORA: '1' } }));
+  const comentariosDaExtensao = p.ghChamadas().slice(antes).filter(c => c.argv[1] === 'comment' && /ah:registro/.test(c.entrada));
+  assert.equal(comentariosDaExtensao.length, 1, JSON.stringify(comentariosDaExtensao.map(c => c.argv)));
+  assert.match(r.erro, /Aviso: sem rede \(.*\): parei de comentar; o diário e o resumo ficam em .*registros\/as-1\./);
 });

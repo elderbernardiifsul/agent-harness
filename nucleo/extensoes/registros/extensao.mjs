@@ -21,7 +21,7 @@
 // Nada disto recusa o trabalho: só o comando recusa o próprio erro de uso. O formato do diário está em diario.mjs.
 import fs from 'node:fs';
 import path from 'node:path';
-import { acharDiarios, corpoDoDiario, devolverDiario, diarioDoComentario, lerMarcador, limparPastaDoSdd, resumoDoFechamento } from './diario.mjs';
+import { acharDiarios, corpoDoDiario, devolverDiario, diarioDoComentario, lerMarcador, limparPastaDoSdd, pastasDoSdd, resumoDoFechamento } from './diario.mjs';
 
 const USO = 'ah registros guardar [--frente <nome>]';
 
@@ -44,9 +44,13 @@ function comentar(ctx, ticket, corpo) {
 // Comenta e guarda o diário de cada plano do worktree da frente. `remover`: tira a pasta do worktree depois (o
 // comando); sem ele, ela fica (o handoff). `calado`: sem diário, não diz nada (as reações).
 export async function guardar(frente, ctx, { remover, calado = false }) {
-  const wt = typeof frente.worktree === 'string' ? frente.worktree : null;
-  const diarios = wt ? acharDiarios(wt) : [];
-  const sdd = path.join(wt ?? '?', '.superpowers', 'sdd');
+  const wt = typeof frente.worktree === 'string' && fs.existsSync(frente.worktree) ? frente.worktree : null;
+  if (!wt) {
+    if (!calado) ctx.escrever(`A frente ${frente.id} ${frente.nome} não tem worktree nesta máquina; não há diário a guardar.\n`);
+    return { planos: 0, comentados: [], pendentes: [] };
+  }
+  const diarios = acharDiarios(wt);
+  const sdd = path.join(wt, '.superpowers', 'sdd');
   if (!diarios.length) {
     if (!calado) ctx.escrever(`Nenhum diário em ${sdd}/.\n`);
     return { planos: 0, comentados: [], pendentes: [] };
@@ -58,11 +62,14 @@ export async function guardar(frente, ctx, { remover, calado = false }) {
   const falhas = new Map();
   for (const d of diarios) {
     const dir = path.join(base, d.pasta);
-    // O mesmo diário já comentado no mesmo ticket (pelo handoff, ou por um guardar anterior) não vai de novo.
-    const anterior = lerOuNada(path.join(dir, 'progress.md')) === d.texto ? lerJson(path.join(dir, 'meta.json')) : null;
+    // O mesmo diário já comentado no mesmo ticket (pelo handoff, ou por um guardar anterior) não vai de novo: se a
+    // cópia desta máquina tem o mesmo texto, o meta.json dela diz em que tickets ele já está.
+    const mesmoTexto = lerOuNada(path.join(dir, 'progress.md')) === d.texto;
+    const anterior = mesmoTexto ? lerJson(path.join(dir, 'meta.json')) : null;
     const { corpo, cortado } = corpoDoDiario({ frente, diario: d, commit });
     const estado = {};
     for (const n of tickets) {
+      // `erro` null: já estava comentado, ou o comentário deu certo agora.
       const erro = anterior?.tickets?.[n] === 'comentado' ? null : comentar(ctx, n, corpo);
       estado[n] = erro ? 'pendente' : 'comentado';
       if (erro) falhas.set(n, erro);
@@ -76,7 +83,11 @@ export async function guardar(frente, ctx, { remover, calado = false }) {
   const onde = comentados.size ? `; comentado em ${[...comentados].map(n => `#${n}`).join(', ')}` : '';
   ctx.escrever(`Diário de ${planos(diarios.length)} guardado em ${base}${onde}.\n`);
   if (!tickets.length) ctx.avisar(`Aviso: a frente ${frente.id} não tem ticket: o diário ficou só nesta máquina (${base}).\n`);
-  for (const [n, erro] of falhas) ctx.avisar(`Aviso: não consegui comentar em #${n} (${erro}); a cópia está em ${base}, e o ah close comenta antes de fechar.\n`);
+  for (const [n, erro] of falhas) {
+    ctx.avisar(remover
+      ? `Aviso: não consegui comentar em #${n} (${erro}); a cópia está em ${base}, e o ah close desta máquina comenta antes de fechar.\n`
+      : `Aviso: o diário não chegou a #${n} (${erro}): outra máquina que retomar a frente não o terá; a cópia está em ${base}.\n`);
+  }
   if (remover) {
     const sobras = limparPastaDoSdd(wt);
     if (sobras.length) ctx.avisar(`Aviso: deixei no worktree o que não é do subagent-driven-development: ${sobras.join(', ')}. O ah close recusa enquanto isso estiver lá: mova o que importa para fora de ${sdd} ou apague.\n`);
@@ -103,7 +114,7 @@ function diariosDosTickets(ctx, frente) {
   for (const n of frente.tickets ?? []) {
     const r = ctx.gh(['issue', 'view', String(n), '--json', 'comments']);
     if (r.codigo !== 0) {
-      ctx.avisar(`Aviso: não consegui ler os comentários de #${n} (${primeiraLinha(r)}); se o diário estava lá, rode ah open de novo com rede.\n`);
+      ctx.avisar(`Aviso: não consegui ler os comentários de #${n} (${primeiraLinha(r)}); o diário que estiver lá não voltou ao worktree, e sem ele a execução do plano recomeça do zero.\n`);
       continue;
     }
     let comentarios = [];
@@ -133,8 +144,12 @@ async function devolver(ctx) {
   }
   for (const [pasta, d] of diariosDosTickets(ctx, frente)) {
     if (noWorktree.has(pasta)) continue;
-    if (d.cortado || d.texto === null) {
+    if (d.cortado) {
       ctx.avisar(`Aviso: o diário do plano ${pasta} no ticket #${d.ticket} está cortado; não o devolvi (o inteiro ficou na máquina que guardou).\n`);
+      continue;
+    }
+    if (d.texto === null) {
+      ctx.avisar(`Aviso: não achei o bloco do diário do plano ${pasta} no comentário de #${d.ticket} (editado à mão?); não o devolvi.\n`);
       continue;
     }
     try {
@@ -151,8 +166,9 @@ async function devolver(ctx) {
   }
 }
 
-// Fechamento: o diário pendente vai primeiro; depois, o resumo. Roda sob a trava das frentes do close: cada gh tem o
-// prazo de 15 s do núcleo, e uma falha vira aviso, sem desfazer o fechamento.
+// Fechamento: o diário pendente vai primeiro; depois, o resumo. Roda sob a trava das frentes do close, e cada gh
+// tem o prazo de 15 s do núcleo: na primeira falha, para de chamar o gh, para a rede travada não segurar a trava.
+// Falha vira aviso, sem desfazer o fechamento. A cópia só sai quando tudo chegou ao ticket e nada foi cortado.
 async function resumir(ctx) {
   const frente = ctx.frente;
   if (!frente || ctx.aberturaDesfeita) return;
@@ -163,34 +179,26 @@ async function resumir(ctx) {
   }
   const base = dirDasCopias(ctx, frente);
   const tickets = ctx.soLocal ? [] : (frente.tickets ?? []);
-  let todos = tickets.length > 0;
+  let semRede = null;
+  const tentar = (n, corpo) => {
+    if (semRede) return false;
+    semRede = comentar(ctx, n, corpo);
+    return !semRede;
+  };
   for (const c of copias) {
     for (const n of tickets) {
-      if (c.meta.tickets?.[n] === 'comentado') continue;
-      const { corpo } = corpoDoDiario({ frente, diario: c, commit: c.meta.commit ?? 'desconhecido' });
-      const erro = comentar(ctx, n, corpo);
-      if (erro) {
-        todos = false;
-        ctx.avisar(`Aviso: não consegui comentar o diário do plano ${c.pasta} em #${n} (${erro}); a cópia fica em ${base}.\n`);
-      }
+      if (c.meta.tickets?.[n] !== 'comentado') tentar(n, corpoDoDiario({ frente, diario: c, commit: c.meta.commit ?? 'desconhecido' }).corpo);
     }
   }
   const corpo = resumoDoFechamento({ frente, copias });
-  const comentados = [];
-  for (const n of tickets) {
-    const erro = comentar(ctx, n, corpo);
-    if (erro) {
-      todos = false;
-      ctx.avisar(`Aviso: não consegui comentar o resumo em #${n} (${erro}); a cópia fica em ${base}.\n`);
-    } else comentados.push(n);
-  }
+  const comentados = tickets.filter(n => tentar(n, corpo));
+  if (semRede) ctx.avisar(`Aviso: sem rede (${semRede}): parei de comentar; o diário e o resumo ficam em ${base}.\n`);
   if (comentados.length) ctx.escrever(`Registros: resumo da execução comentado em ${comentados.map(n => `#${n}`).join(', ')}.\n`);
-  if (todos) {
-    fs.rmSync(base, { recursive: true, force: true });
-    return;
-  }
-  if (!comentados.length) ctx.escrever(corpo.split('\n').slice(1).join('\n'));
-  ctx.escrever(`Registros: a cópia do diário fica em ${base}.\n`);
+  else ctx.escrever(corpo.split('\n').slice(1).join('\n'));
+  const cortados = copias.filter(c => c.meta.cortado);
+  for (const c of cortados) ctx.escrever(`Registros: o diário do plano ${c.pasta} foi cortado no ticket; a cópia inteira fica em ${base}.\n`);
+  if (tickets.length && !semRede && !cortados.length) fs.rmSync(base, { recursive: true, force: true });
+  else if (!cortados.length) ctx.escrever(`Registros: a cópia do diário fica em ${base}.\n`);
 }
 
 // Começo de sessão: há diário no worktree da frente que não está guardado (sem cópia, ou diferente dela)?
@@ -248,8 +256,16 @@ export default {
       },
     },
   },
-  // A pasta inteira do subagent-driven-development; o guardar tira só o que é dele e avisa do resto.
-  ignorados: ctx => (ctx.frente ? [{ caminho: '.superpowers/sdd/', guardar: `tools/ah registros guardar --frente ${ctx.frente.nome}` }] : []),
+  // Só o que é do subagent-driven-development: as pastas de plano e, com alguma delas, o .gitignore que o
+  // sdd-workspace cria. Um arquivo do aluno em .superpowers/sdd/ fica na linha de sempre do close, porque o guardar
+  // não o tira. Lê só o disco, rápido: o close chama sob a trava.
+  ignorados(ctx) {
+    const wt = typeof ctx.frente?.worktree === 'string' ? ctx.frente.worktree : null;
+    const pastas = wt ? pastasDoSdd(wt) : [];
+    if (!pastas.length) return [];
+    const guardar = `tools/ah registros guardar --frente ${ctx.frente.nome}`;
+    return [...pastas, '.superpowers/sdd/.gitignore'].map(caminho => ({ caminho, guardar }));
+  },
   reacoes: {
     async aoPassar(ctx) {
       await guardar(ctx.frente, ctx, { remover: false, calado: true });
