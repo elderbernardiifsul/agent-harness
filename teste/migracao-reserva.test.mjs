@@ -110,4 +110,8 @@ test('configuração: pasta é obrigatória; padrão precisa de um grupo', async
   await assert.rejects(() => carregarParaTeste(EXTENSAO, { pasta: PASTA, padrao: '^\\d+_' }), /grupo/);
   await assert.rejects(() => carregarParaTeste(EXTENSAO, { pasta: PASTA, padrao: '(' }), /padrao/);
   await carregarParaTeste(EXTENSAO, { pasta: PASTA, padrao: '^V(\\d+)__', digitos: 3 });
+  await assert.rejects(() => carregarParaTeste(EXTENSAO, { pasta: PASTA, padrao: '^(\\d+)?_' }), /obrigatório/);
+  await assert.rejects(() => carregarParaTeste(EXTENSAO, { pasta: PASTA, padrao: '^(\\d+)*_' }), /obrigatório/);
+  await assert.rejects(() => carregarParaTeste(EXTENSAO, { pasta: PASTA, padrao: '^V(?<n>\\d+)__' }), /grupo simples/);
+  await carregarParaTeste(EXTENSAO, { pasta: PASTA, padrao: '^\\((\\d+)\\)_' });
 });

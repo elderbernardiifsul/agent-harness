@@ -162,3 +162,18 @@ test('frente com duas migrações: a reserva passa a ser a última, e a próxima
   ok(p.ah(['migracao', 'reservar'], C));
   assert.equal(p.frente('tres').extensoes.migracao.numero, 5);
 });
+
+test('migração ainda fora do git: recusa com o git add como próximo passo', t => {
+  const p = novoProjeto(t);
+  ok(p.ah(['open', 'um']));
+  ok(p.ah(['migracao', 'reservar']));
+  fs.mkdirSync(path.join(wt(p, 'um'), PASTA), { recursive: true });
+  fs.writeFileSync(path.join(wt(p, 'um'), PASTA, '0003_um.sql'), '-- um\n');
+  commitar(p, p.raiz, ['0003_outra.sql']);
+  assert.equal(p.git(['merge', 'dev', '--no-edit', '-q'], { cwd: wt(p, 'um') }).codigo, 0);
+  const r = p.ah(['migracao', 'renumerar']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /a migração 0003_um\.sql ainda não está no git/);
+  assert.match(r.erro, /Faça: git add -- db\/migracoes\/0003_um\.sql e rode ah migracao renumerar de novo/);
+  assert.equal(p.frente('um').extensoes.migracao.numero, 3, 'a reserva não muda');
+});
