@@ -177,3 +177,27 @@ test('migração ainda fora do git: recusa com o git add como próximo passo', t
   assert.match(r.erro, /Faça: git add -- db\/migracoes\/0003_um\.sql e rode ah migracao renumerar de novo/);
   assert.equal(p.frente('um').extensoes.migracao.numero, 3, 'a reserva não muda');
 });
+
+test('pares up/down com o mesmo número ficam juntos: no plano, no em dia e na reserva', t => {
+  const padrao = /^(\d+)_/;
+  assert.deepEqual(planoDeRenumeracao(['0002_f.down.sql', '0002_f.up.sql'], 3, padrao, 4), [
+    { de: '0002_f.down.sql', para: '0003_f.down.sql' }, { de: '0002_f.up.sql', para: '0003_f.up.sql' }]);
+  assert.deepEqual(planoDeRenumeracao(['0002_a.down.sql', '0002_a.up.sql', '0003_b.up.sql'], 2, padrao, 4), []);
+  assert.deepEqual(planoDeRenumeracao(['0003_a.down.sql', '0003_a.up.sql', '0004_b.up.sql'], 5, padrao, 4).map(p => p.para),
+    ['0005_a.down.sql', '0005_a.up.sql', '0006_b.up.sql']);
+  assert.equal(emDia([3, 3], 2, []), true);
+  assert.equal(emDia([3, 3, 4], 2, []), true);
+  assert.equal(emDia([3, 3, 5], 2, []), false);
+
+  const p = novoProjeto(t);
+  ok(p.ah(['open', 'um']));
+  ok(p.ah(['migracao', 'reservar']));
+  commitar(p, wt(p, 'um'), ['0003_frete.down.sql', '0003_frete.up.sql']);
+  assert.match(ok(p.ah(['migracao', 'renumerar'])).saida, /já está em dia/);
+  assert.equal(p.frente('um').extensoes.migracao.numero, 3, 'o par ocupa um número só');
+  commitar(p, p.raiz, ['0003_outra.sql']);
+  assert.equal(p.git(['merge', 'dev', '--no-edit', '-q'], { cwd: wt(p, 'um') }).codigo, 0);
+  ok(p.ah(['migracao', 'renumerar']));
+  for (const a of ['0004_frete.down.sql', '0004_frete.up.sql']) assert.ok(fs.existsSync(path.join(wt(p, 'um'), PASTA, a)), a);
+  assert.equal(p.frente('um').extensoes.migracao.numero, 4);
+});

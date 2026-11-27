@@ -175,8 +175,9 @@ async function renumerar(args, ctx) {
   await ctx.gravarCampos(f.nome, (secao, { frentes }) => {
     conferirDona(ctx, frentes.find(x => x.nome === f.nome));
     const outras = frentes.filter(x => x.nome !== f.nome).map(numeroDe).filter(n => n !== null);
-    inicio = emDia(numeros, ultima, outras) ? numeros[0] : proximoNumero(ultima, outras);
-    return { numero: inicio + daFrente.length - 1, em: new Date().toISOString() };
+    inicio = emDia(numeros, ultima, outras) ? Math.min(...numeros) : proximoNumero(ultima, outras);
+    // A reserva é o último número da frente; o par up/down conta como um.
+    return { numero: inicio + new Set(numeros).size - 1, em: new Date().toISOString() };
   });
   const plano = planoDeRenumeracao(daFrente, inicio, o.padrao, o.digitos);
   if (!plano.length) {

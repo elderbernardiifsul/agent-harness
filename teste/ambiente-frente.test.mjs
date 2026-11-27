@@ -1,6 +1,7 @@
 // Extensão ambiente: portas, banco e arquivo de ambiente por frente, na abertura e no fechamento.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -74,7 +75,7 @@ test('abrir reserva portas, cria o banco e escreve o arquivo; o quadro mostra', 
   assert.match(texto, new RegExp(`^PORTA_API=${PORTA_API}$`, 'm'));
   assert.match(texto, /^BANCO=loja_carrinho$/m);
   assert.ok(existeBanco(bancos, 'loja_carrinho'));
-  assert.deepEqual(p.frente('carrinho').extensoes.ambiente.banco, { nome: 'loja_carrinho', criado: true });
+  assert.deepEqual(p.frente('carrinho').extensoes.ambiente.banco, { nome: 'loja_carrinho', criado: true, maquina: os.hostname() });
   assert.match(ok(p.ah(['board'])).saida, new RegExp(`${PORTA_WEB} ${PORTA_API} loja_carrinho`));
   assert.match(ok(p.ah(['ambiente'])).saida, new RegExp(`PORTA_WEB=${PORTA_WEB}`));
 });
@@ -112,9 +113,11 @@ test('banco que falha avisa, e ah ambiente preparar tenta de novo', async t => {
   assert.match(r.erro, /não consegui criar o banco loja_carrinho/);
   assert.match(r.erro, /rode ah ambiente preparar/);
   assert.equal(p.frente('carrinho').extensoes.ambiente.banco.criado, false);
+  assert.doesNotMatch(arquivoDe(p, 'carrinho'), /BANCO=/, 'sem banco criado, o arquivo não aponta para ele');
   ok(p.ah(['ambiente', 'preparar']));
   assert.equal(p.frente('carrinho').extensoes.ambiente.banco.criado, true);
   assert.ok(existeBanco(bancos, 'loja_carrinho'));
+  assert.match(arquivoDe(p, 'carrinho'), /^BANCO=loja_carrinho$/m);
 });
 
 test('desfazer apaga o banco, o arquivo e as portas; o close passa e a porta volta à faixa', async t => {
@@ -208,13 +211,53 @@ test('banco fixo nunca é apagado no fechamento', async t => {
   assert.ok(existeBanco(bancos, 'loja'));
 });
 
-test('ignorados: o arquivo de ambiente é descartável (P5 do close)', async () => {
-  const def = await carregarParaTeste(EXTENSAO, { portas: { faixa: [4100, 4119], chaves: ['PORTA'] } });
-  const ignorados = ctx => def.ignorados(ctx);
-  assert.deepEqual(ignorados(ctxFalso({ extensao: 'ambiente', config: { arquivo: '.env.local', portas: { faixa: [4100, 4119], chaves: ['PORTA'] } } })),
-    [{ caminho: '.env.local', descartavel: true }]);
-  assert.deepEqual(ignorados(ctxFalso({ extensao: 'ambiente', config: { portas: { faixa: [4100, 4119], chaves: ['PORTA'] } } })),
-    [{ caminho: '.env.frente', descartavel: true }]);
+test('ignorados: só o arquivo que a extensão escreveu e que ainda está como ela o deixou', async t => {
+  const config = { portas: { faixa: [4100, 4119], chaves: ['PORTA'] } };
+  const def = await carregarParaTeste(EXTENSAO, config);
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'ambiente-wt-'));
+  t.after(() => fs.rmSync(wt, { recursive: true, force: true }));
+  const texto = '# gerado por ah ambiente\nPORTA=4100\n';
+  const sha = crypto.createHash('sha256').update(texto).digest('hex');
+  const frente = registro => ({ id: 'as-1', nome: 'carrinho', worktree: wt, extensoes: { ambiente: registro } });
+  const ignorados = registro => def.ignorados(ctxFalso({ extensao: 'ambiente', config, frente: frente(registro) }));
+  assert.deepEqual(ignorados({ arquivo: { caminho: '.env.frente', sha256: sha } }), [], 'sem o arquivo no disco, nada a declarar');
+  fs.writeFileSync(path.join(wt, '.env.frente'), texto);
+  assert.deepEqual(ignorados({ arquivo: { caminho: '.env.frente', sha256: sha } }), [{ caminho: '.env.frente', descartavel: true }]);
+  assert.deepEqual(ignorados({}), [], 'a extensão não escreveu o arquivo');
+  fs.writeFileSync(path.join(wt, '.env.frente'), `${texto}SENHA=da-ana\n`);
+  assert.deepEqual(ignorados({ arquivo: { caminho: '.env.frente', sha256: sha } }), [], 'mudado à mão depois');
+});
+
+test('o .env do aluno no caminho do arquivo: o close recusa e o lista, em vez de apagá-lo', async t => {
+  const de = await portaLivre();
+  const p = novoProjeto(t, { arquivo: '.env', portas: { faixa: [de, de + 9], chaves: ['PORTA_WEB'] } });
+  ok(p.ah(['open', 'carrinho']));
+  const arquivo = path.join(p.frente('carrinho').worktree, '.env');
+  fs.writeFileSync(arquivo, 'CHAVE_DA_API=da-ana\n');
+  const r = p.ah(['close']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /^\s+\.env$/m);
+  assert.equal(fs.readFileSync(arquivo, 'utf8'), 'CHAVE_DA_API=da-ana\n');
+});
+
+test('frente passada não apaga o banco no close, nem banco que outra máquina criou', async t => {
+  const de = await portaLivre();
+  const bancos = pastaDeBancos(t);
+  const p = novoProjeto(t, configCom(de, de + 9, bancos));
+  ok(p.ah(['open', 'carrinho']));
+  assert.equal(p.frente('carrinho').extensoes.ambiente.banco.maquina, os.hostname());
+  ok(p.ah(['handoff', 'carrinho', '--nota', 'segue em outra máquina']));
+  const r = ok(p.ah(['close', 'carrinho']));
+  assert.ok(existeBanco(bancos, 'loja_carrinho'), 'o banco fica para quem continuou a frente');
+  assert.match(r.erro, /a frente estava passada: o banco loja_carrinho fica para quem a continuou; Faça: /);
+
+  fs.writeFileSync(path.join(bancos, 'loja_frete'), '');
+  const config = configCom(de, de + 9, bancos);
+  const def = await carregarParaTeste(EXTENSAO, config);
+  const ctx = ctxFalso({ extensao: 'ambiente', config, frente: { id: 'as-2', nome: 'frete', estado: 'ativa', extensoes: { ambiente: { banco: { nome: 'loja_frete', criado: true, maquina: 'outra-maquina' } } } } });
+  await def.reacoes.depoisDeFechar(ctx);
+  assert.ok(existeBanco(bancos, 'loja_frete'));
+  assert.match(ctx.avisos.join(''), /criado em outra máquina \(outra-maquina\)/);
 });
 
 test('configuração inválida não carrega', async () => {
@@ -222,5 +265,6 @@ test('configuração inválida não carrega', async () => {
   await assert.rejects(() => carregarParaTeste(EXTENSAO, { portas: { faixa: [4200, 4100], chaves: ['P'] } }), /faixa/);
   await assert.rejects(() => carregarParaTeste(EXTENSAO, { banco: { nome: 'loja_{frente}', chave: 'BANCO', criar: 'createdb', apagar: ['dropdb'] } }), /criar/);
   await assert.rejects(() => carregarParaTeste(EXTENSAO, { portas: { faixa: [4100, 4119], chaves: ['P'] }, arquivo: '../fora.env' }), /arquivo/);
+  await assert.rejects(() => carregarParaTeste(EXTENSAO, { portas: { faixa: [4100, 4119], chaves: ['P'] }, arquivo: 'config/' }), /não uma pasta/);
   await assert.rejects(() => carregarParaTeste(EXTENSAO, { banco: { nome: 'loja', chave: 'BANCO', criar: ['c'], apagar: ['a'] }, fixos: { bancos: ['loja'] } }), /fixo/);
 });
