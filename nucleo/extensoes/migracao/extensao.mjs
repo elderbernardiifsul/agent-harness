@@ -61,6 +61,28 @@ export function conferirDona(ctx, atual) {
     `peça à sessão dona (${atual.dona}) que faça ela mesma; com a sessão morta (frente órfã) ou a frente passada, o --frente vale`);
 }
 
+// O número sai do primeiro grupo de captura do padrão. Ele precisa existir, não ter nome e não ser opcional
+// (com `?` ou `*` depois, o grupo pode não casar, e o número viraria NaN). Lê o padrão como texto: pula o caractere
+// escapado e o que está entre colchetes, e acha o ")" que fecha o primeiro "(" que não começa um "(?…".
+function erroDoGrupo(padrao) {
+  if (/\(\?<(?![=!])/.test(padrao)) return 'padrao precisa de um grupo simples com o número, sem nome: troque (?<nome>…) por (…), como "^V(\\d+)__"';
+  let inicio = -1;
+  let profundidade = 0;
+  let emColchetes = false;
+  for (let i = 0; i < padrao.length; i++) {
+    const c = padrao[i];
+    if (c === '\\') { i++; continue; }
+    if (emColchetes) { emColchetes = c !== ']'; continue; }
+    if (c === '[') emColchetes = true;
+    else if (c === '(' && inicio < 0 && padrao[i + 1] !== '?') { inicio = i; profundidade = 1; }
+    else if (c === '(' && inicio >= 0) profundidade++;
+    else if (c === ')' && inicio >= 0 && --profundidade === 0) {
+      return /^([?*]|\{0)/.test(padrao.slice(i + 1)) ? 'padrao precisa de um grupo obrigatório com o número: tire o ? ou o * depois do grupo, como "^(\\d+)_"' : null;
+    }
+  }
+  return 'padrao precisa de um grupo com o número, como "^(\\d+)_"';
+}
+
 async function reservar(args, ctx) {
   const o = { ...opcoes(ctx), ...lerArgs(args, ctx) };
   const f = frenteAlvo(ctx, o.frente);
@@ -141,6 +163,13 @@ async function renumerar(args, ctx) {
   // Sob a trava: o primeiro número novo é o próximo livre depois da base e das reservas das outras frentes, e a
   // reserva (o último número da frente) é gravada antes dos renomes, para outra reserva não pegar o mesmo número.
   // Com mais de uma migração, a reserva guarda a última: a próxima reserva de outra frente vem depois dela.
+  // Arquivo novo que não foi para o git: o git mv recusaria, e a migração nem está no ramo ainda.
+  const foraDoGit = new Set(g(['ls-files', '--others', '--exclude-standard', '--', `${o.pasta}/`]).saida.split('\n').filter(Boolean).map(c => path.posix.basename(c)));
+  const naoAdicionada = daFrente.find(a => foraDoGit.has(a));
+  if (naoAdicionada) {
+    throw recusa(ctx, `a migração ${naoAdicionada} ainda não está no git (arquivo novo, sem git add).`,
+      `git add -- ${path.posix.join(o.pasta, naoAdicionada)} e rode ah migracao renumerar de novo`);
+  }
   const numeros = daFrente.map(a => numeroDoArquivo(a, o.padrao));
   let inicio = null;
   await ctx.gravarCampos(f.nome, (secao, { frentes }) => {
@@ -195,8 +224,8 @@ export default {
     }
     if ('padrao' in c) {
       try { new RegExp(c.padrao); } catch { return `padrao não é uma expressão regular válida: ${String(c.padrao).slice(0, 40)}`; }
-      // O número sai do primeiro grupo de captura: "(" que não começa um "(?…".
-      if (!/\((?!\?)/.test(c.padrao)) return 'padrao precisa de um grupo com o número, como "^(\\d+)_"';
+      const grupo = erroDoGrupo(c.padrao);
+      if (grupo) return grupo;
     }
     if ('digitos' in c && !(Number.isInteger(c.digitos) && c.digitos >= 1 && c.digitos <= 12)) return 'digitos deve ser um inteiro de 1 a 12';
     if ('renumerar' in c && !(Array.isArray(c.renumerar) && c.renumerar.length && c.renumerar.every(a => typeof a === 'string' && a !== ''))) {

@@ -60,6 +60,12 @@ Ficaram, para o orquestrador decidir:
 - `renumerar` longo; separar em funções ajudaria a leitura.
 - Fora do escopo do plano (o revisor não julgou): reservas, portas e provas valem só no estado desta máquina; `provas.jsonl` cresce sem limite e grava o comando como veio (um segredo passado como argumento ficaria lá); a `recursos` não respeita as portas da `ambiente`.
 
+## Decisões do orquestrador sobre as pendências (27/11)
+
+Consertados num commit curto, com teste primeiro: a recusa específica do `renumerar` para migração ainda fora do git (com o `git add` como próximo passo); a validação do `padrao`, que recusa grupo opcional e grupo nomeado dizendo a forma certa; a tabela do valor de `{frente}` em cada lugar, na seção `ambiente`; a linha "não ensaiado no Windows" nas três seções.
+
+Ficam como limites conhecidos: o `listar` marca "renumerar" na frente já integrada e não fechada; a sondagem percorre a faixa inteira; os exemplos com `createdb`, `dropdb` e `psql` na doc; sem teste de concorrência real das aberturas; `renumerar` longo; reservas, portas e provas valem só no estado desta máquina; `provas.jsonl` cresce sem limite e grava o comando como veio. O teste intermitente de `teste/shell.test.mjs` foi resolvido no `p2-metodo` (limite de 10 s).
+
 ## Limitações
 
 - Na retomada em outra máquina, `preparar` não recria um banco já marcado `criado`.

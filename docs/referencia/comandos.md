@@ -607,6 +607,15 @@ Comando da extensão `ambiente`, que acompanha o harness, desligada por padrão.
 | `banco.listar` | opcional: imprime os bancos existentes, um por linha (usado pelo `sweep`) |
 | `fixos` | portas e bancos que não são de frente nenhuma (desenvolvimento, teste comum, serviços do projeto): nunca vão para uma frente e nunca são apagados |
 
+O marcador `{frente}` não vale o mesmo em todo lugar (exemplo com a frente `cupom-novo`):
+
+| Onde | `{frente}` vale | Exemplo |
+|---|---|---|
+| `banco.nome` (o molde) | o nome da frente com `-` trocado por `_` | `loja_{frente}` → `loja_cupom_novo` |
+| argv de `banco.criar` e `banco.apagar` | o nome da frente como está | `cupom-novo` |
+
+Nos argv, `{banco}` vale o nome final do banco (`loja_cupom_novo`).
+
 `portas` e `banco` são opcionais, mas um dos dois é obrigatório. O arquivo de ambiente vai no `.gitignore` do projeto (acrescente a linha `.env.frente`, ou o nome escolhido, e commite na `dev`): fora dele, o arquivo aparece como alteração não commitada, e o `close` recusa o worktree. A abertura avisa quando ele não está ignorado.
 
 - **Abertura** (`depoisDeAbrir`, também na retomada). Portas: as menores da faixa fora das portas de outras frentes (desta extensão e, com a `recursos` ligada, as do tipo `porta`), das fixas e das que estão escutando agora nesta máquina (em `127.0.0.1` ou em `::1`); a escolha e a gravação ficam sob a trava das frentes, e duas aberturas ao mesmo tempo não recebem a mesma porta. Banco: roda `criar` e grava `{nome, criado}`; se o nome da frente dá um banco fixo (a frente `test` com o molde `loja_{frente}` e o fixo `loja_test`), a frente fica sem banco, com aviso. Arquivo: escreve no worktree um cabeçalho e uma linha `CHAVE=valor` por porta e pelo banco; um arquivo que já existe sem esse cabeçalho (o `.env` do aluno) nunca é sobrescrito nem apagado. Só faz o que falta: a frente que já tem portas fica com elas, e o banco já criado não é criado de novo. Falta de porta na faixa ou banco que não foi criado não impedem a abertura: viram aviso com o próximo passo.
@@ -617,6 +626,7 @@ Comando da extensão `ambiente`, que acompanha o harness, desligada por padrão.
 - **Arquivo de ambiente e o `close`.** A extensão declara o arquivo como descartável (`ignorados`, ver `docs/extensoes/interface.md`): ele é refeito a partir do estado, e o `close` não o conta como item ignorado que se perderia. Com o arquivo no `.gitignore`, o `close` passa sem `ah ambiente desfazer`.
 - **Sweep.** O `ah sweep` lista, como `- ambiente: …`, cada porta da faixa que está escutando sem ser de frente (desta extensão ou da `recursos`) nem fixa e, com `banco.listar`, cada banco que casa com o molde sem ser de frente nem fixo, com o próximo passo. Banco fora do molde não aparece. Se `listar` falha, sai uma linha com o erro. O `--reparar` não apaga banco nem encerra processo: só acrescenta uma linha dizendo isso.
 - **Passagem.** O `handoff` não libera nada: a frente passada continua dona das portas e do banco.
+- **Windows.** Não ensaiado no Windows.
 - **Quadro.** A coluna `AMBIENTE` mostra as portas e o banco (`4100 4101 loja_carrinho`).
 
 | Recusa ou aviso | Faça |
@@ -670,7 +680,7 @@ Comando da extensão `migracao`, que acompanha o harness, desligada por padrão.
 | Campo | Padrão | Conteúdo |
 |---|---|---|
 | `pasta` | obrigatório | pasta das migrações, relativa à raiz |
-| `padrao` | `^(\d+)_` | expressão regular aplicada ao nome do arquivo; o primeiro grupo é o número. Arquivo que não casa (um `README.md` na pasta) é ignorado |
+| `padrao` | `^(\d+)_` | expressão regular aplicada ao nome do arquivo; o primeiro grupo é o número, e ele precisa ser simples (sem nome) e obrigatório (sem `?` ou `*` depois). Arquivo que não casa (um `README.md` na pasta) é ignorado |
 | `digitos` | `4` | quantos dígitos o número tem no nome (`0003`) |
 | `renumerar` | — | passo próprio da ferramenta de migração, usado por `renumerar` (abaixo) |
 
@@ -681,6 +691,7 @@ Comando da extensão `migracao`, que acompanha o harness, desligada por padrão.
 - **Mais de uma migração na frente.** A reserva é de um número. A frente que cria mais de uma roda `ah migracao renumerar` logo depois de criá-las: a reserva passa a ser a última, e as reservas seguintes de outras frentes vêm depois dela.
 - **Sessão e frente alheia.** `reservar`, `liberar` e `renumerar` exigem sessão; `listar` não. `--frente` em frente ativa de outra sessão viva recusa, como na extensão `recursos`.
 - **Ciclo.** O `close` libera a reserva (ela mora no registro da frente) e diz `Reserva de migração 0003 liberada.`. O `handoff` não libera: a frente passada continua dona do número.
+- **Windows.** Não ensaiado no Windows.
 - **Quadro.** A coluna `MIGRACAO` mostra o número reservado.
 
 | Recusa | Faça |
@@ -693,6 +704,7 @@ Comando da extensão `migracao`, que acompanha o harness, desligada por padrão.
 | `não consegui ler <pasta> no ramo <base>: …` | confira se o ramo <base> existe neste repositório |
 | `o worktree <wt> tem um merge em curso …` (em `renumerar`) | resolva os conflitos, termine o merge com git commit e rode ah migracao renumerar de novo |
 | `a dev não está mesclada no ramo <ramo>: …` | no worktree, git merge dev --no-edit (pode parar em conflito: resolva e commite), e rode ah migracao renumerar de novo |
+| `a migração <arquivo> ainda não está no git (arquivo novo, sem git add).` | git add -- <pasta>/<arquivo> e rode ah migracao renumerar de novo |
 | `<arquivo> já existe em <pasta>.` | renomeie à mão o arquivo que está no caminho e rode ah migracao renumerar de novo |
 | `o passo de renumerar da configuração falhou em <de> → <para> (…); já renomeados (em stage): …` | conserte o passo da ferramenta para esses arquivos à mão, ou desfaça com git restore --source=HEAD --staged --worktree -- <pasta> (descarta também o que não foi commitado nessa pasta) e rode de novo |
 | `Opção desconhecida: …` / `Argumento a mais: …` / `A opção --frente precisa do nome da frente.` | use o uso acima |
@@ -731,6 +743,7 @@ Comando da extensão `prova`, que acompanha o harness, desligada por padrão. Se
 - **Gravar** (`ah prova <rótulo>`, exige sessão com frente). Recusa o worktree com mudança fora do commit: arquivo rastreado alterado ou arquivo novo não rastreado, que o teste usaria e a árvore não tem (o que o `.gitignore` ignora não conta). Roda o teste no worktree da frente: o comando depois de `--` (um argumento só vai para o shell; vários rodam direto) ou, sem ele, o de `comandos.<rótulo>`. Teste que falha: `O teste <rótulo> falhou (código N): nada gravado.`, e o `ah` sai com o código do teste. Teste que passa sem mudar a árvore: grava `{rotulo, arvore, commit, comando, em}` em `frente.extensoes.prova.provas` (uma por rótulo, a última) e acrescenta uma linha em `<estado>/extensoes/prova/provas.jsonl`, que sobrevive ao `close`. Teste pesado vai pela fila pondo `tools/ah pesado --` no comando.
 - **Conferir** (`ah prova --confere <ramo>`, não exige sessão). Procura uma prova com a mesma árvore do ramo (e o mesmo rótulo, se dado) na lista durável e nas frentes do estado. Achou: código 0, com a frente, o rótulo e o commit. Não achou: código 3 (`nenhuma prova. Rode o teste.`). Ref que não existe: recusa, código 1.
 - **Fluxo.** Na frente: reintegrar a base (`git merge dev`), rodar `ah prova e2e`. Ao integrar: `git merge --no-ff` na base e `ah prova --confere dev`; com 0, o teste não se repete; com 3 (outra frente entrou no meio), roda o teste de novo.
+- **Windows.** Não ensaiado no Windows.
 - **Quadro.** A coluna `PROVA` mostra a prova mais recente da frente (`e2e 1a2b3c4`).
 
 | Recusa | Faça |
