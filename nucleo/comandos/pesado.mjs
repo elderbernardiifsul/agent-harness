@@ -5,7 +5,7 @@ import { ErroDeUso } from '../lib/caminhos.mjs';
 import { topoDe } from '../lib/git.mjs';
 import { grupoDo, iniciar, matarArvore, sinalNoGrupo } from '../lib/arvore.mjs';
 import {
-  dirDaFila, lerConfigDaMaquina, classeDoComando, entrarNaFila, tentarComecar, sairDaFila, sairDaFilaSinc,
+  dirDaFila, lerConfigDaMaquina, classeDoComando, entrarNaFila, tentarComecar, sairDaFila, sairDaFilaSinc, SEM_SENHA,
   memoriaLivreMb, vagasEfetivas, textoDoArgv, marcarGrupo, aninhamentoConferido,
 } from '../lib/fila.mjs';
 import { inicioDoProcesso } from '../lib/vida.mjs';
@@ -136,6 +136,10 @@ export async function executar(args, amb) {
       }
       if (saindo) return new Promise(() => {});
       if (r.pode) break;
+      // Sem a senha na fila, a vez nunca chega: em vez de esperar para sempre, para e diz o que fazer.
+      if (r.motivo === SEM_SENHA) {
+        throw new ErroDeUso(`A senha ${senha} sumiu da fila de pesados (o estado da fila em ${dir} foi apagado ou trocado enquanto este comando esperava); não rodei o comando.\nPróximo passo: rode o comando de novo`);
+      }
       if (r.motivo !== ultimoMotivo) {
         amb.avisar(`ah pesado: esperando a vez (senha ${senha}, classe ${classe.nome}): ${r.motivo}\n`);
         ultimoMotivo = r.motivo;

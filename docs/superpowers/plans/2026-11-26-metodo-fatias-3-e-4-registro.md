@@ -64,6 +64,27 @@ Um revisor novo (opus) leu os commits `5d20b57` a `839bb42` e reproduziu, num te
 
 Os consertos locais foram aprovados como propostos. Ficaram com o orquestrador: a seção 8 da spec (que ainda diz que o `guardar` remove `.superpowers/sdd/` inteira) e a criação de `docs/agents/metodo.md` (fatia 2), para onde a `modelo` aponta os critérios.
 
+## Travamento do `teste/pesado.test.mjs` (27/11, pedido do orquestrador)
+
+**Sintoma.** Três vezes no dia, com duas ou mais suítes ao mesmo tempo e carga de 13 a 30, um `npm test` ficou parado por mais de 25 minutos. Os processos presos no worktree `p2-metodo` (não mexidos, por decisão do professor) mostraram a cadeia `npm test` → `node --test` → arquivo `pesado.test.mjs` → um `ah pesado` sem filho, esperando a vez da tarefa `w` do teste "trava da fila com dono morto não derruba quem espera", com a pasta do teste já apagada (`cwd` marcado `(deleted)`).
+
+**Causa, em três peças.**
+1. Sob carga, um `esperar` de 8 s do teste estourou, e o teste falhou no meio, com o `ah pesado` de `w` ainda esperando, iniciado ao fundo.
+2. O `limpar` do projeto de teste (`teste/apoio/repo.mjs`) apagava a pasta, com a fila dentro, mas não encerrava os processos iniciados ao fundo. O `ah pesado` seguiu vivo, e o processo do arquivo de teste não termina enquanto um filho dele vive: a suíte inteira ficou presa.
+3. Defeito do produto: com a pasta da fila apagada, o `ah pesado` recria a pasta, lê um estado vazio e recebe "a senha não está na fila" a cada passada, para sempre. O mesmo vale fora dos testes, quando alguém apaga o `fila.json` (como a recusa de estado ilegível manda) com um pesado esperando.
+
+As outras suspeitas não se sustentaram: a memória livre vem de `AH_FILA_MEMORIA_LIVRE_MB=100000` em todo projeto do teste; o sinal de vida da fila é o pid com a hora de início lida em `/proc`, que não vence com a carga. Sob carga artificial (32 laços ocupados em 16 núcleos, três rodadas do arquivo em paralelo) o travamento não se repetiu, por isso cada peça foi provada por teste determinístico.
+
+**Conserto.**
+- `nucleo/comandos/pesado.mjs`: senha que some da fila vira recusa (`A senha <n> sumiu da fila de pesados (…); não rodei o comando.` / `Faça: rode o comando de novo`), em vez de espera sem fim. Teste: o `fila.json` apagado com um pesado esperando; antes do conserto, o processo ainda esperava depois de 15 s.
+- `teste/apoio/repo.mjs`: o `limpar` (e a saída do processo de teste) encerram os processos iniciados por `ahAoFundo`: SIGTERM, para o `ah pesado` matar a árvore do comando e soltar a vaga, e SIGKILL para quem não sai em 3 s. Teste: um pesado segurando a única vaga e outro esperando; antes do conserto, os dois seguiam vivos depois do `limpar`. Todo teste que usa `ahAoFundo` chama o `limpar` por `t.after` (direto ou pelo auxiliar `projeto(t)`), que roda mesmo quando o teste falha ou estoura o prazo.
+- `teste/pesado.test.mjs`: o `esperar` passa de 8 s para 30 s.
+- `package.json`: `--test-timeout=120000`. O teste mais lento da suíte levou 9,8 s com carga 24 (o ciclo com duas sessões); 120 s dão doze vezes isso, folga para os picos de carga, e um travamento vira falha com nome em 2 minutos, em vez de prender a máquina. Ensaio com um teste descartável que espera um filho para sempre: com o prazo e a limpeza no `t.after`, o teste falha com o nome em 3 s (prazo de 3 s no ensaio), o arquivo segue e a rodada termina com código 1, no Node 22.23.5 e no 26.13.1. Sem a limpeza, o prazo marca a falha, mas o arquivo continua preso pelo filho.
+- `ferramentas/verifica.mjs` montava a própria linha de comando; passa a ler o `--test-timeout` do `package.json` (`argumentosDaSuite`), com teste de que os dois coincidem.
+- Descartado: `--test-force-exit`. Ele soltaria o arquivo preso, mas numa rodada da suíte inteira encerrou arquivos antes do fim e a suíte perdeu 20 testes (1048 em vez de 1068), sem acusar falha; noutra, os 7 últimos do `travas.test.mjs`. Teste que some sem falhar é pior que travamento.
+
+**Outro teste sensível à carga, fora deste ramo:** `teste/estado.test.mjs:250` ("revisão: a liberação não apaga a trava que outro processo pegou no meio dela") falhou uma vez na suíte inteira, com carga 10 a 15; sozinho, passou 6 vezes em 6. Fica para o orquestrador.
+
 ## Pendências e observações
 
 - Teste intermitente fora do ramo: `teste/shell.test.mjs:189` ("cadeia de eval tem orçamento global") falhou uma vez, com a carga média da máquina em 28, por tempo de relógio acima de 2 s; isolado, passou três vezes. O orquestrador decidiu subir o limite no `p2-metodo` (27/11); este ramo não mexe nele.

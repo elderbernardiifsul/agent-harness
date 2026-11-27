@@ -43,7 +43,25 @@ export function apagarPastaDeTeste(pasta) {
   if (!existsSync(pasta)) PASTAS_A_LIMPAR.delete(pasta);
 }
 
+// Processos iniciados ao fundo (`ahAoFundo`) ainda vivos. Um teste que falha no meio os deixaria esperando para
+// sempre (um `ah pesado` na fila de uma pasta já apagada), e o arquivo de teste nunca terminaria: o `limpar` e a
+// saída do processo os encerram.
+const AO_FUNDO = new Set();
+const dormirSinc = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const vivo = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+
+// SIGTERM primeiro (o `ah pesado` mata a árvore do comando e solta a vaga); quem não sai em 3 s leva SIGKILL.
+export function encerrarAoFundo(processos = [...AO_FUNDO]) {
+  const vivos = processos.filter(pr => pr.pid != null && pr.exitCode === null && pr.signalCode === null && vivo(pr.pid));
+  for (const pr of vivos) { try { pr.kill('SIGTERM'); } catch { /* já saiu */ } }
+  const ate = Date.now() + 3000;
+  while (vivos.some(pr => vivo(pr.pid)) && Date.now() < ate) dormirSinc(20);
+  for (const pr of vivos) if (vivo(pr.pid)) { try { pr.kill('SIGKILL'); } catch { /* já saiu */ } }
+  for (const pr of processos) AO_FUNDO.delete(pr);
+}
+
 process.on('exit', () => {
+  encerrarAoFundo();
   for (const pasta of [...PASTAS_A_LIMPAR]) apagarPastaDeTeste(pasta);
 });
 
@@ -110,6 +128,7 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
 // O objeto de projeto de teste (o mesmo para criarRepo e outraMaquina).
 function montarProjeto({ base, raiz, remoto, estado, env }) {
   const git = (args, { cwd = raiz } = {}) => executar(args, { cwd, env });
+  const aoFundo = new Set();
   return {
     raiz,
     remoto,
@@ -147,6 +166,8 @@ function montarProjeto({ base, raiz, remoto, estado, env }) {
     // Como `ah`, mas sem esperar: devolve o processo e a promessa do fim ({codigo, saida, erro}).
     ahAoFundo(args, { cwd = raiz, env: extra = {} } = {}) {
       const processo = spawn(process.execPath, [join(RAIZ_HARNESS, 'nucleo', 'bin', 'ah.mjs'), ...args], { cwd, env: { ...env, ...extra } });
+      aoFundo.add(processo);
+      AO_FUNDO.add(processo);
       let saida = '';
       let erro = '';
       processo.stdout.on('data', d => { saida += d; });
@@ -155,6 +176,8 @@ function montarProjeto({ base, raiz, remoto, estado, env }) {
       return { processo, fim };
     },
     limpar() {
+      encerrarAoFundo([...aoFundo]);
+      aoFundo.clear();
       apagarPastaDeTeste(base);
     },
   };

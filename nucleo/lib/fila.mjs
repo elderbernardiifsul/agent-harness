@@ -220,9 +220,12 @@ export function separarMortas(estado, opcoes = {}) {
 
 // Pode a entrada `senha` começar agora? {pode, motivo}. Fila estrita: só o primeiro da espera começa
 // (quem pede todas as vagas não é ultrapassado). Ao lado de outro, só com memória livre e de outro worktree.
+// A senha de quem espera não está mais na fila: o estado foi apagado ou trocado. Esperar não a traz de volta.
+export const SEM_SENHA = 'a senha não está na fila';
+
 export function podeComecar(estado, senha, { vagas, memoriaLivreMb: livre, memoriaLivreMinimaMb: minima }) {
   const minha = estado.entradas.find(e => e.senha === senha);
-  if (!minha) return { pode: false, motivo: 'a senha não está na fila' };
+  if (!minha) return { pode: false, motivo: SEM_SENHA };
   if (minha.rodandoDesde) return { pode: true, motivo: 'já está rodando' };
   const rodando = estado.entradas.filter(e => e.rodandoDesde);
   const antes = estado.entradas.filter(e => !e.rodandoDesde && e.senha < senha).sort((a, b) => a.senha - b.senha);

@@ -5,7 +5,8 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resumoDaSuite } from '../ferramentas/verifica.mjs';
+import { argumentosDaSuite, resumoDaSuite } from '../ferramentas/verifica.mjs';
+import { readFileSync } from 'node:fs';
 
 const script = join(dirname(fileURLToPath(import.meta.url)), '..', 'ferramentas', 'verifica.mjs');
 const rodar = args => spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' });
@@ -64,4 +65,14 @@ test('opção desconhecida recusa com o uso', () => {
   const r = rodar(['--qualquer']);
   assert.equal(r.status, 2);
   assert.match(r.stderr, /uso: node ferramentas\/verifica\.mjs/);
+});
+
+test('a suíte do verifica usa o mesmo prazo por teste do npm test', () => {
+  const pacote = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8'));
+  const prazo = pacote.scripts.test.match(/--test-timeout=\d+/)?.[0];
+  assert.ok(prazo, 'o npm test tem --test-timeout');
+  assert.ok(argumentosDaSuite().includes(prazo));
+  // Sem --test-force-exit: ele encerrava arquivos antes do fim, e a suíte perdia testes sem acusar falha (27/11).
+  assert.doesNotMatch(pacote.scripts.test, /--test-force-exit/);
+  assert.deepEqual(argumentosDaSuite({ scripts: { test: 'node --test "teste/*.test.mjs"' } }), ['--test', '--test-reporter=spec', 'teste/*.test.mjs']);
 });

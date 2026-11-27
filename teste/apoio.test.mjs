@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { criarRepo } from './apoio/repo.mjs';
+import { criarRepo, escreverConfig } from './apoio/repo.mjs';
 import { gh } from '../nucleo/lib/github.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { processoExiste } from '../nucleo/lib/vida.mjs';
 
 test('criarRepo entrega ramos e remoto', () => {
   const r = criarRepo();
@@ -103,4 +104,27 @@ console.log(JSON.stringify([path.dirname(a.raiz), path.dirname(b.raiz)]));`;
   assert.equal(r.status, 0, r.stderr);
   const pastas = JSON.parse(r.stdout);
   for (const pasta of pastas) assert.ok(!fs.existsSync(pasta), `sobrou ${pasta}`);
+});
+
+test('limpar mata os processos que o teste iniciou ao fundo, para um teste que falha não prender a suíte', async () => {
+  const p = criarRepo();
+  escreverConfig(p);
+  const fila = path.join(p.raiz, '..', 'fila');
+  fs.mkdirSync(fila, { recursive: true });
+  fs.writeFileSync(path.join(fila, 'config.json'), JSON.stringify({ versao: 1, vagas: 1, memoriaLivreMinimaMb: 0 }));
+  const env = { AH_FILA: fila, AH_FILA_PAUSA_MS: '20' };
+  const marca = path.join(p.raiz, '..', 'comecou');
+  // O primeiro segura a única vaga por 60 s; o segundo fica esperando a vez, como o que prendeu a suíte.
+  const primeiro = p.ahAoFundo(['pesado', '--', process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(marca)}, ''); setTimeout(() => {}, 60000)`], { env });
+  const espera = async (cond, ms = 10000) => { const fim = Date.now() + ms; while (!cond() && Date.now() < fim) await new Promise(r => setTimeout(r, 20)); };
+  await espera(() => fs.existsSync(marca));
+  assert.ok(fs.existsSync(marca), 'o primeiro não começou');
+  const segundo = p.ahAoFundo(['pesado', '--', process.execPath, '-e', '0'], { env });
+  await espera(() => { try { return JSON.parse(fs.readFileSync(path.join(fila, 'fila.json'), 'utf8')).entradas.length === 2; } catch { return false; } });
+  assert.equal(JSON.parse(fs.readFileSync(path.join(fila, 'fila.json'), 'utf8')).entradas.length, 2, 'o segundo não entrou na fila');
+  p.limpar();
+  await espera(() => !processoExiste(primeiro.processo.pid) && !processoExiste(segundo.processo.pid));
+  const vivos = [primeiro, segundo].filter(x => processoExiste(x.processo.pid));
+  for (const x of vivos) x.processo.kill('SIGKILL');
+  assert.equal(vivos.length, 0, 'sobrou ah pesado vivo depois do limpar');
 });

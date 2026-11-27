@@ -54,13 +54,23 @@ function versaoDe(node) {
   return versao;
 }
 
+// Os argumentos da suíte: os do `npm test` (package.json), com o relatório `spec` que o resumo lê. O prazo por teste
+// (`--test-timeout`) mora só no package.json: um teste travado vira falha com nome, aqui e no `npm test`, e o
+// `t.after` dele roda (o `limpar` dos projetos de teste encerra os processos iniciados ao fundo, e o arquivo segue).
+// O `--test-force-exit` ficou de fora de propósito: em 27/11 ele encerrou arquivos antes do fim e a suíte perdeu
+// até 20 testes sem acusar falha.
+export function argumentosDaSuite(pacote = JSON.parse(readFileSync(join(RAIZ, 'package.json'), 'utf8'))) {
+  const prazo = String(pacote?.scripts?.test ?? '').match(/--test-timeout=\d+/)?.[0];
+  return ['--test', '--test-reporter=spec', ...(prazo ? [prazo] : []), 'teste/*.test.mjs'];
+}
+
 function rodarSuite(node, versao) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   // Sem cor: os testes que leem a saída de outro `node --test` (guia de extensão) esperam texto puro.
   delete env.FORCE_COLOR;
   env.NO_COLOR = '1';
-  const r = spawnSync(node, ['--test', '--test-reporter=spec', 'teste/*.test.mjs'], { cwd: RAIZ, env, encoding: 'utf8', maxBuffer: GRANDE });
+  const r = spawnSync(node, argumentosDaSuite(), { cwd: RAIZ, env, encoding: 'utf8', maxBuffer: GRANDE });
   const s = resumoDaSuite(`${r.stdout}\n${r.stderr}`);
   const passou = r.status === 0 && s.falharam === 0;
   if (s.testes == null) console.log(`FALHOU  suíte no Node ${versao}: não terminou (código ${r.status})\n${String(r.stderr).trim().split('\n').slice(-5).join('\n')}`);
