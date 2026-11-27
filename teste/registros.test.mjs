@@ -6,6 +6,8 @@ import { amb as ambDoTeste, criarProjeto, dirDoTeste, envelhecerSinal, outraMaqu
 import { tratar } from '../nucleo/adaptadores/contrato.mjs';
 import { esquecerExtensoes } from '../nucleo/lib/extensoes.mjs';
 import { corpoDoDiario, devolverDiario, lerMarcador } from '../nucleo/extensoes/registros/diario.mjs';
+import { carregarParaTeste, ctxFalso } from '../nucleo/lib/extensoes-teste.mjs';
+import os from 'node:os';
 
 const PLANO = 'docs/superpowers/plans/2026-11-20-carrinho.md';
 const DIARIO = `# SDD ledger — plan: ${PLANO}
@@ -101,7 +103,7 @@ test('arquivo do aluno em .superpowers/sdd/: fica, com o aviso, e o close recusa
   const wt = frenteComDiario(p);
   fs.writeFileSync(path.join(wt, '.superpowers', 'sdd', 'minhas-notas.txt'), 'notas');
   const r = ok(p.ah(['registros', 'guardar']));
-  assert.match(r.erro, /Aviso: deixei no worktree o que não é do subagent-driven-development: \.superpowers\/sdd\/minhas-notas\.txt/);
+  assert.match(r.erro, /Aviso: deixei no worktree o que não é do subagent-driven-development ou não foi guardado: \.superpowers\/sdd\/minhas-notas\.txt/);
   assert.ok(fs.existsSync(path.join(wt, '.superpowers', 'sdd', 'minhas-notas.txt')));
   assert.ok(!fs.existsSync(path.join(wt, '.superpowers', 'sdd', 'carrinho')));
   // O close recusa pelo arquivo do aluno na linha de sempre, sem mandar rodar o guardar de novo.
@@ -549,4 +551,66 @@ test('comentário sem authorAssociation (gh antigo) é ignorado, com aviso', t =
   const r = ok(q.ah(['open', 'carrinho']));
   assert.ok(!fs.existsSync(diarioNoWt(wtDe(q), 'carrinho')));
   assert.match(r.erro, /Aviso: ignorei o diário que @ana-souza comentou em #7 \(associação desconhecida: o gh não informou\)/);
+});
+
+// ---------------------------------------------------------------- revisão final de 27/11 (C1, I1, I2)
+
+const EXTENSAO = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'nucleo', 'extensoes', 'registros', 'extensao.mjs');
+
+test('id de frente fora da pasta de estado: a registros não grava nem apaga fora dela', async t => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ah-registros-')));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const dirEstado = path.join(base, 'estado', 'loja');
+  const vitima = path.join(base, 'vitima');
+  fs.mkdirSync(vitima, { recursive: true });
+  fs.writeFileSync(path.join(vitima, 'importante.txt'), 'não apague');
+  fs.mkdirSync(path.join(dirEstado, 'registros'), { recursive: true });
+  const wt = path.join(base, 'wt');
+  fs.mkdirSync(wt);
+  devolverDiario(wt, { pasta: 'carrinho', plano: PLANO, texto: DIARIO });
+  const def = await carregarParaTeste(EXTENSAO);
+  // `<estado>/registros/../../../vitima` é a pasta `vitima`, fora do estado.
+  const frente = { id: '../../../vitima', nome: 'carrinho', worktree: wt, tickets: [] };
+  const ctx = ctxFalso({ extensao: 'registros', dirEstado, frente, soLocal: true });
+  await assert.rejects(def.reacoes.depoisDeFechar(ctx), /fora da pasta de estado/);
+  await assert.rejects(def.comandos.registros.executar(['guardar'], ctx), /fora da pasta de estado/);
+  assert.equal(fs.readFileSync(path.join(vitima, 'importante.txt'), 'utf8'), 'não apague');
+  assert.deepEqual(fs.readdirSync(vitima), ['importante.txt']);
+  // O diário continua no worktree: nada foi guardado, então nada sai.
+  assert.ok(fs.existsSync(path.join(wt, '.superpowers', 'sdd', 'carrinho', 'progress.md')));
+});
+
+test('guardar copia a pasta do plano inteira e só tira do worktree o que copiou', t => {
+  const p = projeto(t);
+  const wt = frenteComDiario(p);
+  const sdd = path.join(wt, '.superpowers', 'sdd');
+  fs.writeFileSync(path.join(sdd, 'carrinho', 'task-2-report.md'), 'relatório da tarefa 2');
+  fs.writeFileSync(path.join(sdd, 'carrinho', 'notas-do-aluno.md'), 'minhas notas');
+  // Pasta de plano sem diário ainda (só plan-path e as instruções): não há o que guardar, e ela fica.
+  fs.mkdirSync(path.join(sdd, 'frete'));
+  fs.writeFileSync(path.join(sdd, 'frete', 'plan-path'), 'docs/frete.md\n');
+  fs.writeFileSync(path.join(sdd, 'frete', 'task-1-brief.md'), 'instruções');
+  const r = ok(p.ah(['registros', 'guardar']));
+  const dir = copia(p, 'as-1', 'carrinho');
+  assert.equal(fs.readFileSync(path.join(dir, 'arquivos', 'task-2-report.md'), 'utf8'), 'relatório da tarefa 2');
+  assert.equal(fs.readFileSync(path.join(dir, 'arquivos', 'notas-do-aluno.md'), 'utf8'), 'minhas notas');
+  assert.equal(fs.readFileSync(path.join(dir, 'arquivos', 'progress.md'), 'utf8'), DIARIO);
+  assert.ok(!fs.existsSync(path.join(sdd, 'carrinho')));
+  assert.equal(fs.readFileSync(path.join(sdd, 'frete', 'task-1-brief.md'), 'utf8'), 'instruções');
+  assert.match(r.erro, /Aviso: deixei no worktree o que não é do subagent-driven-development ou não foi guardado: \.superpowers\/sdd\/frete\//);
+  // O close recusa pela pasta sem diário na linha de sempre, sem mandar rodar o guardar de novo.
+  const c = p.ah(['close']);
+  assert.equal(c.codigo, 1);
+  assert.doesNotMatch(c.erro, /extensão registros guarda/);
+  assert.match(c.erro, /itens ignorados no worktree/);
+});
+
+test('guardar e handoff mascaram segredo do diário antes de comentar, e avisam', t => {
+  const p = projeto(t);
+  frenteComDiario(p, { planos: { carrinho: `${DIARIO}Ruling: rodei com GITHUB_TOKEN=abc123segredo — custa nada\n` } });
+  const r = ok(p.ah(['handoff']));
+  assert.match(r.erro, /Aviso: tirei 1 trecho com cara de segredo do diário do plano carrinho antes de comentar \(\[removido\]\); o filtro é uma rede, não garantia: não guarde segredo no diário\./);
+  const [c] = comentariosDoRegistro(p, 7);
+  assert.ok(!c.body.includes('abc123segredo'));
+  assert.match(c.body, /GITHUB_TOKEN=\[removido\]/);
 });

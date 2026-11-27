@@ -85,6 +85,14 @@ As outras suspeitas não se sustentaram: a memória livre vem de `AH_FILA_MEMORI
 
 **Outro teste sensível à carga, fora deste ramo:** `teste/estado.test.mjs:250` ("revisão: a liberação não apaga a trava que outro processo pegou no meio dela") falhou uma vez na suíte inteira, com carga 10 a 15; sozinho, passou 6 vezes em 6. Fica para o orquestrador.
 
+## Revisão final de ponta a ponta: C1, I1 e I2 (27/11)
+
+Itens da revisão `docs/superpowers/plans/2026-11-27-metodo-revisao-final.md` (ramo `p2-metodo`, commit 3c79fe8), passados pelo orquestrador a este ramo.
+
+- **C1, crítico: id forjado apagava pasta fora do estado.** Um `ah:passagem` com `id=../../../vitima`, comentado depois da passagem verdadeira, era aceito pela retomada, e a `registros` usava o id como pasta e a apagava no `close`. Duas camadas: (1) no núcleo, `idValido` (`^[a-z]{2,4}-\d+$`, em `nucleo/lib/frente.mjs`) e `nomeValido` passam a valer para todo marcador lido dos comentários (`marcadoresDosComentarios`, `nucleo/lib/reserva.mjs`): marcador fora do formato não vale, como o de terceiro; (2) na `registros`, todo caminho montado com o id da frente ou a pasta do plano passa por `dentroDe` (`path.relative` contra `<estado>/registros/`) e, fora dela, a extensão não grava nem apaga. Testes: o caso reproduzido no `retomar.test.mjs` (os forjados com número de comentário maior que os verdadeiros; antes do conserto, a retomada tomava `../../../vitima`), e a extensão chamada direto com o id forjado, sem tocar na pasta vítima.
+- **I1: o `guardar` apagava o que não guardou.** A cópia de cada plano passa a levar, em `arquivos/`, todos os arquivos da pasta do plano que o git não versiona, e o worktree perde só o que foi copiado. Pasta de plano sem diário (só `plan-path` e instruções) não é copiada: fica, com aviso, e o `close` recusa por ela na linha de sempre (a extensão só declara ao `close` as pastas com `progress.md`).
+- **I2: diário ao ticket sem filtro.** `mascararSegredos` troca por `[removido]` chave privada PEM, tokens do GitHub, `sk-…`, `AKIA…`, `NOME=valor` com nome de variável de segredo e a senha de `usuário:senha@` em URL, antes do corte, no diário e no resumo do fechamento; o `guardar`, o handoff e o `close` avisam quantos trechos tiraram. O limite está escrito em `comandos.md`: é uma rede, não garantia; caminhos absolutos da máquina não são tirados. Os valores de teste são montados por partes, para nenhum parecer um segredo de verdade no repositório.
+
 ## Pendências e observações
 
 - Teste intermitente fora do ramo: `teste/shell.test.mjs:189` ("cadeia de eval tem orçamento global") falhou uma vez, com a carga média da máquina em 28, por tempo de relógio acima de 2 s; isolado, passou três vezes. O orquestrador decidiu subir o limite no `p2-metodo` (27/11); este ramo não mexe nele.

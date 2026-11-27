@@ -85,13 +85,51 @@ function marcador(tipo, campos, versao = 1) {
 // `guardado`: saiu do worktree de propósito (`registros guardar`), e a retomada não o traz de volta.
 export const FASES = ['passagem', 'guardado'];
 
-// O comentário com o diário de um plano: {corpo, cortado}. Marcador v=2: `em` (quando foi guardado, ISO, para
+// Segredos com cara de segredo, para mascarar antes de o diário ir ao ticket (que pode ser público, e o handoff
+// comenta sozinho). É uma rede, não garantia: pega os formatos evidentes, e um segredo em outro formato passa. A regra
+// continua sendo não guardar segredo no diário.
+const SEGREDOS = [
+  // chave privada PEM, do BEGIN ao END (ou até o fim, se o END faltar)
+  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/g,
+  // tokens do GitHub
+  /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}/g,
+  // chaves de API no formato sk-…
+  /\bsk-[A-Za-z0-9_-]{16,}/g,
+  // chave de acesso da AWS
+  /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
+];
+// NOME=valor (ou NOME: valor) com nome de variável de segredo, em maiúsculas como as de ambiente: *_TOKEN,
+// *_SECRET, *_KEY, *PASSWORD…
+const ATRIBUICAO = /\b([A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|_KEY|APIKEY)[A-Z0-9_]*)(\s*(?:=|:\s)\s*)(?:"([^"\n]*)"|'([^'\n]*)'|([^\s"']+))/g;
+// usuário:senha@ dentro de uma URL
+const CREDENCIAL_EM_URL = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)([^\s@/]+)(@)/gi;
+const REMOVIDO = '[removido]';
+
+// O texto com os segredos evidentes trocados por [removido], e quantos foram: {texto, n}.
+export function mascararSegredos(texto) {
+  let n = 0;
+  let r = String(texto);
+  for (const re of SEGREDOS) r = r.replace(re, () => { n += 1; return REMOVIDO; });
+  r = r.replace(ATRIBUICAO, (tudo, nome, sinal, aspas2, aspas1, solto) => {
+    const valor = aspas2 ?? aspas1 ?? solto ?? '';
+    if (!valor || valor === REMOVIDO) return tudo;
+    n += 1;
+    return `${nome}${sinal}${REMOVIDO}`;
+  });
+  r = r.replace(CREDENCIAL_EM_URL, (tudo, antes, senha, arroba) => (senha === REMOVIDO ? tudo : (n += 1, `${antes}${REMOVIDO}${arroba}`)));
+  return { texto: r, n };
+}
+
+// O comentário com o diário de um plano: {corpo, cortado, removidos}. Marcador v=2: `em` (quando foi guardado, ISO, para
 // achar o mais novo entre tickets e máquinas) e `fase`.
 export function corpoDoDiario({ frente, diario, commit, fase = 'passagem', em = new Date().toISOString() }) {
-  const reconhecido = lerDiario(diario.texto).reconhecido;
+  // Os segredos saem antes do corte: um segredo no começo não escapa por estar no trecho que fica.
+  const { texto: limpo, n: removidos } = mascararSegredos(diario.texto);
+  const reconhecido = lerDiario(limpo).reconhecido;
   const limite = reconhecido ? LIMITE_RECONHECIDO : LIMITE_DESCONHECIDO;
-  const cortado = diario.texto.length > limite;
-  const texto = cortado ? `${diario.texto.slice(0, limite).replace(/\n?$/, '\n')}` : diario.texto;
+  const cortado = limpo.length > limite;
+  const texto = cortado ? `${limpo.slice(0, limite).replace(/\n?$/, '\n')}` : limpo;
   const motivo = !cortado ? null : reconhecido
     ? `Diário maior que ${LIMITE_RECONHECIDO} caracteres: cortado em ${LIMITE_RECONHECIDO} caracteres; a cópia inteira ficou na máquina que guardou.`
     : `Formato não reconhecido: o diário vai como texto, cortado em ${LIMITE_DESCONHECIDO} caracteres.`;
@@ -106,7 +144,7 @@ export function corpoDoDiario({ frente, diario, commit, fase = 'passagem', em = 
     cerca,
     '',
   ].join('\n');
-  return { corpo, cortado };
+  return { corpo, cortado, removidos };
 }
 
 // Os campos do marcador `ah:registro` de um comentário, ou null (o do resumo, `ah:registro-resumo`, não conta).
@@ -163,7 +201,8 @@ export function resumoDoFechamento({ frente, copias }) {
     for (const r of d.decisoes.slice(0, 5)) linhas.push(`  - ${curta(r, 200)}`);
     if (d.decisoes.length > 5) linhas.push(`  - … e mais ${d.decisoes.length - 5} no comentário do diário`);
   }
-  return `${linhas.join('\n')}\n`;
+  // As decisões vêm do diário: os segredos saem também do resumo.
+  return mascararSegredos(`${linhas.join('\n')}\n`).texto;
 }
 
 // Devolve um diário ao lugar em que o subagent-driven-development o procura: progress.md e plan-path na pasta do
@@ -180,54 +219,57 @@ export function devolverDiario(worktree, { pasta, plano, texto }) {
   if (!fs.existsSync(ignora)) fs.writeFileSync(ignora, '*\n');
 }
 
-// As pastas do worktree que são do subagent-driven-development: as pastas de plano (com `progress.md` ou
-// `plan-path`), relativas ao worktree e terminadas em /. Lê só o disco: o close a chama sob a trava.
+// As pastas de plano do worktree que têm diário (`progress.md`), relativas ao worktree e terminadas em /. São as que
+// o guardar leva para a cópia. Lê só o disco: o close a chama sob a trava.
 export function pastasDoSdd(worktree) {
   try {
     return fs.readdirSync(sdd(worktree), { withFileTypes: true })
-      .filter(e => e.isDirectory() && ['progress.md', 'plan-path'].some(f => fs.existsSync(path.join(sdd(worktree), e.name, f))))
+      .filter(e => e.isDirectory() && fs.existsSync(path.join(sdd(worktree), e.name, 'progress.md')))
       .map(e => `.superpowers/sdd/${e.name}/`).sort();
   } catch {
     return [];
   }
 }
 
-// Apaga, dentro de uma pasta, os arquivos que o git não versiona e as pastas que ficam vazias. `rel` é o caminho da
-// pasta relativo ao worktree; `rastreados`, os arquivos que o git versiona (relativos ao worktree).
-function apagarNaoRastreados(abs, rel, rastreados) {
-  for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
-    const filhoAbs = path.join(abs, e.name);
-    const filhoRel = `${rel}/${e.name}`;
-    if (e.isDirectory()) apagarNaoRastreados(filhoAbs, filhoRel, rastreados);
-    else if (!rastreados.has(filhoRel)) fs.rmSync(filhoAbs, { force: true });
-  }
-  if (!fs.readdirSync(abs).length) fs.rmdirSync(abs);
+// Os arquivos de uma pasta, recursivamente, como caminhos absolutos.
+export function arquivosDe(dir) {
+  let itens;
+  try { itens = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+  return itens.flatMap(e => (e.isDirectory() ? arquivosDe(path.join(dir, e.name)) : [path.join(dir, e.name)]));
 }
 
-// Tira do worktree o que é do subagent-driven-development e já foi guardado: as pastas de plano (as que têm
-// `progress.md` ou `plan-path`) e, se nada mais sobrou, o `.gitignore` que o `sdd-workspace` cria e as pastas
-// vazias. Não apaga o que o git versiona (`rastreados`: o projeto pode versionar os diários, como o sdd-workspace
-// prevê) nem o que não é da skill (um arquivo do aluno em `.superpowers/sdd/`): quem guarda não apaga o que não
-// guardou. Devolve as sobras, relativas ao worktree; com sobra, o `ah close` recusa como sempre.
-export function limparPastaDoSdd(worktree, rastreados = new Set()) {
-  let itens;
-  try {
-    itens = fs.readdirSync(sdd(worktree), { withFileTypes: true });
-  } catch {
-    return [];
-  }
+const relDoWorktree = (worktree, abs) => path.relative(worktree, abs).split(path.sep).join('/');
+
+// Tira do worktree só o que o guardar copiou (`copiados`, caminhos absolutos) e, se nada mais sobrou, o `.gitignore`
+// que o `sdd-workspace` cria e as pastas vazias. Não apaga o que o git versiona (`rastreados`, relativos ao worktree:
+// o projeto pode versionar os diários, como o sdd-workspace prevê) nem o que não foi copiado: quem guarda não apaga
+// o que não guardou. Devolve as sobras, relativas ao worktree; com sobra, o `ah close` recusa como sempre.
+export function limparPastaDoSdd(worktree, rastreados = new Set(), copiados = new Set()) {
+  const raiz = sdd(worktree);
+  if (!fs.existsSync(raiz)) return [];
+  for (const abs of copiados) if (!rastreados.has(relDoWorktree(worktree, abs))) fs.rmSync(abs, { force: true });
+  const tirarVazias = dir => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) if (e.isDirectory()) tirarVazias(path.join(dir, e.name));
+    if (dir !== raiz && !fs.readdirSync(dir).length) fs.rmdirSync(dir);
+  };
+  tirarVazias(raiz);
+  // Pasta de onde algo foi copiado: as sobras saem arquivo por arquivo; as outras, como pasta inteira.
+  const deOndeCopiou = new Set([...copiados].map(abs => relDoWorktree(raiz, abs).split('/')[0]));
+  const naoRastreados = dir => arquivosDe(dir).map(abs => relDoWorktree(worktree, abs)).filter(rel => !rastreados.has(rel));
   const sobras = [];
-  for (const e of itens) {
-    const abs = path.join(sdd(worktree), e.name);
-    const rel = `.superpowers/sdd/${e.name}`;
-    const doSdd = e.isDirectory() && ['progress.md', 'plan-path'].some(f => fs.existsSync(path.join(abs, f)));
-    if (doSdd) apagarNaoRastreados(abs, rel, rastreados);
-    else if (e.name !== '.gitignore') sobras.push(`${rel}${e.isDirectory() ? '/' : ''}`);
+  for (const e of fs.readdirSync(raiz, { withFileTypes: true })) {
+    if (e.name === '.gitignore') continue;
+    const abs = path.join(raiz, e.name);
+    if (!e.isDirectory()) { if (!rastreados.has(relDoWorktree(worktree, abs))) sobras.push(relDoWorktree(worktree, abs)); continue; }
+    const soltos = naoRastreados(abs);
+    if (!soltos.length) continue;
+    if (deOndeCopiou.has(e.name)) sobras.push(...soltos);
+    else sobras.push(`${relDoWorktree(worktree, abs)}/`);
   }
   if (sobras.length) return sobras.sort();
   const ignora = '.superpowers/sdd/.gitignore';
   if (!rastreados.has(ignora)) fs.rmSync(path.join(worktree, ignora), { force: true });
-  for (const dir of [sdd(worktree), path.join(worktree, '.superpowers')]) {
+  for (const dir of [raiz, path.join(worktree, '.superpowers')]) {
     try { fs.rmdirSync(dir); } catch { /* tem outra coisa: fica */ }
   }
   return [];
