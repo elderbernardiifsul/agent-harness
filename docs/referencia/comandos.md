@@ -574,6 +574,58 @@ $ AH_SESSAO=ana-terminal tools/ah close
 Frente as-1 carrinho fechada.
 ```
 
+## wiki
+
+```
+ah wiki conferir [--json] [--pendentes] [<artigo>...]
+ah wiki fontes [--json]
+```
+
+Comandos da extensão `wiki`, que acompanha o harness e só existe com `"wiki"` ligada em `extensoes`. A wiki fica em `docs/wiki/<tema>/<artigo>.md`, com `index.md` e `log.md`, e é escrita pelo agente com as skills `wiki-ingerir`, `wiki-consultar` e `wiki-conferir` (instaladas pelo `metodo instalar` com a extensão ligada). O formato do artigo, do índice e do log está num lugar só: `.harness/nucleo/extensoes/wiki/formato.md`. Nenhum comando exige sessão; dentro do worktree de uma frente, valem a wiki e as fontes daquele worktree.
+
+**Configuração** (`extensoes.wiki`: `true` ou um objeto com qualquer destes campos). É o único lugar da lista de fontes; as skills mandam rodar `ah wiki fontes` em vez de repeti-la.
+
+| Campo | Padrão | O que é |
+|---|---|---|
+| `pasta` | `"docs/wiki"` | Pasta da wiki, relativa à raiz; nunca é fonte |
+| `fontes` | `["CONTEXT.md", "GLOSSARY.md", "docs/**"]` | Padrões do que a wiki pode citar |
+| `foraDasFontes` | `["docs/agents/**"]` | Padrões que saem das fontes mesmo casando com `fontes` |
+
+Nos padrões, relativos à raiz e com `/`, `**` casa qualquer sequência (inclusive `/`) e `*` qualquer sequência sem `/`. Campo desconhecido ou valor fora da forma recusa a configuração, e a extensão não carrega (`doctor`: `FALHOU Extensão wiki: …`).
+
+- **`conferir`.** A invariante da wiki: todo número, data, horário ou citação de um artigo existe literalmente numa fonte ligada pelo campo `Fontes` dele. Extrai de cada artigo os literais de alto sinal (números com separador ou sufixo, como `1.234,56` e `2,5%`; números de 4 ou mais dígitos; datas `2026-11-20` e `01/12/2026`; horários `0:12:40`; citações de 15 ou mais caracteres entre aspas ou em blockquote) e procura cada um, inteiro, nas fontes ligadas. O que falta é **suspeito**: valor derivado, paráfrase ou fonte que mudou depois do artigo; quem julga é a skill `wiki-conferir`. **Erros de evidência**: `artigo sem campo Fontes`, `link fora das fontes`, `link que não resolve`, `fonte que não é texto conferível` (texto conferível: `.md`, `.txt`, `.srt`, `.vtt`, `.json`, `.csv`, `.yaml`, `.yml`). **Cobertura**: por pasta de fontes (`docs/adr`) ou arquivo (`CONTEXT.md`), quantos `.md` algum artigo cita; a entrada `## [AAAA-MM-DD] ingestão | sem material: <caminho>` do log conta como citada. Páginas arquivadas (`> Arquivado:`) e blocos de status não são conferidos; nada dentro de cerca de código conta. Com artigos dados, confere só eles (a cobertura é sempre do todo); `--pendentes` lista as fontes ainda não citadas; `--json` imprime `{"suspeitos":[{"artigo","valores"}],"erros":[{"artigo","erros"}],"cobertura":[{"grupo","citados","total"}],"pendentes":[…],"artigos":n}`. O código é 0 com ou sem suspeitos: o relatório é a interface.
+- **`fontes`.** Uma fonte por linha, ordenadas, pela configuração; `--json`, `{"fontes":[…]}`.
+- **Doctor.** O item `Evidência da wiki (wiki)` avisa quando a conferência acha suspeitos ou erros (`aviso Evidência da wiki (wiki): 1 suspeito(s) de fidelidade e 0 erro(s) de evidência; rode tools/ah wiki conferir e julgue cada um com a skill wiki-conferir`); sem wiki, `ok`.
+
+| Recusa | Faça |
+|---|---|
+| `Não achei a wiki em docs/wiki (<raiz>).` | faça a primeira ingestão com a skill wiki-ingerir, que cria docs/wiki/index.md e log.md |
+| `docs/wiki/log.md não é artigo da wiki (fica fora de docs/wiki, ou é index.md ou log.md).` | passe caminhos de artigos, relativos à raiz, como docs/wiki/<tema>/<artigo>.md |
+| `Não achei o artigo <caminho>.` | confira o caminho, relativo à raiz do projeto |
+| `Falta o subcomando.` / `Subcomando desconhecido: …` / `Opção desconhecida: …` / `Argumento a mais: …` | use o uso acima |
+
+```
+$ tools/ah wiki conferir
+# Conferência de evidência
+
+## Suspeitos de fidelidade
+
+docs/wiki/frete/gratis.md
+- 250,00
+
+## Erros de evidência
+(nenhum)
+
+## Cobertura das fontes
+
+| Fonte | Citados | Total |
+|---|---|---|
+| docs/adr | 1 | 1 |
+
+## Resumo
+1 suspeito(s) de fidelidade, 0 erro(s) de evidência, 1 de 1 arquivo(s)-fonte citados
+```
+
 ## whoami
 
 ```
