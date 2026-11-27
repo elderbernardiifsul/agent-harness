@@ -22,14 +22,14 @@ Todos partem de `p2-metodo`. O orquestrador integra cada um em `p2-metodo` com `
 | Onda | Quem | Ramo | Worktree | Fatias |
 |---|---|---|---|---|
 | 1 | Orquestrador, com subagentes | `p2-metodo` | `~/projetos/agent-harness-p2` | 1 (plano `2026-11-26-metodo-fatia-1.md`) |
-| 1 | Sessão secundária A | `p2-registros-modelo` | `~/projetos/agent-harness-p2-rm` | 3 e 4, com as mudanças do núcleo P2 e P5 |
-| 1 | Sessão secundária B | `p2-opcionais` | `~/projetos/agent-harness-p2-op` | 8 |
-| 2 | A definir ao fim da onda 1 | `p2-wiki` | — | 6 e 7 |
+| 1 | Sessão `programacao-agentica-9a` | `p2-registros-modelo` | `~/projetos/agent-harness-p2-rm` | 3 e 4, com as mudanças do núcleo P2 e P5 |
+| 1 | Sessão `programacao-agentica-67` | `p2-opcionais` | `~/projetos/agent-harness-p2-op` | 8 |
+| 1 | Sessão `programacao-agentica-f4` | `p2-wiki` | `~/projetos/agent-harness-p2-wk` | 6 e 7 |
 | 2 | A definir ao fim da onda 1 | `p2-orquestracao` | — | 5 (depende de 4 e 8) |
 | 2 | Orquestrador | `p2-metodo` | `~/projetos/agent-harness-p2` | 2 e o guia de como começar |
 | 3 | Orquestrador | `p2-metodo`, depois `dev` | — | Integração, ensaio de ponta a ponta, publicação |
 
-## Quem toca o quê (onda 1)
+## Quem toca o quê
 
 Para não haver conflito, cada ramo só edita os arquivos da sua linha. Arquivo novo fora da lista: avise antes.
 
@@ -37,6 +37,7 @@ Para não haver conflito, cada ramo só edita os arquivos da sua linha. Arquivo 
 |---|---|
 | `p2-metodo` | `nucleo/comandos/init.mjs`, `nucleo/comandos/atualizar.mjs`, `nucleo/comandos/doctor.mjs`, `nucleo/extensoes/metodo/**`, `README.md`, `AGENTS.md`, `teste/metodo-*`, `teste/init.test.mjs`, `teste/atualizar.test.mjs`, `teste/doctor.test.mjs`, `teste/apoio/colecao-falsa.mjs`; em `docs/referencia/comandos.md`, as seções `init`, `atualizar`, `doctor` e a nova `metodo` |
 | `p2-registros-modelo` | `nucleo/extensoes/registros/**`, `nucleo/extensoes/modelo/**`, `nucleo/lib/extensoes.mjs`, `nucleo/lib/extensoes-teste.mjs`, `nucleo/comandos/close.mjs`, `nucleo/comandos/board.mjs` (só se a coluna exigir), `docs/extensoes/interface.md`, `teste/registros-*`, `teste/modelo-*`, os testes de extensões e do close; em `docs/referencia/comandos.md`, a seção `close` e as novas `registros` e `modelo` |
+| `p2-wiki` | `nucleo/extensoes/wiki/**`, as pastas novas `nucleo/extensoes/metodo/skills/wiki-ingerir/`, `wiki-consultar/`, `wiki-conferir/`, `reuniao-ingerir/` (só elas; o `colecoes.json` é do orquestrador), `teste/wiki-*`; em `docs/referencia/comandos.md`, a nova seção `wiki` |
 | `p2-opcionais` | `nucleo/extensoes/ambiente/**`, `nucleo/extensoes/migracao/**`, `nucleo/extensoes/prova/**`, `teste/ambiente-*`, `teste/migracao-*`, `teste/prova-*`; em `docs/referencia/comandos.md`, as novas seções `ambiente`, `migracao` e `prova` |
 
 As skills escritas pelo harness ficam em `nucleo/extensoes/metodo/skills/<nome>/`, e o mapa skill → extensão fica em `nucleo/extensoes/metodo/colecoes.json` (`agent-harness.extensoes`). As ondas seguintes criam as pastas das suas skills; o orquestrador acrescenta a linha do mapa ao integrar.
@@ -58,3 +59,4 @@ As skills escritas pelo harness ficam em `nucleo/extensoes/metodo/skills/<nome>/
 | Data | Decisão | Evidência | Quem |
 |---|---|---|---|
 | 26/11 | Skills do harness ligadas a extensão são instaladas só com ela ligada; o mapa fica em `colecoes.json` | spec, seção 4; acrescentado ao plano da fatia 1 (Task 3 e Task 4) | orquestrador |
+| 26/11 | Wiki e reunião (fatias 6 e 7) começam na onda 1, em paralelo: só criam arquivos novos | tabela "Quem toca o quê" | orquestrador |

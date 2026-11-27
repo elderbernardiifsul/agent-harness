@@ -12,6 +12,7 @@ import { comTrava } from './estado.mjs';
 import { gravarFrente, lerFrente, listarFrentesTolerante } from './frente.mjs';
 import { git } from './git.mjs';
 import { gh } from './github.mjs';
+import { lerSessao } from './sessao.mjs';
 import { vidaDaDona } from './vida.mjs';
 
 export const VERSAO_DA_INTERFACE = 1;
@@ -19,7 +20,7 @@ export const DIR_DO_NUCLEO = path.join(path.dirname(fileURLToPath(import.meta.ur
 const DIR_COMANDOS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'comandos');
 export const NOME_VALIDO = /^[a-z][a-z0-9-]*$/;
 export const REACOES = ['depoisDeAbrir', 'antesDeFechar', 'depoisDeFechar', 'aoPassar', 'noSweep'];
-const CAMPOS = new Set(['versaoDaInterface', 'descricao', 'comandos', 'travas', 'verificacoes', 'reacoes', 'resumo', 'colunas', 'validarConfig']);
+const CAMPOS = new Set(['versaoDaInterface', 'descricao', 'comandos', 'travas', 'verificacoes', 'reacoes', 'resumo', 'colunas', 'validarConfig', 'ignorados']);
 export const CONSERTO_PADRAO = 'corrija a extensão ou desligue-a em .harness/config.json';
 
 const eObjeto = v => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -111,6 +112,7 @@ export function errosDaForma(def) {
     }
   }
   if (def.validarConfig !== undefined && !eFuncao(def.validarConfig)) return 'validarConfig deve ser uma função';
+  if (def.ignorados !== undefined && !eFuncao(def.ignorados)) return 'ignorados deve ser uma função (ctx) -> [{caminho, descartavel, guardar}]';
   return null;
 }
 
@@ -237,6 +239,13 @@ export function montarCtx(ext, amb, extra = {}) {
     avisar: amb.avisar ?? (() => {}),
     frente: copiaSoDeLeitura(frente),
     frentes: () => (dirEstado ? listarFrentesTolerante(dirEstado).frentes.map(copiaSoDeLeitura) : []),
+    // O registro da sessão `id` (agente, modelo, papel, frente…), cópia só de leitura, ou null. Serve, por exemplo,
+    // para a coluna do quadro mostrar o modelo da sessão dona de cada frente. Nunca lança: sem id, sem estado,
+    // sem arquivo ou com o arquivo ilegível, devolve null, e quem chama mostra "—".
+    sessao(id) {
+      if (!dirEstado || typeof id !== 'string' || !id) return null;
+      try { return copiaSoDeLeitura(lerSessao(dirEstado, id)); } catch { return null; }
+    },
     // A sessão dona da frente (`frente.dona`) está viva? Mesma regra do takeover e do board (vida.mjs): registro
     // ilegível conta como viva (pode estar), e frente sem dona, como não. Para a extensão não mexer em frente
     // ativa de outra sessão de pé.
@@ -425,4 +434,110 @@ export function comandosDasExtensoes(ativas) {
   const m = new Map();
   for (const ext of ativas) for (const [nome, c] of Object.entries(ext.def.comandos ?? {})) m.set(nome, { extensao: ext, comando: c });
   return m;
+}
+
+// ---------------------------------------------------------------- ignorados de que a extensão cuida (P5)
+//
+// O `ah close` recusa worktree com item ignorado pelo git, porque o git não guarda esses arquivos e remover o
+// worktree os apagaria. Alguns são de uma extensão: o diário do subagent-driven-development (que a `registros`
+// guarda no ticket com um comando) ou o arquivo de ambiente da frente (que a `ambiente` refaz a partir do estado).
+// Cada extensão declara os dela em `ignorados(ctx)`, e o close trata esses itens assim: o descartável não conta
+// como perda; o guardado recusa apontando o comando que o guarda; o resto segue como sempre.
+
+// Normaliza e confere um item devolvido por `ignorados`. Devolve {caminho, descartavel, guardar} ou o motivo (texto).
+function itemIgnorado(item, i) {
+  const onde = `ignorados[${i}]`;
+  if (!eObjeto(item)) return `${onde} deve ser um objeto {caminho, descartavel | guardar}`;
+  if (!eTexto(item.caminho)) return `${onde}.caminho deve ser um texto`;
+  const caminho = item.caminho.replace(/^(\.\/)+/, '');
+  if (caminho === '' || path.isAbsolute(caminho) || caminho.split('/').includes('..') || caminho.includes('\\')) {
+    return `${onde}.caminho deve ser relativo ao worktree, sem .. (${umaLinha(item.caminho, 60)})`;
+  }
+  const descartavel = item.descartavel === true;
+  const guardar = eTexto(item.guardar) ? umaLinha(item.guardar, 200) : null;
+  if (descartavel === Boolean(guardar)) return `${onde} deve ter descartavel: true ou guardar: '<comando>', um dos dois`;
+  return { caminho, descartavel, guardar };
+}
+
+// Os ignorados que as extensões ativas declaram para a frente: {declarados: [{extensao, caminho, descartavel,
+// guardar}], falhas: [{extensao, motivo}]}. Nunca lança: a função que lança (ou cuja promessa rejeita), a lista
+// inválida e o item inválido viram falha, e os itens dela seguem a conferência de sempre.
+export async function ignoradosDasExtensoes(amb, frente, { dentroDaTrava = false, ...opcoes } = {}) {
+  const declarados = [];
+  const falhas = [];
+  for (const ext of await ativasOuNada(amb, opcoes)) {
+    if (!ext.def.ignorados) continue;
+    let lista;
+    try {
+      lista = await ext.def.ignorados(montarCtx(ext, amb, { frente, dentroDaTrava }));
+    } catch (e) {
+      falhas.push({ extensao: ext.nome, motivo: mensagemDe(e) });
+      continue;
+    }
+    if (!Array.isArray(lista)) {
+      falhas.push({ extensao: ext.nome, motivo: 'ignorados deve devolver uma lista [{caminho, descartavel | guardar}]' });
+      continue;
+    }
+    lista.forEach((item, i) => {
+      const r = itemIgnorado(item, i);
+      if (typeof r === 'string') falhas.push({ extensao: ext.nome, motivo: r });
+      else declarados.push({ extensao: ext.nome, ...r });
+    });
+  }
+  return { declarados, falhas };
+}
+
+// Pasta-mãe estrita de um declarado que o git listou sem nada dentro: o projeto ignora a pasta inteira (o
+// `.gitignore` dele tem `.superpowers/`), e o `--directory` resume tudo nela. Para saber o que é da extensão, a pasta é
+// listada de novo item a item (`listarDentro(pasta)`, o `git ls-files` sem `--directory`), e esses itens tomam o
+// lugar dela. Listagem vazia mantém a pasta, que fica com os outros. Ensaio de 27/11, git 2.56.
+export function expandirPastasMaes(itens, declarados, listarDentro) {
+  const saida = [];
+  for (const item of itens) {
+    const ePai = item.endsWith('/') && declarados.some(d => d.caminho !== item && d.caminho.startsWith(item));
+    const temFilhos = itens.some(x => x !== item && x.startsWith(item));
+    const dentro = ePai && !temFilhos ? listarDentro(item) : [];
+    saida.push(...(dentro.length ? dentro : [item]));
+  }
+  return saida;
+}
+
+// Separa os itens ignorados que o git lista (relativos ao worktree, pasta com / no fim) em descartáveis,
+// guardados (por extensão e comando) e outros. Um item casa com um declarado quando é o caminho dele ou fica
+// dentro dele (pasta declarada). Coberto por um descartável e por um guardar, vale o guardar: na dúvida, guardar.
+//
+// Pasta-mãe: o `git ls-files -o -i --exclude-standard --directory` (git 2.56, ensaio de 26/11) lista, para um
+// worktree com só .superpowers/sdd/<plano>/, a pasta-mãe `.superpowers/` e também os itens de dentro dela. A
+// pasta-mãe de um declarado casa só quando há itens dela na lista e todos casam; senão (um `.superpowers/x.log`
+// de outra origem, ou nada listado dentro) fica com os outros, e a recusa de sempre protege o que não é da extensão.
+export function separarIgnorados(itens, declarados) {
+  const casa = (item, d) => (d.caminho.endsWith('/') ? item.startsWith(d.caminho) : item === d.caminho);
+  const direto = item => {
+    const achados = declarados.filter(d => casa(item, d));
+    return achados.find(d => d.guardar) ?? achados[0] ?? null;
+  };
+  const ePai = item => item.endsWith('/') && declarados.some(x => x.caminho !== item && x.caminho.startsWith(item));
+  const dono = new Map();
+  for (const item of itens) {
+    let d = direto(item);
+    if (!d && ePai(item)) {
+      // As pastas-mães aninhadas de dentro (`a/b/` sob `a/`, acima de `a/b/c/`) não contam: valem os itens delas.
+      const dentro = itens.filter(x => x !== item && x.startsWith(item) && !(ePai(x) && !direto(x)));
+      const deles = dentro.map(direto);
+      if (dentro.length && deles.every(Boolean)) d = deles.find(x => x.guardar) ?? deles[0];
+    }
+    dono.set(item, d);
+  }
+  const r = { descartaveis: [], guardados: [], outros: [] };
+  for (const item of itens) {
+    const d = dono.get(item);
+    if (!d) r.outros.push(item);
+    else if (!d.guardar) r.descartaveis.push(item);
+    else {
+      let g = r.guardados.find(x => x.extensao === d.extensao && x.guardar === d.guardar);
+      if (!g) r.guardados.push(g = { extensao: d.extensao, guardar: d.guardar, itens: [] });
+      g.itens.push(item);
+    }
+  }
+  return r;
 }
