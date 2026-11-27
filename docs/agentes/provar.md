@@ -32,6 +32,8 @@ Verificações dos testes (`teste/contrato-do-adaptador.mjs`):
 | entrada que não serve | `traduzirEntrada` lança erro com o `tipo` provável; o aviso sai com código 0 |
 | ponta a ponta pelo `ah gancho <agente>` | num projeto descartável com o harness instalado: o começo registra a sessão com o agente e devolve o resumo; `git push origin main` é recusado e a recusa vai para `eventos.jsonl`; `git status` passa; um JSON truncado é recusado com T0; o fim encerra a sessão |
 
+Os testes conferem as partes na ordem em que o adaptador é construído. Com o adaptador ainda fora do registro, param no primeiro teste (`o adaptador <agente> não está no registro`); sem os exemplos, param em `não tem exemplos`. O que falta além disso vem do roteiro, até cada parte existir.
+
 Cada evento fora de `EVENTOS_ENTREGUES` aparece como `não entrega o evento <evento> (degradação declarada)`, resultado que conta como aprovado, porque corresponde ao que o adaptador declarou.
 
 Cada falha indica, em português, o que falta:

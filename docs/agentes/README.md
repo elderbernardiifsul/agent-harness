@@ -40,7 +40,7 @@ O adaptador é escrito no **clone do agent-harness**, e não no projeto, porque 
 | [provar.md](provar.md) | Os testes de contrato (comando exato) e o ensaio com o agente real |
 | [../referencia/capacidades-por-agente.md](../referencia/capacidades-por-agente.md) | O que se sabe sobre Claude Code, Codex e OpenCode (ganchos, formatos, variáveis), com fonte e data |
 
-Ordem de leitura: este arquivo, `contrato.md`, `exemplo-claude-code.md`, `escrever-um-adaptador.md`, `provar.md`.
+Ordem de leitura: este arquivo, `contrato.md`, `exemplo-claude-code.md`, `escrever-um-adaptador.md` (que manda consultar a linha do seu agente em `capacidades-por-agente.md` no passo 1), `provar.md`.
 
 ## Critérios de conclusão
 

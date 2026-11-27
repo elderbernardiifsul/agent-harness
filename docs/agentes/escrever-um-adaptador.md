@@ -42,7 +42,10 @@ Para cada linha sem correspondente, ver "Quando falta um evento", no fim deste a
 
 "Nada" é a resposta do núcleo (`{}`), não a do agente. O adaptador escreve na saída o que o agente exige para aceitar o gancho: se o agente espera JSON válido na saída padrão de um evento (o `Stop` do Codex, segundo a tabela de capacidades), `traduzirSaida` devolve `{}` em texto nesse evento, e não uma saída vazia.
 
-O `continuacao: true` do `fim` só se marca quando o motivo do fim diz, sem ambiguidade, que outra sessão vem em seguida no mesmo processo. Se o agente não informa motivo útil (o `SessionEnd` do Codex traz `reason` sempre `other`), não marque: a herança ainda acontece pelo começo seguinte, quando ele vem do mesmo processo com `origem: 'continuacao'` (o `source` `clear`, `compact` ou `resume` do `SessionStart`). O custo é um intervalo em que a sessão antiga aparece encerrada; ver a linha `fim` de "Quando falta um evento".
+O `continuacao: true` do `fim` só se marca quando o motivo do fim diz, sem ambiguidade, que outra sessão vem em seguida no mesmo processo. Um `fim` sem essa marca encerra a sessão, e sessão encerrada não é herdada: se o agente manda o fim da conversa antiga antes do começo da nova, a frente não passa para a sessão nova e fica órfã (`ah takeover`). Se o agente não informa motivo útil (o `SessionEnd` do Codex traz `reason` sempre `other`), há duas escolhas, e a ordem real dos eventos, vista no ensaio (passo 3), decide:
+
+- o fim nunca chega antes de um começo de continuação: entregue o `fim` normalmente;
+- o fim pode chegar antes (como no `/clear` do Claude Code): não entregue o `fim` (fica fora de `EVENTOS_ENTREGUES`). A herança passa a vir só do começo de continuação no mesmo processo, e a sessão termina com o processo ou com o sinal vencido (linha `fim` de "Quando falta um evento").
 
 ## 3. Gravação de eventos reais
 
