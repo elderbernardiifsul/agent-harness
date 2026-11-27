@@ -2,6 +2,7 @@
 // harness) nas pastas de cada agente, grava a trava .harness/skills.lock.json e o trecho do método no AGENTS.md.
 // Configuração: `{"agentes": ["claude-code", "codex", "opencode"]}`. O trabalho fica em sincronizar.mjs.
 import { AGENTES } from './colecoes.mjs';
+import { verificacoes } from './doctor.mjs';
 import { sincronizar } from './sincronizar.mjs';
 
 const USO = 'ah metodo instalar [--forcar] | atualizar [--colecao <nome>] [--para <tag|commit>] [--simular] [--forcar]';
@@ -19,6 +20,8 @@ export default {
     if (new Set(a).size !== a.length) return 'agentes não pode repetir agente';
     return null;
   },
+
+  verificacoes,
 
   comandos: {
     metodo: {

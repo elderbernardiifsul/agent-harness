@@ -657,6 +657,20 @@ Simulação: nada foi gravado.
 | `os agentes do método mudaram desde a última instalação` | rode tools/ah metodo instalar, que leva todas as coleções às pastas novas |
 | as recusas do `instalar` (busca, mudança à mão, trava ilegível, destino fora do projeto) | as mesmas, com `tools/ah metodo atualizar` no lugar de `instalar` |
 
+### Conferências do `doctor`
+
+Com a extensão ligada, o `ah doctor` acrescenta estes itens, depois dos do núcleo (`<item> (metodo)`). Todos são aviso, salvo a trava ilegível, que falha.
+
+| Item | Aviso ou falha | Faça |
+|---|---|---|
+| `Trava das skills (metodo)` | falha quando `.harness/skills.lock.json` existe e está ilegível; aviso quando falta | `git checkout -- .harness/skills.lock.json` ou apague-a, e `tools/ah metodo instalar`; no aviso, `tools/ah metodo instalar` |
+| `Skills iguais à trava (metodo)` | aviso com os arquivos alterados e ausentes por pasta de destino; também quando uma skill do harness presa a uma extensão está instalada com a extensão desligada, ou falta com a extensão ligada (`colecoes.json`, `agent-harness.extensoes`) | guarde a mudança numa skill de outro nome ou rode `tools/ah metodo instalar` (`--forcar` descarta a mudança) |
+| `Coleções na versão recomendada (metodo)` | aviso por coleção cujo commit na trava difere do de `colecoes.json`; as skills do harness (`commit: null`) ficam de fora | `tools/ah metodo atualizar` (`--simular` mostra antes o que muda) |
+| `Coleções sem plugin duplicado (metodo)` | aviso quando `claude-code` está em `agentes` e `<CLAUDE_CONFIG_DIR ou ~/.claude>/plugins/installed_plugins.json` tem uma chave `superpowers@*` ou `mattpocock-skills@*` (ex.: `superpowers no Claude Code`) | desinstale o plugin do agente ou tire a coleção do método |
+| `Skills sem nome repetido (metodo)` | aviso só com `opencode` em `agentes`: o mesmo nome de skill em mais de uma entre `.claude/skills/`, `.agents/skills/` e `.opencode/skills/` com conteúdo diferente; cópias idênticas (o que o `instalar` faz) não avisam | deixe cópias iguais: renomeie a skill própria ou `tools/ah metodo instalar --forcar` |
+
+Limite: a conferência de plugin duplicado lê só o Claude Code; para o Codex e o OpenCode a sondagem não achou onde ficam os plugins instalados, e o `doctor` não chuta.
+
 ## whoami
 
 ```
