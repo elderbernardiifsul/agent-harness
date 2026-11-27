@@ -669,6 +669,28 @@ test('worktree trancado: close recusa antes de mexer nos tickets', t => {
   assert.equal(c.codigo, 0, c.erro);
 });
 
+test('worktree com submódulo: close recusa antes de mexer nos tickets, e a remoção forçada destrava', t => {
+  const { p, wt } = comFrente();
+  t.after(() => p.limpar());
+  const git = (cwd, args) => spawnSync('git', ['-c', 'protocol.file.allow=always', ...args], { cwd, encoding: 'utf8' });
+  const lib = path.join(path.dirname(p.raiz), 'lib');
+  assert.equal(git(path.dirname(p.raiz), ['init', '-q', '-b', 'main', lib]).status, 0);
+  assert.equal(git(lib, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'lib']).status, 0);
+  const add = git(wt, ['submodule', 'add', '-q', lib, 'lib']);
+  assert.equal(add.status, 0, add.stderr);
+  assert.equal(git(wt, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'submódulo']).status, 0);
+  mescla(p);
+  const antes = comentarios(p).length;
+  const r = p.ah(['close']);
+  assert.equal(r.codigo, 1, r.saida);
+  assert.match(r.erro, /^Recusado: O worktree .* tem submódulos, e o git não remove worktree com submódulos\.\nFaça: .*git worktree remove --force /);
+  assert.equal(comentarios(p).length, antes);
+  assert.equal(lerFrenteDoTeste(p, 'carrinho').fechando, undefined);
+  assert.equal(git(p.raiz, ['worktree', 'remove', '--force', wt]).status, 0);
+  const c = p.ah(['close']);
+  assert.equal(c.codigo, 0, c.erro);
+});
+
 test('remoção do worktree recusada depois do comentário: o quadro mostra e o segundo close termina sem comentar de novo',
   { skip: process.platform === 'win32' ? 'embrulho do git em sh' : false }, t => {
     const { p, wt } = comFrente();
