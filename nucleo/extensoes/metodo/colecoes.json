@@ -40,9 +40,20 @@
     "agent-harness": {
       "local": "skills",
       "skills": {
-        "preparar-projeto": "preparar-projeto"
+        "preparar-projeto": "preparar-projeto",
+        "orquestrar": "orquestrar",
+        "wiki-ingerir": "wiki-ingerir",
+        "wiki-consultar": "wiki-consultar",
+        "wiki-conferir": "wiki-conferir",
+        "reuniao-ingerir": "reuniao-ingerir"
       },
-      "extensoes": {}
+      "extensoes": {
+        "orquestrar": "orquestracao",
+        "wiki-ingerir": "wiki",
+        "wiki-consultar": "wiki",
+        "wiki-conferir": "wiki",
+        "reuniao-ingerir": "wiki"
+      }
     }
   }
 }

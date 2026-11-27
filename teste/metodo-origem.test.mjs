@@ -40,8 +40,9 @@ test('colecoes.json do harness é válido e fixa as duas coleções', () => {
   assert.equal(colecoes['mattpocock-skills'].commit, 'd1478fcb140db0b93c0c8df17bcfd311844749d0');
   assert.equal(colecoes['mattpocock-skills'].versao, '1.3.2');
   assert.deepEqual(Object.keys(colecoes['mattpocock-skills'].skills).sort(), ['domain-modeling', 'grilling', 'prototype', 'research', 'to-tickets', 'triage', 'wayfinder']);
-  assert.deepEqual(Object.keys(colecoes['agent-harness'].skills), ['preparar-projeto']);
-  assert.deepEqual(colecoes['agent-harness'].extensoes, {});
+  assert.deepEqual(Object.keys(colecoes['agent-harness'].skills).sort(), ['orquestrar', 'preparar-projeto', 'reuniao-ingerir', 'wiki-conferir', 'wiki-consultar', 'wiki-ingerir']);
+  assert.deepEqual(colecoes['agent-harness'].extensoes, { orquestrar: 'orquestracao', 'reuniao-ingerir': 'wiki', 'wiki-conferir': 'wiki', 'wiki-consultar': 'wiki', 'wiki-ingerir': 'wiki' });
+  assert.equal(colecoes['agent-harness'].extensoes['preparar-projeto'], undefined, 'preparar-projeto é sempre instalada');
   assert.deepEqual(Object.keys(colecoes['mattpocock-skills'].arquivosDoProjeto).sort(), ['docs/agents/domain.md', 'docs/agents/issue-tracker.md', 'docs/agents/triage-labels.md']);
   // As skills do harness vivem numa pasta da extensão; a pasta de cada uma existe.
   for (const pasta of Object.values(colecoes['agent-harness'].skills)) {

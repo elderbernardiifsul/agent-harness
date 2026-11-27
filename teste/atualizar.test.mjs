@@ -254,7 +254,9 @@ test('a cópia instalada sem --de recusa e diz o clone registrado; com --de entr
   const r = instalado(p, ['atualizar']);
   assert.equal(r.codigo, 1);
   assert.match(r.erro, /Recusado: não sei de onde atualizar: este é o núcleo instalado no projeto, não o clone/);
-  assert.match(r.erro, /Faça: rode tools\/ah atualizar --de \S+agent-harness/);
+  // O clone registrado é o que rodou o init (origem.json), não o clone modificado do cenário.
+  const registrado = JSON.parse(fs.readFileSync(path.join(dirDoTeste(p), 'origem.json'), 'utf8')).clone;
+  assert.match(r.erro, new RegExp(`Faça: rode tools/ah atualizar --de ${registrado.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\n`));
 
   const errado = instalado(p, ['atualizar', '--de', p.raiz]);
   assert.equal(errado.codigo, 1);

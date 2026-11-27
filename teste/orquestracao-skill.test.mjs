@@ -9,8 +9,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const RAIZ = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PASTA = path.join(RAIZ, 'nucleo', 'extensoes', 'metodo', 'skills', 'orquestrar');
 const ler = nome => fs.readFileSync(path.join(PASTA, nome), 'utf8');
-// Comandos de extensões que ainda não estão neste ramo (vêm de outra frente na integração).
-const DE_OUTRAS_FRENTES = new Set(['registros']);
 
 async function comandosConhecidos() {
   const doNucleo = fs.readdirSync(path.join(RAIZ, 'nucleo', 'comandos')).filter(a => a.endsWith('.mjs')).map(a => a.slice(0, -4));
@@ -22,7 +20,7 @@ async function comandosConhecidos() {
     const def = (await import(pathToFileURL(arquivo).href)).default;
     deExtensoes.push(...Object.keys(def.comandos ?? {}));
   }
-  return new Set([...doNucleo, ...deExtensoes, ...DE_OUTRAS_FRENTES]);
+  return new Set([...doNucleo, ...deExtensoes]);
 }
 
 test('SKILL.md tem o frontmatter, os sete passos e aponta o texto de quem executa', () => {
