@@ -177,3 +177,45 @@ test('toda skill citada por uma skill instalada está instalada ou na tabela "No
   }
   assert.deepEqual(foraDaLista, [], 'acrescente a linha na tabela "No lugar" do agents-metodo.md ou a skill em colecoes.json');
 });
+
+// ---------------------------------------------------------------- guia "Como começar" (docs/guia/comecar.md)
+const GUIA = 'docs/guia/comecar.md';
+const TITULOS_DO_GUIA = [
+  '# Como começar',
+  '## 1. Instalar',
+  '## 2. A primeira sessão',
+  '## 3. Um exemplo por trilha',
+  '### Um commit: o frete arredondado errado',
+  '### Plano de partida: cupom de desconto',
+  '### Spec e plano: pagamento parcelado',
+  '### Investigação longa: vender também num marketplace',
+  '## 4. Ligar as extensões opcionais',
+  '## 5. Quando algo falha',
+];
+
+test('o guia tem as seções na ordem e aponta em vez de repetir', () => {
+  const g = ler(GUIA);
+  assert.deepEqual(titulosDe(g), TITULOS_DO_GUIA);
+  const instalar = secao(g, '## 1. Instalar');
+  assert.ok(instalar.includes('Instalar num projeto (instruções para o agente)'));
+  assert.ok(!instalar.includes('metodo instalar'), 'o procedimento de instalação é do README');
+  assert.ok(g.includes('docs/agents/metodo.md'));
+  assert.ok(g.includes('`tools/ah doctor`'));
+  for (const titulo of TITULOS_DO_GUIA.slice(4, 7)) {
+    const s = secao(g, titulo);
+    assert.ok(s.includes('`tools/ah open'), `${titulo} sem tools/ah open`);
+    assert.ok(s.includes('`tools/ah close`'), `${titulo} sem tools/ah close`);
+  }
+  assert.ok(!secao(g, '### Investigação longa: vender também num marketplace').includes('`tools/ah open'), 'a investigação abre frente só quando um ticket vira código');
+});
+
+test('toda skill citada no guia existe em colecoes.json ou na tabela "No lugar"', () => {
+  const ok = permitidas();
+  assert.deepEqual(skillsCitadas(ler(GUIA)).filter(s => !ok.has(s)), [], `${GUIA} ${AVISO_DA_CONVENCAO}`);
+});
+
+test('o README aponta para o guia logo no começo', () => {
+  const readme = ler('README.md');
+  const i = readme.indexOf('docs/guia/comecar.md');
+  assert.ok(i >= 0 && i < readme.indexOf('\n## '), 'a linha do guia vem antes da primeira seção do README');
+});
