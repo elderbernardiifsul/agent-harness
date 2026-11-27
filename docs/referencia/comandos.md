@@ -624,7 +624,7 @@ O `instalar` copia para o projeto as skills das coleções fixadas em `.harness/
 
 ```
 $ tools/ah metodo instalar
-Instalei 1 skill(s) de agent-harness (0.2.0) em .claude/skills, .agents/skills.
+Instalei 1 skill(s) de agent-harness (0.3.0) em .claude/skills, .agents/skills.
 Instalei 7 skill(s) de mattpocock-skills (1.3.2, d1478fc) em .claude/skills, .agents/skills.
 Instalei 8 skill(s) de superpowers (7.0.2, 22f0b46) em .claude/skills, .agents/skills.
 Criei docs/agents/issue-tracker.md.
