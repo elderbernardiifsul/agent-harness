@@ -6,15 +6,14 @@ Harness para várias sessões de agentes de código no mesmo repositório. Cada 
 
 Esta seção é para o agente de código que recebeu o endereço deste repositório (https://github.com/elderbernardiifsul/agent-harness), ou um clone dele, com um pedido como "instale o harness daqui" ou "prepare meu projeto". Ela é o único lugar do procedimento; a skill `preparar-projeto`, instalada no projeto, aponta para cá. O aluno não digita comando: você executa cada passo, mostra o resultado e pede licença antes de instalar algo na máquina dele, criar algo no GitHub ou executar código baixado.
 
-1. **Confirmar o alvo.** Confirme com o aluno a pasta do projeto e se ele já existe. Projeto existente: precisa ser um repositório git com pelo menos um commit; com alteração solta, peça a ele que a commite ou guarde antes. Projeto novo: `git init -b main` na pasta e um primeiro commit (`git commit --allow-empty -m "começo"`); com o "sim" do aluno, `gh repo create <dono>/<nome> --private --source . --push` (privado, salvo pedido dele).
-2. **Conferir os requisitos.** `node --version` (22 ou mais novo) e `git --version`. O `gh` autenticado (`gh auth status`) é opcional: sem ele, o `init` pede `--sigla`, e o projeto fica sem proteção de ramo e sem os rótulos de triagem. Faltando Node ou git, diga ao aluno o que falta e como instalar no sistema dele, e espere o "sim" antes de instalar.
+1. **Confirmar o alvo.** Confirme com o aluno a pasta do projeto e se ele já existe. Projeto existente: precisa ser um repositório git com pelo menos um commit; com alteração solta, peça a ele que a commite ou guarde antes. Projeto novo: `git init -b main` na pasta e um primeiro commit (`git commit --allow-empty -m "começo"`), depois de conferir a identidade do git (passo 2). Com o `gh` autenticado (passo 2) e o "sim" do aluno, `gh repo create <dono>/<nome> --private --source . --push` (privado, salvo pedido dele); sem o `gh` autenticado, o projeto fica local, e o repositório no GitHub pode vir depois.
+2. **Conferir os requisitos.** `node --version` (22 ou mais novo) e `git --version`. Antes do primeiro commit, `git config user.name` e `git config user.email`: vazios, pergunte ao aluno o nome e o e-mail dele e grave-os (no projeto, com `git config`, ou na máquina, com `--global`, como ele preferir). O `gh` autenticado (`gh auth status`) é opcional: sem ele, o `init` pede `--sigla`, e o projeto fica sem repositório no GitHub, sem proteção de ramo e sem os rótulos de triagem. Faltando Node ou git, diga ao aluno o que falta e como instalar no sistema dele, e espere o "sim" antes de instalar.
 3. **Trazer o harness.** Com um clone dado pelo aluno, ele é a `<origem>`: siga para o passo 4. Sem clone:
-   - Ache a versão. `git ls-remote --tags https://github.com/elderbernardiifsul/agent-harness 'v*'` lista as tags publicadas: use a maior `vX.Y.Z`, e o commit dela é o da linha `refs/tags/vX.Y.Z^{}` (ou da linha sem `^{}`, quando não houver essa). Sem tag publicada, use a `main`: `git ls-remote https://github.com/elderbernardiifsul/agent-harness refs/heads/main` mostra o commit dela.
-   - Baixe numa pasta de cache da máquina, fora do projeto. A `<cache>` é `$HOME/.cache/agent-harness/<versão>` no Linux, com a tag (`v0.3.0`) ou `main-<7 primeiros caracteres do commit>`; em outro sistema, o equivalente que você escolher. `git clone --depth 1 --branch <tag ou main> https://github.com/elderbernardiifsul/agent-harness <cache>`. Uma `<cache>` que já existe com esse commit é reaproveitada.
-   - Confira o commit: `git -C <cache> rev-parse HEAD` tem de dar o commit que o `ls-remote` mostrou. Diferente (a `main` andou entre as duas leituras), leia de novo e baixe numa pasta nova.
+   - Ache a versão. `git ls-remote --tags --sort=-v:refname https://github.com/elderbernardiifsul/agent-harness 'v*'` lista as tags da mais nova para a mais antiga: use a primeira `vX.Y.Z` sem sufixo (pule as de teste, como `v0.3.0-rc1`). Sem tag publicada, use a `main`.
+   - Baixe numa pasta de cache da máquina, fora do projeto: `git clone --depth 1 --branch <tag ou main> https://github.com/elderbernardiifsul/agent-harness <pasta temporária>`, e veja o commit baixado com `git -C <pasta temporária> rev-parse HEAD`. A `<cache>` é `${XDG_CACHE_HOME:-$HOME/.cache}/agent-harness/<versão>` (em outro sistema, o equivalente que você escolher), com a tag (`v0.3.0`) ou, na `main`, `main-<7 primeiros caracteres do commit que o rev-parse deu>`; mova a pasta temporária para lá. Uma `<cache>` que já existe só é reaproveitada se `git -C <cache> status --porcelain` sair vazio e o `rev-parse HEAD` dela der o mesmo commit; se não, baixe de novo noutra pasta.
    - Mostre ao aluno a origem (o endereço), a versão e o commit, e peça a confirmação antes de executar qualquer coisa da `<cache>`. Sem o "sim", pare.
 
-   Daqui em diante, a `<origem>` é a `<cache>` (ou o clone dado).
+   Daqui em diante, a `<origem>` é a `<cache>` (ou o clone dado). Mantenha a pasta: o projeto a registra como origem do núcleo, e o `doctor` avisa quando ela some (para recriá-la, repita este passo com a mesma versão).
 4. **Instalar o núcleo.** Na pasta do projeto: `node <origem>/nucleo/bin/ah.mjs init`. Sem o `gh`, acrescente `--sigla` com 2 a 4 letras minúsculas (`--sigla as` para Ana Souza). O `init` termina com os comandos do commit: faça-o no ramo base, `dev` (`git switch dev`, depois o `git add -- …` e o `git commit` que ele imprimiu).
 5. **Ligar o método.** Em `.harness/config.json`, no objeto `extensoes` (que o `init` deixa vazio), acrescente as três extensões do método, mantendo as que já estiverem lá:
 
@@ -22,11 +21,13 @@ Esta seção é para o agente de código que recebeu o endereço deste repositó
    "extensoes": { "metodo": { "agentes": ["claude-code"] }, "registros": true, "modelo": true }
    ```
 
-   `agentes` lista os agentes que o aluno vai usar (`claude-code`, `codex`, `opencode`); o agente que você é entra sempre. Rode `tools/ah metodo instalar` e faça, na `dev`, o commit que ele indica.
+   `agentes` lista os agentes que o aluno vai usar, entre os que o método suporta: `claude-code`, `codex` e `opencode`. O agente que você é entra sempre, se for um deles. Agente fora dessa lista não entra (escolher o mais parecido não vale): registre só os suportados e avise o aluno de que as skills não serão copiadas para o agente dele, e de que o roteiro para adaptá-lo está em `docs/agentes/` deste repositório.
+
+   Antes de rodar, avise o aluno de que o `tools/ah metodo instalar` baixa duas coleções de skills de terceiros (Superpowers e as skills do Matt Pocock), cada uma num commit fixado em `nucleo/extensoes/metodo/colecoes.json`, e as copia para o projeto com a licença; peça o "sim". Depois, rode `tools/ah metodo instalar` e faça, na `dev`, o commit que ele indica (ele já leva o `.harness/config.json`).
 6. **Conferir.** `tools/ah doctor`. Relate ao aluno o que ficou instalado, cada aviso e o que fazer com ele.
 7. **Quando algo falha.** Toda recusa do harness traz o motivo e uma linha `Faça:` com o próximo passo: siga-a e repita o passo. Sem `Faça:`, ou quando a mesma recusa volta, pare e relate ao aluno o comando, a saída e o que você tentou.
 
-Para reparar uma instalação que já existe, rode `tools/ah doctor` na pasta do projeto e siga o "Faça" de cada item que não estiver ok. Criar a tag de versão faz parte da publicação deste repositório e espera a ordem do autor.
+Para reparar uma instalação que já existe, rode `tools/ah doctor` na pasta do projeto e siga o "Faça" de cada item que não estiver ok.
 
 ## Para que serve este repositório
 
@@ -62,7 +63,7 @@ AH_SESSAO=ana-terminal tools/ah close
 
 `tools/ah --help` lista os comandos, e `tools/ah <comando> --help` mostra o uso de cada um. O projeto recebe a referência de uso em `docs/agents/sessoes-paralelas.md`, e o `AGENTS.md` dele ganha um trecho que aponta para ela.
 
-Para levar ao projeto uma versão mais nova do harness, atualize o clone (`git pull`) e, na pasta do projeto, rode `tools/ah atualizar --de <clone> --simular` para ver o que mudaria e `tools/ah atualizar --de <clone>` para trocar. Configuração, extensões e estado não são tocados.
+Para levar ao projeto uma versão mais nova do harness, baixe a versão nova numa `<nova cache>`, como no passo 3 de "Instalar num projeto" (a `<cache>` é um clone raso de um commit só e não se atualiza no lugar), e, na pasta do projeto, rode `tools/ah atualizar --de <nova cache> --simular` para ver o que mudaria e `tools/ah atualizar --de <nova cache>` para trocar. Com um clone completo dado pelo aluno, atualize esse clone e use `--de <clone>`. Configuração, extensões e estado não são tocados. A pasta antiga pode ser apagada depois: o projeto passa a registrar a nova.
 
 ## Laboratório
 
@@ -109,6 +110,8 @@ O guia de estudo traz uma lista de experimentos para o laboratório.
 ## Desenvolvimento
 
 Testes: `npm test` (ou `node --test "teste/*.test.mjs"`). Regras de trabalho neste repositório: [`AGENTS.md`](AGENTS.md). Licença MIT.
+
+Publicar uma versão deste repositório (levar a `dev` para `stage` e `main` e criar a tag `vX.Y.Z` de onde a instalação pelo agente baixa) espera a ordem do autor.
 
 O repositório não tem CI; o que ela faria roda na máquina de quem desenvolve. `npm run verifica` roda a suíte e a varredura de termos. Para conferir também o Node mínimo do `package.json` (22), passe os dois executáveis:
 

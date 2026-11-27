@@ -595,7 +595,7 @@ O `instalar` copia para o projeto as skills das coleções fixadas em `.harness/
 5. **AGENTS.md.** O trecho do método entre as marcas `<!-- agent-harness/metodo: início … -->` e `<!-- agent-harness/metodo: fim -->`, com as mesmas regras do trecho do núcleo: só o texto entre as marcas é reescrito. Ele diz onde estão as skills e a trava, que `superpowers:<nome>` e `mattpocock-skills:<nome>` valem como a skill `<nome>` do projeto, e o que usar no lugar das skills citadas que não foram instaladas. `AGENTS.md` que é link simbólico para um arquivo dentro do projeto não é alterado (aviso `AGENTS.md é um link simbólico; não mexi nele`, com `Faça: copie para o arquivo de destino do link o trecho de .harness/nucleo/extensoes/metodo/modelos/agents-metodo.md`); link que aponta para fora do projeto recusa (`o destino sai do projeto: AGENTS.md`).
 6. **Arquivos do projeto.** `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md` e `docs/agents/domain.md` (a preparação que as skills do Matt Pocock esperam) são copiados só quando faltam; depois, são do projeto.
 7. **Rótulos.** Com `github.repo` na configuração, lista os rótulos do repositório (`gh label list`) e cria os de triagem que faltam, cada um com cor fixa e descrição; os que já existem não são recriados nem repintados. Os nomes vêm da coluna `Label in our tracker` da tabela de `docs/agents/triage-labels.md`; se a tabela não traz os cinco papéis, valem os nomes padrão `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human` e `wontfix`. A lista é consultada a cada execução. Falha do `gh` vira aviso (`não criei os rótulos de triagem no GitHub`, com `Faça:`) e o comando termina com código 0.
-8. **Commit.** Termina com os comandos do commit no ramo base, como o `init`. Sem nada a mudar, diz `Nada a mudar: as skills já estão como a trava.`
+8. **Commit.** Termina com os comandos do commit no ramo base, como o `init`. O `git add` leva também o `.harness/config.json`, onde as extensões do método foram ligadas: sem ele na `dev`, as frentes nasceriam sem o método. Sem nada a mudar, diz `Nada a mudar: as skills já estão como a trava.`
 
 | Recusa | Faça |
 |---|---|
@@ -617,7 +617,7 @@ Criei docs/agents/domain.md.
 Escrevi o trecho do método no AGENTS.md.
 Gravei a trava .harness/skills.lock.json.
 Falta levar o método para o ramo base dev (as frentes partem dele):
-  git add -- .harness/skills.lock.json .claude/skills .agents/skills AGENTS.md docs/agents/issue-tracker.md docs/agents/triage-labels.md docs/agents/domain.md
+  git add -- .harness/skills.lock.json .harness/config.json .claude/skills .agents/skills AGENTS.md docs/agents/issue-tracker.md docs/agents/triage-labels.md docs/agents/domain.md
   git commit -m "chore: instala o método do agent-harness"
 Depois rode: tools/ah doctor
 $ tools/ah metodo instalar
