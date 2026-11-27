@@ -634,12 +634,16 @@ Comando da extensão `registros`, que acompanha o harness e só existe com `"reg
 - **Sem rede.** A cópia vale como guarda e a pasta sai do worktree mesmo assim; o ticket fica `pendente`, com o aviso, e o `close` comenta o diário antes do resumo.
 - **`--frente` em frente alheia.** Vale para frente passada, órfã (dona morta) ou sem dona. A frente ativa de outra sessão viva é recusada: ela pode estar no meio da execução.
 - **Handoff.** A reação `aoPassar` comenta o diário e guarda a cópia como o `guardar`, mas deixa a pasta no worktree, porque o trabalho continua.
+- **Retomada.** Na retomada (`ah open` de frente passada), o plano cujo diário não está no worktree recebe de volta o da cópia desta máquina ou, sem ela, o mais novo dos comentários `ah:registro` da frente nos tickets: `progress.md`, `plan-path` e o `.gitignore` de `.superpowers/sdd/`, no lugar em que o subagent-driven-development o procura (`Registros: devolvi o diário de 2 planos a …/.superpowers/sdd/ (do ticket).`). Diário que já está no worktree não é tocado. Diário cortado no ticket não é devolvido, com o aviso.
+- **Fechamento.** Depois do `close`, a reação `depoisDeFechar` comenta primeiro o diário que ficou `pendente` e depois o resumo (marcador `ah:registro-resumo`): por plano, as tarefas concluídas com os commits e o veredito da revisão, as paradas com a última linha e as decisões (`Ruling:`). Com todos os comentários feitos, apaga a cópia (`Registros: resumo da execução comentado em #7.`). Fechamento só local, sem ticket ou sem rede: mostra o resumo na saída e mantém a cópia. Sem cópia: `Registros: nenhum diário guardado para a frente as-1.` Ela roda sob a trava das frentes do `close`; cada chamada ao `gh` tem o prazo de 15 s do núcleo.
+- **Começo de sessão.** Quando o worktree da frente tem diário sem cópia, ou diferente dela, o resumo traz `Registros: o worktree da frente tem diário não guardado (1 plano); rode tools/ah registros guardar antes do ah close.`
 - **Nunca recusa o trabalho.** A extensão não usa `antesDeFechar`; as reações que falham viram aviso.
 
 ```
 $ tools/ah registros guardar
 Diário de 1 plano guardado em /home/ana/.local/state/agent-harness/loja/registros/as-1; comentado em #7.
 $ tools/ah close
+Registros: resumo da execução comentado em #7.
 Frente as-1 carrinho fechada.
 ```
 
