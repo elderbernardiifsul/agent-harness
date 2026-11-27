@@ -207,13 +207,13 @@ test('sem ramos protegidos a proteção no servidor é aviso', () => {
   assert.match(p.ah(['doctor']).saida, /^aviso\s+Proteção no servidor: .*protegido/m);
 });
 
-test('C1: o doctor tem 24 itens, com "Harness no ramo base" antes de "Gancho responde" e os da fatia 2 depois dele', async () => {
+test('C1: o doctor tem 25 itens, com "Harness no ramo base" antes de "Gancho responde" e os da fatia 2 depois dele', async () => {
   const { VERIFICACOES } = await import('../nucleo/comandos/doctor.mjs');
   const nomes = VERIFICACOES.map(v => v.item);
   // 16 da fatia 1 e da tarefa 5, menos "Fila de pendentes" (virou "Comentários pendentes"), mais 5 da tarefa 14,
   // mais "Fila de pesado" (fatia 3), "Adaptador do agente em uso" (fatia 4), "Núcleo igual ao clone de origem" (fatia 5)
-  // e ".harness é uma pasta do projeto" (pendências), logo antes da configuração.
-  assert.equal(nomes.length, 24);
+  // e ".harness é uma pasta do projeto" (pendências), logo antes da configuração, mais "CLAUDE.md aponta para o AGENTS.md" (método).
+  assert.equal(nomes.length, 25);
   assert.equal(nomes.indexOf('.harness/config.json válido'), nomes.indexOf('.harness é uma pasta do projeto') + 1);
   assert.equal(nomes.indexOf('Núcleo igual ao clone de origem'), nomes.indexOf('Cópia do núcleo (MANIFEST.json)') + 1);
   assert.ok(nomes.includes('Fila de pesado'));
@@ -537,4 +537,17 @@ test('.harness pasta comum: o item do doctor sai ok', () => {
   } finally {
     p.limpar();
   }
+});
+
+test('doctor avisa CLAUDE.md sem @AGENTS.md e CLAUDE.md com conteúdo próprio', () => {
+  const p = criarProjeto();
+  const item = () => p.ah(['doctor']).saida;
+  assert.match(item(), /^ok\s+CLAUDE\.md aponta para o AGENTS\.md/m);
+  gravar(p, 'CLAUDE.md', '# Loja\n');
+  assert.match(item(), /^aviso\s+CLAUDE\.md aponta para o AGENTS\.md.*rode ah init/m);
+  gravar(p, 'CLAUDE.md', '@AGENTS.md\n\nUse pnpm.\n');
+  assert.match(item(), /^aviso\s+CLAUDE\.md aponta para o AGENTS\.md.*o Codex e o OpenCode não leem o CLAUDE\.md; mova esse conteúdo para o AGENTS\.md/m);
+  gravar(p, 'CLAUDE.md', '@AGENTS.md\n');
+  assert.match(item(), /^ok\s+CLAUDE\.md aponta para o AGENTS\.md/m);
+  p.limpar();
 });

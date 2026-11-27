@@ -191,7 +191,7 @@ export function criarProjeto(opcoes = {}) {
   const p = criarRepo(opcoes);
   const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']);
   if (r.codigo !== 0) throw new Error(`ah init falhou: ${r.erro}`);
-  for (const args of [['add', '--', '.harness', 'tools', 'docs/agents', '.claude', '.github', 'AGENTS.md'], ['commit', '-m', 'chore: instala o harness']]) {
+  for (const args of [['add', '--', '.harness', 'tools', 'docs/agents', '.claude', '.github', 'AGENTS.md', 'CLAUDE.md'], ['commit', '-m', 'chore: instala o harness']]) {
     const g = p.git(args);
     if (g.codigo !== 0) throw new Error(`git ${args.join(' ')} falhou: ${g.erro}`);
   }

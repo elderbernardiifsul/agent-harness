@@ -15,7 +15,7 @@ import { idCurto, lerSessao } from '../lib/sessao.mjs';
 import { aberturaParada, frenteOrfa, inicioDoProcesso, vidaDaDona } from '../lib/vida.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
 import { gh, protecaoDoRamo, repoAtual } from '../lib/github.mjs';
-import { mesclarGanchos } from './init.mjs';
+import { LINHA_DO_CLAUDE, mesclarGanchos } from './init.mjs';
 import { ADAPTADORES, O_QUE_SE_PERDE, agenteEmUso } from '../adaptadores/registro.mjs';
 import { dirDaFila, retratoDaFila } from '../lib/fila.mjs';
 import { arquivosDaCopia, citar, diferenca, eClone, lerManifesto, listaDoManifesto, versaoDoClone } from '../lib/copia.mjs';
@@ -313,6 +313,17 @@ export const VERIFICACOES = [
     if (!amb.config) return null;
     const faltam = [amb.config.git.base, ...amb.config.git.protegidos].filter(r => !existeRamo(amb.raiz, r, { env: amb.env }));
     return faltam.length ? falha(nome, `faltam os ramos ${faltam.join(', ')}; rode ah init`) : ok(nome);
+  }),
+
+  verificacao('CLAUDE.md aponta para o AGENTS.md', amb => {
+    const nome = 'CLAUDE.md aponta para o AGENTS.md';
+    if (!amb.config || !usaClaude(amb)) return null;
+    let texto;
+    try { texto = fs.readFileSync(path.join(amb.raiz, 'CLAUDE.md'), 'utf8'); } catch { return aviso(nome, 'o Claude Code ignora o AGENTS.md sem a linha @AGENTS.md no CLAUDE.md; rode ah init'); }
+    const linhas = texto.split(/\r?\n/).map(l => l.trim());
+    if (!linhas.includes(LINHA_DO_CLAUDE)) return aviso(nome, 'o CLAUDE.md não tem a linha @AGENTS.md e o Claude Code ignora o AGENTS.md; rode ah init');
+    if (linhas.some(l => l !== '' && l !== LINHA_DO_CLAUDE)) return aviso(nome, 'o CLAUDE.md tem conteúdo próprio: o Codex e o OpenCode não leem o CLAUDE.md; mova esse conteúdo para o AGENTS.md');
+    return ok(nome);
   }),
 
   verificacao('Ganchos do Claude Code instalados', amb => {

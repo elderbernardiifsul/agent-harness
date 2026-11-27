@@ -278,7 +278,7 @@ test('C1: já no ramo base o init não manda trocar; commit na main é acusado p
 
   const p = criarRepo({ ramos: ['main'] });
   assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as', '--sem-protecao']).codigo, 0);
-  assert.equal(p.git(['add', '--', '.harness', 'tools', 'docs/agents', '.claude', '.github', 'AGENTS.md']).codigo, 0);
+  assert.equal(p.git(['add', '--', '.harness', 'tools', 'docs/agents', '.claude', '.github', 'AGENTS.md', 'CLAUDE.md']).codigo, 0);
   assert.equal(p.git(['commit', '-m', 'chore: instala o harness']).codigo, 0);
   const d = p.ah(['doctor']);
   assert.equal(d.codigo, 1);
@@ -485,4 +485,54 @@ test('--projeto e --agentes com a configuração já existente: recusa o valor d
   } finally {
     p.limpar();
   }
+});
+
+// ---- CLAUDE.md com @AGENTS.md (o Claude Code ignora o AGENTS.md quando há CLAUDE.md)
+
+test('init cria o CLAUDE.md só com @AGENTS.md', () => {
+  const p = criarRepo();
+  try {
+    assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as']).codigo, 0);
+    assert.equal(ler(p, 'CLAUDE.md'), '@AGENTS.md\n');
+  } finally { p.limpar(); }
+});
+
+test('init acrescenta @AGENTS.md no topo do CLAUDE.md que não tem a linha e mantém o resto', () => {
+  const p = criarRepo();
+  try {
+    gravar(p, 'CLAUDE.md', '# Loja\r\n\r\nUse pnpm.\r\n');
+    assert.equal(p.ah(['init', '--projeto', 'loja', '--sigla', 'as']).codigo, 0);
+    assert.equal(ler(p, 'CLAUDE.md'), '@AGENTS.md\r\n\r\n# Loja\r\n\r\nUse pnpm.\r\n');
+  } finally { p.limpar(); }
+});
+
+test('init não duplica a linha que já está no CLAUDE.md, mesmo no meio', () => {
+  const p = criarRepo();
+  try {
+    gravar(p, 'CLAUDE.md', '# Loja\n\n@AGENTS.md\n');
+    p.ah(['init', '--projeto', 'loja', '--sigla', 'as']);
+    assert.equal(ler(p, 'CLAUDE.md'), '# Loja\n\n@AGENTS.md\n');
+  } finally { p.limpar(); }
+});
+
+test('init não segue CLAUDE.md que é link simbólico e diz o que fazer', { skip: process.platform === 'win32' }, t => {
+  const p = criarRepo();
+  t.after(() => p.limpar());
+  const fora = fs.mkdtempSync(path.join(os.tmpdir(), 'ah-claude-'));
+  t.after(() => fs.rmSync(fora, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(fora, 'regras.md'), '# Regras\n');
+  fs.symlinkSync(path.join(fora, 'regras.md'), path.join(p.raiz, 'CLAUDE.md'));
+  const r = initLoja(p, '--sobrescrever');
+  assert.equal(r.codigo, 0, r.erro);
+  assert.ok(fs.lstatSync(path.join(p.raiz, 'CLAUDE.md')).isSymbolicLink());
+  assert.equal(fs.readFileSync(path.join(fora, 'regras.md'), 'utf8'), '# Regras\n');
+  assert.match(r.erro, /CLAUDE\.md é um link simbólico[\s\S]*Faça: acrescente a linha @AGENTS\.md/);
+});
+
+test('o commit indicado pelo init inclui o CLAUDE.md', () => {
+  const p = criarRepo();
+  try {
+    const r = p.ah(['init', '--projeto', 'loja', '--sigla', 'as']);
+    assert.match(r.saida, /git add -- .* CLAUDE\.md/);
+  } finally { p.limpar(); }
 });

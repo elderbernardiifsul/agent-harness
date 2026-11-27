@@ -303,7 +303,7 @@ test('tools/ah diferente do modelo novo: o atualizar não troca e diz como troca
 test('o fim do atualizar diz como levar a atualização para o ramo base', t => {
   const { p, clone } = cenario(t);
   const r = clone.ah(p, ['atualizar']);
-  assert.match(r.saida, /Falta levar a atualização para o ramo base dev \(as frentes partem dele\):\n {2}git add -- \.harness\/nucleo AGENTS\.md\n {2}git commit -m "chore: atualiza o agent-harness"\nDepois rode: tools\/ah doctor\n$/);
+  assert.match(r.saida, /Falta levar a atualização para o ramo base dev \(as frentes partem dele\):\n {2}git add -- \.harness\/nucleo AGENTS\.md CLAUDE\.md\n {2}git commit -m "chore: atualiza o agent-harness"\nDepois rode: tools\/ah doctor\n$/);
 });
 
 test('dois atualizar ao mesmo tempo: o segundo espera a trava "atualizar" do estado antes de mexer no núcleo', async t => {
@@ -385,4 +385,14 @@ test('--simular que termina em recusa não grava nada, nem o evento recusa-de-co
   // Sem --simular, a mesma recusa continua registrada.
   assert.equal(clone.ah(p, ['atualizar']).codigo, 1);
   assert.match(fs.readFileSync(eventos, 'utf8'), /"tipo":"recusa-de-comando","comando":"atualizar"/);
+});
+
+test('atualizar cria o CLAUDE.md que falta e o põe no commit indicado', t => {
+  const { p, clone } = cenario(t);
+  fs.rmSync(path.join(p.raiz, 'CLAUDE.md'));
+  const r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Reapliquei a linha @AGENTS\.md em CLAUDE\.md\./);
+  assert.equal(ler(p, 'CLAUDE.md'), '@AGENTS.md\n');
+  assert.match(r.saida, /git add -- .* CLAUDE\.md/);
 });
