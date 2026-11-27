@@ -31,7 +31,7 @@ async function cenario(t) {
   const bancos = fs.mkdtempSync(path.join(os.tmpdir(), 'ambiente-bancos-'));
   t.after(() => fs.rmSync(bancos, { recursive: true, force: true }));
   for (const b of ['loja_velho', 'loja_fixo', 'outro_banco']) fs.writeFileSync(path.join(bancos, b), '');
-  const p = projetoDeTeste({ extensoes: { ambiente: {
+  const p = projetoDeTeste({ extensoes: { recursos: true, ambiente: {
     portas: { faixa: [de, de + 9], chaves: ['PORTA_WEB'] },
     banco: {
       nome: 'loja_{frente}', chave: 'BANCO',
@@ -42,20 +42,26 @@ async function cenario(t) {
     fixos: { portas: [de + 6], bancos: ['loja_fixo'] },
   } } });
   t.after(() => p.limpar());
+  fs.appendFileSync(path.join(p.raiz, '.gitignore'), '.env.frente\n');
+  assert.equal(p.git(['commit', '-q', '-am', 'ignora o arquivo de ambiente']).codigo, 0);
   ok(p.ah(['open', 'carrinho']));
   return { p, de, bancos };
 }
 
 test('sweep lista a porta e o banco sem frente, e não os da frente, os fixos e os fora do molde', async t => {
   const { p, de } = await cenario(t);
-  await escutar(t, de);       // a porta da frente carrinho, em uso pelo servidor dela
+  const daFrente = p.frente('carrinho').extensoes.ambiente.portas.PORTA_WEB;
+  await escutar(t, daFrente); // a porta da frente carrinho, em uso pelo servidor dela
   await escutar(t, de + 5);   // sem frente
   await escutar(t, de + 6);   // fixa
+  ok(p.ah(['recursos', 'reservar', 'porta', String(de + 7)]));
+  await escutar(t, de + 7);   // reservada pela extensão recursos
   const saida = ok(p.ah(['sweep'])).saida;
   assert.match(saida, new RegExp(`^- ambiente: porta ${de + 5} em uso sem frente; Faça: encerre o processo ou declare a porta em extensoes\\.ambiente\\.fixos\\.portas$`, 'm'));
   assert.match(saida, /^- ambiente: banco loja_velho sem frente; Faça: apague com o comando de extensoes\.ambiente\.banco\.apagar ou declare em fixos\.bancos$/m);
-  assert.doesNotMatch(saida, new RegExp(`porta ${de} `));
+  assert.doesNotMatch(saida, new RegExp(`porta ${daFrente} `));
   assert.doesNotMatch(saida, new RegExp(`porta ${de + 6} `));
+  assert.doesNotMatch(saida, new RegExp(`porta ${de + 7} `));
   assert.doesNotMatch(saida, /loja_carrinho|loja_fixo|outro_banco/);
   const json = JSON.parse(ok(p.ah(['sweep', '--json'])).saida);
   assert.equal(json.extensoes.ambiente.length, 2);

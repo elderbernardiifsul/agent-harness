@@ -61,8 +61,27 @@ test('worktree sujo recusa antes de rodar o teste', t => {
   const marca = path.join(wt, 'rodou');
   const r = p.ah(['prova', 'unit', '--', 'node', '-e', `require('fs').writeFileSync(${JSON.stringify(marca)}, '')`]);
   assert.equal(r.codigo, 1);
-  assert.match(r.erro, /arquivo rastreado alterado/);
+  assert.match(r.erro, /mudança fora do commit \(carrinho\.txt\)/);
   assert.equal(fs.existsSync(marca), false);
+});
+
+test('arquivo não rastreado recusa: o teste usaria o que a árvore não tem', t => {
+  const p = novoProjeto(t);
+  const wt = frenteComCommit(p);
+  fs.writeFileSync(path.join(wt, 'modulo.js'), 'export default 1;\n');
+  const r = p.ah(['prova', 'unit']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /mudança fora do commit \(modulo\.js\)/);
+  assert.match(r.erro, /Faça: commite, ponha no \.gitignore o que é gerado, ou desfaça/);
+  assert.equal(p.frente('carrinho').extensoes?.prova, undefined);
+});
+
+test('o comando da configuração roda sem shell, mesmo com um elemento só', t => {
+  const p = novoProjeto(t, { comandos: { unit: ['exit 0'] } });
+  frenteComCommit(p);
+  const r = p.ah(['prova', 'unit']);
+  assert.notEqual(r.codigo, 0);
+  assert.match(r.saida, /O teste unit falhou/);
 });
 
 test('teste que muda arquivo rastreado não grava', t => {

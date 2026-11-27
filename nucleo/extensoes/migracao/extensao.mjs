@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { migracoesDaBase, numeroDoArquivo, planoDeRenumeracao, proximoNumero, formatar } from './numeros.mjs';
+import { emDia, migracoesDaBase, numeroDoArquivo, planoDeRenumeracao, proximoNumero, formatar } from './numeros.mjs';
 
 const USO = 'ah migracao reservar|liberar|renumerar [--frente <nome>] | ah migracao listar [--json]';
 const CAMPOS = ['pasta', 'padrao', 'digitos', 'renumerar'];
@@ -138,14 +138,20 @@ async function renumerar(args, ctx) {
     ctx.escrever(`A frente ${f.id} ${f.nome} não tem migração fora da ${o.base} (a última da ${o.base} é a ${formatar(ultima, o.digitos)}): nada a renumerar.\n`);
     return 0;
   }
-  const plano = planoDeRenumeracao(daFrente, ultima, o.padrao, o.digitos);
-  const reservar = numero => ctx.gravarCampos(f.nome, (secao, { frentes }) => {
+  // Sob a trava: o primeiro número novo é o próximo livre depois da base e das reservas das outras frentes, e a
+  // reserva (o último número da frente) é gravada antes dos renomes, para outra reserva não pegar o mesmo número.
+  // Com mais de uma migração, a reserva guarda a última: a próxima reserva de outra frente vem depois dela.
+  const numeros = daFrente.map(a => numeroDoArquivo(a, o.padrao));
+  let inicio = null;
+  await ctx.gravarCampos(f.nome, (secao, { frentes }) => {
     conferirDona(ctx, frentes.find(x => x.nome === f.nome));
-    return { numero, em: new Date().toISOString() };
+    const outras = frentes.filter(x => x.nome !== f.nome).map(numeroDe).filter(n => n !== null);
+    inicio = emDia(numeros, ultima, outras) ? numeros[0] : proximoNumero(ultima, outras);
+    return { numero: inicio + daFrente.length - 1, em: new Date().toISOString() };
   });
+  const plano = planoDeRenumeracao(daFrente, inicio, o.padrao, o.digitos);
   if (!plano.length) {
-    await reservar(ultima + 1);
-    ctx.escrever(`A migração da frente (${daFrente.join(', ')}) já está em dia: segue a ${formatar(ultima, o.digitos)} da ${o.base}.\n`);
+    ctx.escrever(`A migração da frente (${daFrente.join(', ')}) já está em dia: segue a ${formatar(ultima, o.digitos)} da ${o.base}, sem número de outra frente.\n`);
     return 0;
   }
   const ocupado = plano.find(({ para }) => fs.existsSync(path.join(pasta, para)) && !daFrente.includes(para));
@@ -164,12 +170,11 @@ async function renumerar(args, ctx) {
       const r = spawnSync(prog, resto, { cwd: wt, env: ctx.env, encoding: 'utf8' });
       if (r.error || r.status !== 0) {
         throw recusa(ctx, `o passo de renumerar da configuração falhou em ${seta(par)} (${r.error?.message ?? `código ${r.status}`}): ${(r.stderr || r.stdout || '').trim().slice(-400)}; já renomeados (em stage): ${feitos.map(seta).join(', ')}`,
-          'conserte o passo da ferramenta para esses arquivos à mão, ou desfaça com git restore --staged --worktree e rode de novo');
+          `conserte o passo da ferramenta para esses arquivos à mão, ou desfaça com git restore --source=HEAD --staged --worktree -- ${o.pasta} (descarta também o que não foi commitado nessa pasta) e rode de novo`);
       }
     }
   }
-  await reservar(ultima + 1);
-  ctx.escrever(`A migração da frente agora segue a ${formatar(ultima, o.digitos)} da ${o.base}: ${plano.map(seta).join(', ')}.\n`);
+  ctx.escrever(`A migração da frente agora vai de ${formatar(inicio, o.digitos)} em diante (a última da ${o.base} é a ${formatar(ultima, o.digitos)}): ${plano.map(seta).join(', ')}.\n`);
   const antigos = plano.flatMap(({ de }) => ['-e', de]);
   const citam = g(['grep', '-l', '-F', ...antigos, '--', '.', `:!${o.pasta}`]).saida.split('\n').filter(Boolean);
   if (citam.length) ctx.escrever(`Citam o nome antigo: ${citam.join(', ')}.\n`);

@@ -29,14 +29,20 @@ export const proximoNumero = (ultima, reservas) => Math.max(ultima, ...reservas)
 
 export const formatar = (n, digitos) => String(n).padStart(digitos, '0');
 
-// Os renomes que põem as migrações da frente (`daFrente`, nomes em ordem) logo depois da última da base:
-// [{de, para}], só com os que mudam. Lista vazia: já em dia. Troca só o número, no lugar do primeiro grupo do padrão.
-export function planoDeRenumeracao(daFrente, ultima, padrao, digitos) {
+// A frente está em dia quando os números dela vêm depois da última da base, em sequência, e nenhum foi reservado
+// por outra frente: então ninguém vai disputar esses números, e renumerar não muda nada.
+export function emDia(numeros, ultima, outras) {
+  return numeros[0] > ultima && numeros.every((n, i) => n === numeros[0] + i && !outras.includes(n));
+}
+
+// Os renomes que põem as migrações da frente (`daFrente`, nomes em ordem) em sequência a partir de `inicio`:
+// [{de, para}], só com os que mudam. Troca só o número, no lugar do primeiro grupo do padrão.
+export function planoDeRenumeracao(daFrente, inicio, padrao, digitos) {
   return daFrente.flatMap((de, i) => {
     const m = padrao.exec(de);
-    const novo = ultima + 1 + i;
+    const novo = inicio + i;
     if (Number.parseInt(m[1], 10) === novo) return [];
-    const inicio = m.index + m[0].indexOf(m[1]);
-    return [{ de, para: de.slice(0, inicio) + formatar(novo, digitos) + de.slice(inicio + m[1].length) }];
+    const pos = m.index + m[0].indexOf(m[1]);
+    return [{ de, para: de.slice(0, pos) + formatar(novo, digitos) + de.slice(pos + m[1].length) }];
   });
 }

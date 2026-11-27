@@ -14,6 +14,7 @@ const USO = 'ah ambiente [mostrar] [--json] | ah ambiente preparar | ah ambiente
 const CHAVE = /^[A-Z_][A-Z0-9_]*$/;
 const BANCO = /^[a-z_][a-z0-9_]{0,62}$/;
 const ARQUIVO_PADRAO = '.env.frente';
+const CABECALHO = '# gerado por ah ambiente para esta frente; não edite: refaça com tools/ah ambiente preparar\n';
 
 const recusa = (ctx, motivo, saida) => new ctx.ErroDeUso(`${motivo}\nPróximo passo: ${saida}`);
 const secaoDe = f => f?.extensoes?.ambiente ?? {};
@@ -30,7 +31,8 @@ function rodar(ctx, argv, valores) {
   return { ok: r.status === 0, erro: (r.stderr || r.stdout || `código ${r.status}`).trim().slice(-300), saida: r.stdout ?? '' };
 }
 
-// As portas já tomadas por outras frentes: as desta extensão e as do tipo porta da extensão recursos.
+// As portas já tomadas por outras frentes (por todas, com `nome` null): as desta extensão e as do tipo porta da
+// extensão recursos.
 function portasDeOutras(frentes, nome) {
   return frentes.filter(f => f.nome !== nome).flatMap(f => [
     ...Object.values(secaoDe(f).portas ?? {}),
@@ -60,6 +62,11 @@ async function criarBanco(ctx, f, avisos) {
   const b = ctx.config.banco;
   const nome = nomeDoBanco(b.nome, f.nome);
   if (secaoDe(f).banco?.criado === true) return;
+  // Uma frente chamada "test" com o molde loja_{frente} daria o banco comum de teste: a frente fica sem banco.
+  if (fixosDe(ctx.config).bancos.has(nome)) {
+    avisos.push(`o nome da frente ${f.nome} dá o banco fixo ${nome}; Faça: mude extensoes.ambiente.banco.nome ou abra a frente com outro nome`);
+    return;
+  }
   if (!BANCO.test(nome)) {
     avisos.push(`o banco ${nome.slice(0, 70)} não é um nome válido (minúsculas, números e _); Faça: mude extensoes.ambiente.banco.nome`);
     return;
@@ -69,23 +76,39 @@ async function criarBanco(ctx, f, avisos) {
   if (!r.ok) avisos.push(`não consegui criar o banco ${nome}: ${r.erro}; Faça: confira o banco e o comando extensoes.ambiente.banco.criar e rode ah ambiente preparar`);
 }
 
-function escreverArquivo(ctx, f) {
+// O arquivo é nosso quando ainda não existe ou começa com o nosso cabeçalho. O de outra origem (o .env do aluno,
+// com as chaves dele) nunca é sobrescrito nem apagado.
+function eNosso(caminho) {
+  try { return fs.readFileSync(caminho, 'utf8').startsWith(CABECALHO); } catch (e) { return e.code === 'ENOENT'; }
+}
+
+function escreverArquivo(ctx, f, avisos) {
   const secao = secaoDe(f);
   if (!f.worktree || !fs.existsSync(f.worktree)) return;
+  const arquivo = arquivoDe(ctx.config);
+  const caminho = path.join(f.worktree, arquivo);
+  if (!eNosso(caminho)) {
+    avisos.push(`${arquivo} já existe e não foi gerado pelo ah ambiente; Faça: use outro extensoes.ambiente.arquivo ou apague o arquivo à mão e rode ah ambiente preparar`);
+    return;
+  }
   const linhas = Object.entries(secao.portas ?? {}).map(([k, v]) => `${k}=${v}`);
   if (secao.banco) linhas.push(`${ctx.config.banco.chave}=${secao.banco.nome}`);
-  const cabecalho = '# gerado por ah ambiente para esta frente; não edite: refaça com tools/ah ambiente preparar\n';
-  fs.writeFileSync(path.join(f.worktree, arquivoDe(ctx.config)), cabecalho + linhas.map(l => `${l}\n`).join(''));
+  fs.mkdirSync(path.dirname(caminho), { recursive: true });
+  fs.writeFileSync(caminho, CABECALHO + linhas.map(l => `${l}\n`).join(''));
+  // Fora do .gitignore, o arquivo aparece como alteração não commitada, e o close recusa o worktree.
+  if (ctx.git(['check-ignore', '-q', '--', arquivo], { cwd: f.worktree }).codigo === 1) {
+    avisos.push(`${arquivo} não está no .gitignore; Faça: acrescente ${arquivo} ao .gitignore e commite (senão o close recusa o worktree)`);
+  }
 }
 
 // Portas, banco e arquivo, nessa ordem; só faz o que falta (serve à abertura, à retomada e ao comando).
-// Nunca lança: devolve os avisos, para a reação não derrubar o open.
+// O que se espera dar errado (faixa cheia, banco desligado, arquivo alheio) vira aviso, para não derrubar o open.
 async function preparar(ctx, nome) {
   const avisos = [];
   const atual = () => ctx.frentes().find(x => x.nome === nome);
   if (ctx.config.portas) await reservarPortas(ctx, atual(), avisos);
   if (ctx.config.banco) await criarBanco(ctx, atual(), avisos);
-  escreverArquivo(ctx, atual());
+  escreverArquivo(ctx, atual(), avisos);
   return avisos;
 }
 
@@ -123,23 +146,25 @@ const SUBCOMANDOS = {
     ctx.escrever(`Ambiente da frente ${f.id} ${f.nome}: ${texto(ctx.frentes().find(x => x.nome === f.nome))}.\n`);
     return avisos.length ? 1 : 0;
   },
-  // O passo antes do close enquanto o arquivo de ambiente no worktree travar o fechamento (P5).
+  // Devolve a frente ao que era antes do ambiente: sem banco, sem portas, sem arquivo.
   async desfazer(args, ctx) {
     const f = frenteDaSessao(ctx);
+    const secao = secaoDe(f);
     const falha = apagarBanco(ctx, f);
     if (falha) throw recusa(ctx, falha.split('; Faça: ')[0], 'confira o banco e rode ah ambiente desfazer de novo');
-    fs.rmSync(path.join(f.worktree, arquivoDe(ctx.config)), { force: true });
+    const feito = [];
+    if (secao.banco?.criado && !fixosDe(ctx.config).bancos.has(secao.banco.nome)) feito.push(`banco ${secao.banco.nome} apagado`);
+    if (Object.keys(secao.portas ?? {}).length) feito.push('portas liberadas');
+    const arquivo = arquivoDe(ctx.config);
+    const caminho = path.join(f.worktree, arquivo);
+    const alheio = fs.existsSync(caminho) && !eNosso(caminho);
+    if (fs.existsSync(caminho) && !alheio) { fs.rmSync(caminho); feito.push(`${arquivo} removido`); }
     await ctx.gravarCampos(f.nome, { portas: undefined, banco: undefined });
-    ctx.escrever(`Ambiente da frente ${f.id} ${f.nome} desfeito: banco apagado, portas liberadas, ${arquivoDe(ctx.config)} removido.\n`);
+    ctx.escrever(`Ambiente da frente ${f.id} ${f.nome} desfeito: ${feito.join(', ') || 'nada a desfazer'}.\n`);
+    if (alheio) ctx.escrever(`${arquivo} não foi removido (não foi gerado pelo ah ambiente).\n`);
     return 0;
   },
 };
-
-// Para a P5 do close: o arquivo de ambiente é refeito a partir do estado, e perdê-lo não perde trabalho.
-// Fica fora do export default até o núcleo aceitar o campo `ignorados` (hoje, campo desconhecido impede a carga).
-export function ignorados(ctx) {
-  return [{ caminho: arquivoDe(ctx.config), descartavel: true }];
-}
 
 const eArgv = v => Array.isArray(v) && v.length > 0 && v.every(a => typeof a === 'string' && a !== '');
 const ePorta = v => Number.isInteger(v) && v >= 1 && v <= 65535;
@@ -176,6 +201,12 @@ export default {
   descricao: 'portas, banco e arquivo de ambiente por frente, criados na abertura e desfeitos no fechamento',
   validarConfig: erroDaConfig,
 
+  // O arquivo de ambiente é refeito a partir do estado: perdê-lo com o worktree não perde trabalho, e o close
+  // não o conta como item ignorado a guardar.
+  ignorados(ctx) {
+    return [{ caminho: arquivoDe(ctx.config).replaceAll('\\', '/'), descartavel: true }];
+  },
+
   comandos: {
     ambiente: {
       descricao: 'mostra, prepara de novo ou desfaz as portas, o banco e o arquivo de ambiente da frente',
@@ -206,7 +237,7 @@ export default {
       const frentes = ctx.frentes();
       const fixos = fixosDe(ctx.config);
       if (ctx.config.portas) {
-        const deFrentes = new Set(frentes.flatMap(f => Object.values(secaoDe(f).portas ?? {})));
+        const deFrentes = new Set(portasDeOutras(frentes, null));
         const [de, ate] = ctx.config.portas.faixa;
         for (let p = de; p <= ate; p++) {
           if (deFrentes.has(p) || fixos.portas.has(p) || !(await portaEmUso(p))) continue;

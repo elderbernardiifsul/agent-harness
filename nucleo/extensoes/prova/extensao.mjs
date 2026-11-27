@@ -31,9 +31,10 @@ function arvoreDe(ctx, ref, cwd) {
   return r.codigo === 0 ? r.saida.trim() : null;
 }
 
-// Arquivos rastreados com mudança fora do commit: com eles, a árvore testada não seria a do HEAD.
+// O que está no disco e não no commit: arquivo rastreado alterado e arquivo novo não rastreado (o teste o usaria,
+// e a árvore do HEAD não o tem). O que o .gitignore ignora não conta.
 function alterados(ctx, cwd) {
-  const r = ctx.git(['status', '--porcelain', '--untracked-files=no'], { cwd });
+  const r = ctx.git(['status', '--porcelain'], { cwd });
   if (r.codigo !== 0) throw recusa(ctx, `não consegui ler o estado do worktree ${cwd}: ${r.erro.trim()}`, 'confira o worktree com git status');
   return r.saida.split('\n').filter(Boolean).map(l => l.slice(3));
 }
@@ -51,11 +52,13 @@ async function gravar([rotulo, ...resto], ctx) {
   const wt = f.worktree;
   const sujos = alterados(ctx, wt);
   if (sujos.length) {
-    throw recusa(ctx, `o worktree tem arquivo rastreado alterado (${sujos.slice(0, 5).join(', ')}): a árvore testada não seria a do HEAD.`, 'commite (ou desfaça) e rode ah prova de novo');
+    throw recusa(ctx, `o worktree tem mudança fora do commit (${sujos.slice(0, 5).join(', ')}${sujos.length > 5 ? ', …' : ''}): a árvore testada não seria a do HEAD.`,
+      'commite, ponha no .gitignore o que é gerado, ou desfaça, e rode ah prova de novo');
   }
   const antes = arvoreDe(ctx, 'HEAD', wt);
-  // Um argumento só vai para o shell (como no ah pesado); vários rodam direto, sem shell.
-  const umSo = comando.length === 1;
+  // Depois de --, um argumento só vai para o shell (como no ah pesado); vários rodam direto. O da configuração
+  // é sempre uma lista argv, rodada sem shell.
+  const umSo = resto.length === 2;
   const r = spawnSync(comando[0], comando.slice(1), { cwd: wt, env: ctx.env, stdio: 'inherit', shell: umSo });
   const codigo = r.status ?? 1;
   if (r.error || codigo !== 0) {

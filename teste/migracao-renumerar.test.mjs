@@ -5,11 +5,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { projetoDeTeste } from '../nucleo/lib/extensoes-teste.mjs';
-import { planoDeRenumeracao } from '../nucleo/extensoes/migracao/numeros.mjs';
+import { emDia, planoDeRenumeracao } from '../nucleo/extensoes/migracao/numeros.mjs';
 
 const FERRAMENTA = path.join(path.dirname(fileURLToPath(import.meta.url)), 'migracao-ferramenta-falsa.mjs');
 const PASTA = 'db/migracoes';
 const B = { env: { AH_SESSAO: 'sessao-b-0002' } };
+const C = { env: { AH_SESSAO: 'sessao-c-0003' } };
 const ok = r => { assert.equal(r.codigo, 0, r.erro); return r; };
 
 function commitar(p, cwd, arquivos, outros = {}) {
@@ -46,13 +47,18 @@ function doisEntraPrimeiro(p, outrosDeUm = {}) {
   return w;
 }
 
-test('planoDeRenumeracao: em dia, uma atrás, duas em sequência', () => {
+test('planoDeRenumeracao parte do primeiro número novo; emDia confere base e reservas das outras', () => {
   const padrao = /^(\d+)_/;
-  assert.deepEqual(planoDeRenumeracao(['0003_frete.sql'], 2, padrao, 4), []);
-  assert.deepEqual(planoDeRenumeracao(['0003_frete.sql'], 4, padrao, 4), [{ de: '0003_frete.sql', para: '0005_frete.sql' }]);
-  assert.deepEqual(planoDeRenumeracao(['0003_a.sql', '0004_b.sql'], 3, padrao, 4), [
+  assert.deepEqual(planoDeRenumeracao(['0003_frete.sql'], 3, padrao, 4), []);
+  assert.deepEqual(planoDeRenumeracao(['0003_frete.sql'], 5, padrao, 4), [{ de: '0003_frete.sql', para: '0005_frete.sql' }]);
+  assert.deepEqual(planoDeRenumeracao(['0003_a.sql', '0004_b.sql'], 4, padrao, 4), [
     { de: '0003_a.sql', para: '0004_a.sql' }, { de: '0004_b.sql', para: '0005_b.sql' }]);
-  assert.deepEqual(planoDeRenumeracao(['V3__a.sql'], 4, /^V(\d+)__/, 1), [{ de: 'V3__a.sql', para: 'V5__a.sql' }]);
+  assert.deepEqual(planoDeRenumeracao(['V3__a.sql'], 5, /^V(\d+)__/, 1), [{ de: 'V3__a.sql', para: 'V5__a.sql' }]);
+  assert.equal(emDia([3], 2, []), true);
+  assert.equal(emDia([4], 2, [3]), true, 'acima da base e fora das reservas das outras');
+  assert.equal(emDia([3], 3, []), false, 'a base chegou nela');
+  assert.equal(emDia([5], 4, [5]), false, 'outra frente reservou o mesmo número');
+  assert.equal(emDia([3, 5], 2, []), false, 'fora de sequência');
 });
 
 test('renumera depois da reintegração, deixa em stage e aponta quem cita o nome antigo', t => {
@@ -120,4 +126,39 @@ test('ferramenta que falha: código 1, com o que já foi renomeado', t => {
   assert.equal(r.codigo, 1);
   assert.match(r.erro, /o passo de renumerar da configuração falhou em 0003_um\.sql → 0005_um\.sql/);
   assert.match(r.erro, /já renomeados \(em stage\): 0003_um\.sql → 0005_um\.sql/);
+  assert.match(r.erro, /git restore --source=HEAD --staged --worktree -- db\/migracoes/);
+});
+
+test('renumerar pula o número que outra frente viva reservou', t => {
+  const p = novoProjeto(t);
+  ok(p.ah(['open', 'tres'], C));
+  const w = doisEntraPrimeiro(p);
+  ok(p.ah(['migracao', 'reservar'], C));
+  assert.equal(p.frente('tres').extensoes.migracao.numero, 5);
+  ok(p.ah(['migracao', 'renumerar']));
+  assert.ok(fs.existsSync(path.join(w, PASTA, '0006_um.sql')));
+  assert.equal(p.frente('um').extensoes.migracao.numero, 6);
+});
+
+test('a frente acima da base e fora das outras reservas está em dia, mesmo com buraco', t => {
+  const p = novoProjeto(t);
+  ok(p.ah(['open', 'dois'], B));
+  ok(p.ah(['migracao', 'reservar'], B));
+  ok(p.ah(['open', 'um']));
+  ok(p.ah(['migracao', 'reservar']));
+  commitar(p, wt(p, 'um'), ['0004_um.sql']);
+  assert.match(ok(p.ah(['migracao', 'renumerar'])).saida, /já está em dia/);
+  assert.ok(fs.existsSync(path.join(wt(p, 'um'), PASTA, '0004_um.sql')));
+});
+
+test('frente com duas migrações: a reserva passa a ser a última, e a próxima reserva vem depois dela', t => {
+  const p = novoProjeto(t);
+  ok(p.ah(['open', 'um']));
+  ok(p.ah(['migracao', 'reservar']));
+  commitar(p, wt(p, 'um'), ['0003_a.sql', '0004_b.sql']);
+  ok(p.ah(['migracao', 'renumerar']));
+  assert.equal(p.frente('um').extensoes.migracao.numero, 4);
+  ok(p.ah(['open', 'tres'], C));
+  ok(p.ah(['migracao', 'reservar'], C));
+  assert.equal(p.frente('tres').extensoes.migracao.numero, 5);
 });
