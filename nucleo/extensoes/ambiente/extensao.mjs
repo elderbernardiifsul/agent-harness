@@ -198,6 +198,39 @@ export default {
       if (falha) ctx.avisar(`Aviso: ${falha}\n`);
     },
     // aoPassar não está aqui de propósito: a frente passada continua dona das portas e do banco.
+
+    // O que ficou para trás: porta da faixa escutando sem frente, banco do molde sem frente. Só lista: apagar banco
+    // ou matar processo é decisão de quem sabe o que está ali.
+    async noSweep(ctx) {
+      const linhas = [];
+      const frentes = ctx.frentes();
+      const fixos = fixosDe(ctx.config);
+      if (ctx.config.portas) {
+        const deFrentes = new Set(frentes.flatMap(f => Object.values(secaoDe(f).portas ?? {})));
+        const [de, ate] = ctx.config.portas.faixa;
+        for (let p = de; p <= ate; p++) {
+          if (deFrentes.has(p) || fixos.portas.has(p) || !(await portaEmUso(p))) continue;
+          linhas.push(`porta ${p} em uso sem frente; Faça: encerre o processo ou declare a porta em extensoes.ambiente.fixos.portas`);
+        }
+      }
+      const b = ctx.config.banco;
+      if (b?.listar) {
+        const r = rodar(ctx, b.listar, {});
+        if (!r.ok) linhas.push(`não consegui listar os bancos: ${r.erro}; Faça: confira extensoes.ambiente.banco.listar`);
+        else {
+          // O molde vira expressão regular: o texto literal escapado, e {frente} no lugar de qualquer nome de frente.
+          const literal = b.nome.split('{frente}').map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+          const doMolde = new RegExp(`^${literal.join('[a-z0-9_]+')}$`);
+          const daFrente = new Set(frentes.flatMap(f => [secaoDe(f).banco?.nome, nomeDoBanco(b.nome, f.nome)]));
+          for (const nome of r.saida.split('\n').map(l => l.trim()).filter(Boolean)) {
+            if (!doMolde.test(nome) || daFrente.has(nome) || fixos.bancos.has(nome)) continue;
+            linhas.push(`banco ${nome} sem frente; Faça: apague com o comando de extensoes.ambiente.banco.apagar ou declare em fixos.bancos`);
+          }
+        }
+      }
+      if (ctx.reparar && linhas.length) linhas.push('o --reparar não apaga banco nem encerra processo: confira cada linha e faça à mão');
+      return linhas;
+    },
   },
 
   colunas: [{

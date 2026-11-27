@@ -615,6 +615,7 @@ Comando da extensão `ambiente`, que acompanha o harness, desligada por padrão.
 - **`desfazer`.** Apaga o banco criado pela frente, remove o arquivo do worktree e libera as portas.
 - **Fechamento** (`depoisDeFechar`). Apaga o banco criado pela frente, salvo se for fixo; a falha vira aviso com o comando para apagar à mão. As portas saem do estado com a frente.
 - **Arquivo de ambiente e o `close`.** O arquivo fica no worktree, e o `close` recusa worktree com arquivo não commitado ou ignorado. A extensão declara o arquivo como descartável (refeito a partir do estado), para que o `close` não o conte como perda; enquanto o núcleo não aceitar essa declaração, rode `ah ambiente desfazer` antes do `ah close`.
+- **Sweep.** O `ah sweep` lista, como `- ambiente: …`, cada porta da faixa que está escutando sem ser de frente nem fixa e, com `banco.listar`, cada banco que casa com o molde sem ser de frente nem fixo, com o próximo passo. Banco fora do molde não aparece. Se `listar` falha, sai uma linha com o erro. O `--reparar` não apaga banco nem encerra processo: só acrescenta uma linha dizendo isso.
 - **Passagem.** O `handoff` não libera nada: a frente passada continua dona das portas e do banco.
 - **Quadro.** A coluna `AMBIENTE` mostra as portas e o banco (`4100 4101 loja_carrinho`).
 
@@ -626,6 +627,9 @@ Comando da extensão `ambiente`, que acompanha o harness, desligada por padrão.
 | Aviso: `não consegui criar o banco <banco>: …` | confira o banco e o comando extensoes.ambiente.banco.criar e rode ah ambiente preparar |
 | Aviso: `o banco <banco> não é um nome válido (minúsculas, números e _)` | mude extensoes.ambiente.banco.nome |
 | Aviso: `não consegui apagar o banco <banco>: …` | apague à mão com o comando de extensoes.ambiente.banco.apagar |
+| Sweep: `porta <n> em uso sem frente` | encerre o processo ou declare a porta em extensoes.ambiente.fixos.portas |
+| Sweep: `banco <nome> sem frente` | apague com o comando de extensoes.ambiente.banco.apagar ou declare em fixos.bancos |
+| Sweep: `não consegui listar os bancos: …` | confira extensoes.ambiente.banco.listar |
 | `não consegui apagar o banco <banco>: …` (em `desfazer`) | confira o banco e rode ah ambiente desfazer de novo |
 
 ```
