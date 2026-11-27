@@ -192,11 +192,24 @@ export function pastasDoSdd(worktree) {
   }
 }
 
+// Apaga, dentro de uma pasta, os arquivos que o git não versiona e as pastas que ficam vazias. `rel` é o caminho da
+// pasta relativo ao worktree; `rastreados`, os arquivos que o git versiona (relativos ao worktree).
+function apagarNaoRastreados(abs, rel, rastreados) {
+  for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
+    const filhoAbs = path.join(abs, e.name);
+    const filhoRel = `${rel}/${e.name}`;
+    if (e.isDirectory()) apagarNaoRastreados(filhoAbs, filhoRel, rastreados);
+    else if (!rastreados.has(filhoRel)) fs.rmSync(filhoAbs, { force: true });
+  }
+  if (!fs.readdirSync(abs).length) fs.rmdirSync(abs);
+}
+
 // Tira do worktree o que é do subagent-driven-development e já foi guardado: as pastas de plano (as que têm
 // `progress.md` ou `plan-path`) e, se nada mais sobrou, o `.gitignore` que o `sdd-workspace` cria e as pastas
-// vazias. O que não é dele (um arquivo do aluno em `.superpowers/sdd/`) fica: quem guarda não apaga o que não
+// vazias. Não apaga o que o git versiona (`rastreados`: o projeto pode versionar os diários, como o sdd-workspace
+// prevê) nem o que não é da skill (um arquivo do aluno em `.superpowers/sdd/`): quem guarda não apaga o que não
 // guardou. Devolve as sobras, relativas ao worktree; com sobra, o `ah close` recusa como sempre.
-export function limparPastaDoSdd(worktree) {
+export function limparPastaDoSdd(worktree, rastreados = new Set()) {
   let itens;
   try {
     itens = fs.readdirSync(sdd(worktree), { withFileTypes: true });
@@ -205,13 +218,20 @@ export function limparPastaDoSdd(worktree) {
   }
   const sobras = [];
   for (const e of itens) {
-    const caminho = path.join(sdd(worktree), e.name);
-    const doSdd = e.isDirectory() && ['progress.md', 'plan-path'].some(f => fs.existsSync(path.join(caminho, f)));
-    if (doSdd) fs.rmSync(caminho, { recursive: true, force: true });
-    else if (e.name !== '.gitignore') sobras.push(`.superpowers/sdd/${e.name}${e.isDirectory() ? '/' : ''}`);
+    const abs = path.join(sdd(worktree), e.name);
+    const rel = `.superpowers/sdd/${e.name}`;
+    const doSdd = e.isDirectory() && ['progress.md', 'plan-path'].some(f => fs.existsSync(path.join(abs, f)));
+    if (doSdd) apagarNaoRastreados(abs, rel, rastreados);
+    else if (e.name !== '.gitignore') sobras.push(`${rel}${e.isDirectory() ? '/' : ''}`);
   }
   if (sobras.length) return sobras.sort();
-  fs.rmSync(sdd(worktree), { recursive: true, force: true });
-  try { fs.rmdirSync(path.join(worktree, '.superpowers')); } catch { /* tem outra coisa: fica */ }
+  const ignora = '.superpowers/sdd/.gitignore';
+  if (!rastreados.has(ignora)) fs.rmSync(path.join(worktree, ignora), { force: true });
+  for (const dir of [sdd(worktree), path.join(worktree, '.superpowers')]) {
+    try { fs.rmdirSync(dir); } catch { /* tem outra coisa: fica */ }
+  }
   return [];
 }
+
+// O .gitignore que o sdd-workspace cria (`*`), e não um do projeto.
+export const gitignoreDoSdd = worktree => lerOuNada(path.join(sdd(worktree), '.gitignore')) === '*\n';

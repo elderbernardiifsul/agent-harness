@@ -344,7 +344,7 @@ test('diário mexido no worktree desde a última guarda fica, com aviso', t => {
   fs.appendFileSync(path.join(diarioNoWt(wtA, 'carrinho'), 'progress.md'), 'Task 9: anotação local\n');
   const r = ok(p.ah(['open', 'carrinho']));
   assert.match(progresso(wtA), /anotação local/);
-  assert.match(r.erro, /Aviso: o diário do plano carrinho no worktree mudou desde a última guarda nesta máquina e é diferente do mais novo do ticket; mantive o do worktree/);
+  assert.match(r.erro, /Aviso: o diário do plano carrinho no worktree mudou desde a última guarda nesta máquina, e há outro mais novo do ticket; mantive o do worktree/);
 });
 
 test('guardar com tarefa parada avisa o próximo passo, e registros devolver traz o diário de volta', t => {
@@ -389,4 +389,125 @@ test('com dois tickets, vale o diário mais novo entre eles', t => {
   const q = carla(p, t);
   ok(q.ah(['open', 'carrinho']));
   assert.equal(progresso(wtDe(q)), D2);
+});
+
+// ---------------------------------------------------------------- segunda revisão (27/11)
+
+const X = DIARIO;
+const Y = `${DIARIO}Task 2: complete (commits e4f5a6b..0c1d2e3, review clean)\nTask 3: fix round 1/5 (aberta)\n`;
+
+test('guardar sem rede e devolver com rede: volta o diário mais novo da cópia, não o velho do ticket', t => {
+  const p = projeto(t);
+  const wt = frenteComDiario(p, { planos: { carrinho: X } });
+  ok(p.ah(['handoff']));
+  ok(p.ah(['open', 'carrinho']));
+  fs.writeFileSync(path.join(diarioNoWt(wt, 'carrinho'), 'progress.md'), Y);
+  ok(p.ah(['registros', 'guardar'], { env: { GH_FALSO_FORA: '1' } }));
+  ok(p.ah(['handoff']));
+  // Retomada: o mais novo é o guardado (Y, pendente), que não volta sozinho; o X velho do ticket também não.
+  ok(p.ah(['open', 'carrinho']));
+  assert.ok(!fs.existsSync(diarioNoWt(wt, 'carrinho')));
+  ok(p.ah(['registros', 'devolver']));
+  assert.equal(progresso(wt), Y);
+  // A cópia pendente não foi trocada: o close leva Y ao ticket.
+  fs.rmSync(path.join(wt, '.superpowers'), { recursive: true });
+  ok(p.ah(['close']));
+  assert.ok(comentariosDoRegistro(p, 7).some(c => c.body.includes('Task 3: fix round 1/5 (aberta)')));
+});
+
+test('o diário pendente comentado no close leva a fase e a data de quando foi guardado', t => {
+  const p = projeto(t);
+  frenteComDiario(p);
+  ok(p.ah(['registros', 'guardar'], { env: { GH_FALSO_FORA: '1' } }));
+  const meta = JSON.parse(fs.readFileSync(path.join(copia(p, 'as-1', 'carrinho'), 'meta.json'), 'utf8'));
+  ok(p.ah(['close']));
+  const [c] = comentariosDoRegistro(p, 7);
+  assert.deepEqual([lerMarcador(c.body).fase, lerMarcador(c.body).em], ['guardado', meta.em]);
+});
+
+test('frente com dois tickets: retomada e handoff sem mudança não duplicam em nenhum', t => {
+  const p = projeto(t);
+  p.ghSemear(8, {});
+  frenteComDiario(p, { tickets: ['--tickets', '7,8'] });
+  ok(p.ah(['handoff']));
+  const q = carla(p, t);
+  ok(q.ah(['open', 'carrinho']));
+  ok(q.ah(['handoff']));
+  assert.deepEqual([comentariosDoRegistro(p, 7).length, comentariosDoRegistro(p, 8).length], [1, 1]);
+});
+
+test('retomada lê o marcador v=1 e recusa pasta ou plano inválidos vindos do ticket', t => {
+  const p = projeto(t);
+  frenteComDiario(p, { planos: {} });
+  ok(p.ah(['handoff']));
+  const bloco = texto => `\n\n\`\`\`\`text\n${texto}\`\`\`\`\n`;
+  const v1 = `<!-- ah:registro id=as-1 nome=carrinho pasta=antigo plano=docs%2Fantigo.md commit=abc1234 cortado=0 v=1 -->${bloco('# SDD ledger — plan: docs/antigo.md\n')}`;
+  const ruim = `<!-- ah:registro id=as-1 nome=carrinho pasta=.gitignore plano=..%2F..%2Fx commit=abc1234 cortado=0 em=2099 fase=passagem v=2 -->${bloco('x\n')}`;
+  p.ghSemear(7, { comments: [...p.ghTicket(7).comments, { author: 'ana-souza', body: v1 }, { author: 'ana-souza', body: ruim }] });
+  const q = carla(p, t);
+  const r = ok(q.ah(['open', 'carrinho']));
+  assert.equal(progresso(wtDe(q), 'antigo'), '# SDD ledger — plan: docs/antigo.md\n');
+  assert.match(r.erro, /Aviso: não devolvi o diário do plano \.gitignore: pasta inválida/);
+  assert.ok(!fs.existsSync(path.join(wtDe(q), '.superpowers', 'sdd', '.gitignore', 'progress.md')));
+});
+
+test('worktree mais novo que o ticket (editado depois do handoff): fica, sem aviso', t => {
+  const p = projeto(t);
+  const wt = frenteComDiario(p);
+  ok(p.ah(['handoff']));
+  fs.appendFileSync(path.join(diarioNoWt(wt, 'carrinho'), 'progress.md'), 'Task 3: fix round 1/5 (depois)\n');
+  const r = ok(p.ah(['open', 'carrinho']));
+  assert.match(progresso(wt), /depois/);
+  assert.doesNotMatch(r.erro, /mantive o do worktree/);
+});
+
+test('devolver diz por que não devolveu', t => {
+  const p = projeto(t);
+  ok(p.ah(['open', 'carrinho', '--tickets', '7']));
+  assert.match(ok(p.ah(['registros', 'devolver'])).saida, /^Nada a devolver: não achei diário desta frente nos tickets nem nesta máquina\.$/m);
+  const wt = lerFrente(p, 'carrinho').worktree;
+  fs.rmSync(wt, { recursive: true, force: true });
+  assert.match(ok(p.ah(['registros', 'devolver'])).saida, /^A frente as-1 carrinho não tem worktree nesta máquina; nada a devolver\.$/m);
+});
+
+test('.gitignore do sdd-workspace que sobrou sozinho: o close aponta o guardar, e o guardar o tira', t => {
+  const p = projeto(t);
+  const wt = frenteComDiario(p);
+  fs.writeFileSync(path.join(wt, '.superpowers', 'sdd', 'notas.txt'), 'n');
+  ok(p.ah(['registros', 'guardar']));
+  fs.rmSync(path.join(wt, '.superpowers', 'sdd', 'notas.txt'));
+  const r = p.ah(['close']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /extensão registros guarda/);
+  ok(p.ah(['registros', 'guardar']));
+  assert.ok(!fs.existsSync(path.join(wt, '.superpowers')));
+  ok(p.ah(['close']));
+});
+
+test('guardar não apaga o que o git versiona em .superpowers/sdd/', t => {
+  const p = projeto(t);
+  const wt = frenteComDiario(p);
+  const sdd = path.join(wt, '.superpowers', 'sdd');
+  // O projeto versiona os diários (o sdd-workspace 7.0.2 prevê isso): .gitignore próprio, progress.md rastreado.
+  fs.writeFileSync(path.join(sdd, '.gitignore'), '*\n!.gitignore\n!*/\n!*/progress.md\n');
+  assert.equal(p.git(['add', '-f', '--', '.superpowers/sdd/.gitignore', '.superpowers/sdd/carrinho/progress.md'], { cwd: wt }).codigo, 0);
+  assert.equal(p.git(['commit', '-q', '-m', 'versiona o diário'], { cwd: wt }).codigo, 0);
+  fs.writeFileSync(path.join(sdd, 'carrinho', 'task-1-brief.md'), 'instruções');
+  ok(p.ah(['registros', 'guardar']));
+  assert.ok(fs.existsSync(path.join(sdd, 'carrinho', 'progress.md')));
+  assert.ok(fs.existsSync(path.join(sdd, '.gitignore')));
+  assert.ok(!fs.existsSync(path.join(sdd, 'carrinho', 'task-1-brief.md')));
+  assert.equal(p.git(['status', '--porcelain'], { cwd: wt }).saida, '');
+});
+
+test('o marcador antigo do núcleo (ah:frente sem login) autoriza o autor dele', t => {
+  const p = projeto(t);
+  frenteComDiario(p, { planos: {} });
+  ok(p.ah(['handoff']));
+  const corpo = corpoDoDiario({ frente: { id: 'as-1', nome: 'carrinho' }, diario: { pasta: 'carrinho', plano: PLANO, texto: X }, commit: 'abc1234', em: '2099-01-01T00:00:00.000Z' }).corpo;
+  // O marcador da fatia 1 vem antes no histórico do ticket (depois dele, o núcleo o leria como a frente ativa).
+  p.ghSemear(7, { comments: [{ author: 'bia-lima', body: 'frente antiga\n<!-- ah:frente id=as-1 nome=carrinho -->' }, ...p.ghTicket(7).comments, { author: 'bia-lima', body: corpo }] });
+  const q = carla(p, t);
+  ok(q.ah(['open', 'carrinho']));
+  assert.equal(progresso(wtDe(q)), X);
 });
