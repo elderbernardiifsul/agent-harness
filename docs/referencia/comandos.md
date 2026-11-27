@@ -619,6 +619,38 @@ Como usar: codex -m <modelo> -c model_reasoning_effort=<esforço>
 | `Agente desconhecido: cursor.` | use claude-code, codex ou opencode, ou acrescente o agente em extensoes.modelo.agentes |
 | `Opção desconhecida: …` / `Argumento a mais: …` / `A opção --agente precisa do nome do agente.` | use o uso acima |
 
+## registros
+
+```
+ah registros guardar [--frente <nome>]
+```
+
+Comando da extensão `registros`, que acompanha o harness e só existe com `"registros"` ligada em `extensoes` (a preparação do método a liga). Leva para o ticket da frente o diário da execução por subagentes: o `progress.md` que o subagent-driven-development grava, por plano, em `.superpowers/sdd/<pasta do plano>/`, dentro do worktree e ignorado pelo git. Sem isso, o diário some com o worktree, e a própria skill o apaga quando a revisão final fica limpa.
+
+- **`guardar`.** Para cada plano achado no worktree da frente da sessão (ou da dada em `--frente`, por nome ou id): comenta o diário em cada ticket da frente, com o marcador `<!-- ah:registro id=<id> nome=<nome> pasta=<pasta> plano=<plano> commit=<commit> cortado=<0|1> v=1 -->`; guarda uma cópia em `<estado>/registros/<id da frente>/<pasta>/` (`progress.md` e `meta.json`, com o estado de cada ticket: `comentado` ou `pendente`); e tira do worktree as pastas de plano e o `.gitignore` que o `sdd-workspace` cria. O que não é do subagent-driven-development (um arquivo do aluno em `.superpowers/sdd/`) fica, com um aviso, e o `close` continua recusando por ele. O mesmo diário já comentado no mesmo ticket não é comentado de novo.
+- **Quando rodar.** No fim do subagent-driven-development, antes de a skill apagar a pasta do plano, e antes do `ah close`. Quem esquece encontra a recusa do `close` com a linha `itens ignorados que a extensão registros guarda (…); saída: tools/ah registros guardar --frente carrinho e repita ah close`.
+- **Diário grande ou estranho.** O diário reconhecido (primeira linha `# SDD ledger — plan: …`) vai inteiro até 60 000 caracteres; acima disso, ou em outro formato (até 4 000 caracteres, como texto), vai cortado, com `cortado=1` e uma linha que diz o motivo. A cópia local guarda o diário inteiro.
+- **Sem ticket.** Só a cópia, com o aviso `a frente as-1 não tem ticket: o diário ficou só nesta máquina (…)`.
+- **Sem rede.** A cópia vale como guarda e a pasta sai do worktree mesmo assim; o ticket fica `pendente`, com o aviso, e o `close` comenta o diário antes do resumo.
+- **`--frente` em frente alheia.** Vale para frente passada, órfã (dona morta) ou sem dona. A frente ativa de outra sessão viva é recusada: ela pode estar no meio da execução.
+- **Handoff.** A reação `aoPassar` comenta o diário e guarda a cópia como o `guardar`, mas deixa a pasta no worktree, porque o trabalho continua.
+- **Nunca recusa o trabalho.** A extensão não usa `antesDeFechar`; as reações que falham viram aviso.
+
+```
+$ tools/ah registros guardar
+Diário de 1 plano guardado em /home/ana/.local/state/agent-harness/loja/registros/as-1; comentado em #7.
+$ tools/ah close
+Frente as-1 carrinho fechada.
+```
+
+| Recusa | Faça |
+|---|---|
+| `Falta o subcomando.` / `Subcomando desconhecido: …` / `Argumento desconhecido: …` / `A opção --frente precisa do nome da frente.` | use `ah registros guardar [--frente <nome>]` |
+| `não sei qual é a sessão` | defina AH_SESSAO ou ligue o adaptador do agente |
+| `Esta sessão não tem frente.` | abra uma com ah open <nome>, ou diga qual com --frente <nome> |
+| `Não achei a frente <nome>.` | rode ah board para ver as frentes abertas |
+| `A frente <id> <nome> é da sessão <s>, que está viva.` | peça à sessão dona (<s>) que rode tools/ah registros guardar; com a sessão morta (frente órfã) ou a frente passada, o --frente vale |
+
 ## whoami
 
 ```

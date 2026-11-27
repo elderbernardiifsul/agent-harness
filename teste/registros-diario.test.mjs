@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  acharDiarios, corpoDoDiario, devolverDiario, diarioDoComentario, lerDiario, lerMarcador, resumoDoFechamento,
+  acharDiarios, corpoDoDiario, devolverDiario, diarioDoComentario, lerDiario, lerMarcador, limparPastaDoSdd, resumoDoFechamento,
 } from '../nucleo/extensoes/registros/diario.mjs';
 
 const PLANO = 'docs/superpowers/plans/2026-11-20-carrinho.md';
@@ -108,4 +108,32 @@ test('acharDiarios e devolverDiario: ida e volta com dois planos, sem reescrever
   assert.deepEqual(acharDiarios(path.join(wt, 'nao-existe')), []);
   // Nome de pasta vindo de fora (marcador de ticket) não sai de .superpowers/sdd/.
   assert.throws(() => devolverDiario(wt, { pasta: '../fora', plano: null, texto: 'x\n' }), /pasta inválida/);
+});
+
+test('limparPastaDoSdd tira só as pastas de plano e o .gitignore do sdd-workspace; o resto fica e é devolvido', t => {
+  const wt = pasta(t);
+  const sdd = path.join(wt, '.superpowers', 'sdd');
+  devolverDiario(wt, { pasta: 'carrinho', plano: PLANO, texto: DIARIO });
+  fs.writeFileSync(path.join(sdd, 'carrinho', 'task-1-brief.md'), 'instruções');
+  // Pasta de plano sem diário ainda (só plan-path e as instruções): também é do subagent-driven-development.
+  fs.mkdirSync(path.join(sdd, 'frete'));
+  fs.writeFileSync(path.join(sdd, 'frete', 'plan-path'), 'docs/frete.md\n');
+  assert.deepEqual(limparPastaDoSdd(wt), []);
+  assert.ok(!fs.existsSync(path.join(wt, '.superpowers')));
+  // Arquivo do aluno e pasta sem marcador: ficam, com o .gitignore, e saem na lista de sobras.
+  devolverDiario(wt, { pasta: 'carrinho', plano: PLANO, texto: DIARIO });
+  fs.writeFileSync(path.join(sdd, 'minhas-notas.txt'), 'notas');
+  fs.mkdirSync(path.join(sdd, 'rascunhos'));
+  fs.writeFileSync(path.join(sdd, 'rascunhos', 'a.txt'), 'a');
+  assert.deepEqual(limparPastaDoSdd(wt), ['.superpowers/sdd/minhas-notas.txt', '.superpowers/sdd/rascunhos/']);
+  assert.ok(!fs.existsSync(path.join(sdd, 'carrinho')));
+  assert.ok(fs.existsSync(path.join(sdd, '.gitignore')));
+  // Outra coisa em .superpowers/ (fora do sdd) não é tocada.
+  fs.rmSync(sdd, { recursive: true });
+  devolverDiario(wt, { pasta: 'carrinho', plano: PLANO, texto: DIARIO });
+  fs.mkdirSync(path.join(wt, '.superpowers', 'brainstorm'));
+  assert.deepEqual(limparPastaDoSdd(wt), []);
+  assert.ok(fs.existsSync(path.join(wt, '.superpowers', 'brainstorm')));
+  assert.ok(!fs.existsSync(sdd));
+  assert.deepEqual(limparPastaDoSdd(path.join(wt, 'nao-existe')), []);
 });

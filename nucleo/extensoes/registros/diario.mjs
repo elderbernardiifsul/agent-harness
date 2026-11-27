@@ -160,3 +160,27 @@ export function devolverDiario(worktree, { pasta, plano, texto }) {
   const ignora = path.join(sdd(worktree), '.gitignore');
   if (!fs.existsSync(ignora)) fs.writeFileSync(ignora, '*\n');
 }
+
+// Tira do worktree o que é do subagent-driven-development e já foi guardado: as pastas de plano (as que têm
+// `progress.md` ou `plan-path`) e, se nada mais sobrou, o `.gitignore` que o `sdd-workspace` cria e as pastas
+// vazias. O que não é dele (um arquivo do aluno em `.superpowers/sdd/`) fica: quem guarda não apaga o que não
+// guardou. Devolve as sobras, relativas ao worktree; com sobra, o `ah close` recusa como sempre.
+export function limparPastaDoSdd(worktree) {
+  let itens;
+  try {
+    itens = fs.readdirSync(sdd(worktree), { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const sobras = [];
+  for (const e of itens) {
+    const caminho = path.join(sdd(worktree), e.name);
+    const doSdd = e.isDirectory() && ['progress.md', 'plan-path'].some(f => fs.existsSync(path.join(caminho, f)));
+    if (doSdd) fs.rmSync(caminho, { recursive: true, force: true });
+    else if (e.name !== '.gitignore') sobras.push(`.superpowers/sdd/${e.name}${e.isDirectory() ? '/' : ''}`);
+  }
+  if (sobras.length) return sobras.sort();
+  fs.rmSync(sdd(worktree), { recursive: true, force: true });
+  try { fs.rmdirSync(path.join(worktree, '.superpowers')); } catch { /* tem outra coisa: fica */ }
+  return [];
+}
