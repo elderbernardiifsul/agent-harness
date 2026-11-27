@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -244,9 +245,11 @@ test('doctor: metodo.md com CRLF igual ao instalado passa', t => {
 test('doctor: trava sem documentos, arquivo ausente e link avisam com o conserto', { skip: process.platform === 'win32' }, t => {
   const { p } = cenario(t);
   regravarTrava(p, tr => { delete tr.documentos; });
+  fs.renameSync(caminho(p, DOC), caminho(p, `${DOC}.guardado`));
   const semCampo = itemDe(p, 'Documento do método igual à trava');
   assert.equal(semCampo.estado, 'aviso');
   assert.match(semCampo.fazer, /ainda não foi instalado.*tools\/ah metodo instalar/);
+  fs.renameSync(caminho(p, `${DOC}.guardado`), caminho(p, DOC));
   regravarTrava(p, tr => { tr.documentos = { [DOC]: 'a'.repeat(64) }; });
   fs.rmSync(caminho(p, DOC));
   assert.match(itemDe(p, 'Documento do método igual à trava').fazer, /docs\/agents\/metodo\.md não existe.*tools\/ah metodo instalar/);
@@ -289,4 +292,30 @@ test('doctor sem trava: os dois itens novos ficam ok', t => {
   fs.rmSync(caminho(p, '.harness/skills.lock.json'));
   assert.equal(itemDe(p, 'Documento do método igual à trava').estado, 'ok');
   assert.equal(itemDe(p, 'Skills citadas no método instaladas').estado, 'ok');
+});
+
+test('doctor: link no lugar do metodo.md avisa "não é um arquivo comum", mesmo sem documentos na trava', { skip: process.platform === 'win32' }, t => {
+  const { p } = cenario(t);
+  regravarTrava(p, tr => { delete tr.documentos; });
+  fs.rmSync(caminho(p, DOC));
+  fs.symlinkSync('../../AGENTS.md', caminho(p, DOC));
+  const i = itemDe(p, 'Documento do método igual à trava');
+  assert.equal(i.estado, 'aviso');
+  assert.match(i.fazer, /não é um arquivo comum.*apague-o/);
+});
+
+test('doctor: metodo.md igual ao texto novo do harness passa, mesmo com a trava de outro texto', t => {
+  const { p } = cenario(t);
+  regravarTrava(p, tr => { tr.documentos[DOC] = 'b'.repeat(64); });
+  assert.equal(itemDe(p, 'Documento do método igual à trava').estado, 'ok');
+});
+
+test('doctor: metodo.md igual à trava, mas o harness trouxe texto novo, avisa para instalar', t => {
+  const { p } = cenario(t);
+  // Simula o projeto que ficou com o texto de uma versão anterior do harness, sem mexer nele.
+  fs.writeFileSync(caminho(p, DOC), 'texto da versão anterior\n');
+  regravarTrava(p, tr => { tr.documentos[DOC] = crypto.createHash('sha256').update('texto da versão anterior\n').digest('hex'); });
+  const i = itemDe(p, 'Documento do método igual à trava');
+  assert.equal(i.estado, 'aviso');
+  assert.match(i.fazer, /texto novo.*tools\/ah metodo instalar/);
 });

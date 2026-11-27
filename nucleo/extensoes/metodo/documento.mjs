@@ -3,9 +3,12 @@
 // O hash ignora a diferença entre CRLF e LF: um checkout com core.autocrlf (comum no Windows) não é mudança à mão.
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { sha256 } from './trava.mjs';
 
 export const DOCUMENTO_DO_METODO = 'docs/agents/metodo.md';
+// O texto que esta cópia do harness instala (muda com o tools/ah atualizar).
+export const MODELO_DO_METODO = path.join(path.dirname(fileURLToPath(import.meta.url)), 'modelos', 'metodo.md');
 
 export const hashDoDocumento = conteudo => sha256((Buffer.isBuffer(conteudo) ? conteudo.toString('utf8') : String(conteudo)).replace(/\r\n/g, '\n'));
 

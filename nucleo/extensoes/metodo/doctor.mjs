@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PASTAS, arquivoDasColecoes, extensoesLigadas, lerColecoes } from './colecoes.mjs';
 import { skillsCitadas, skillsNoLugar } from './citadas.mjs';
-import { DOCUMENTO_DO_METODO, lerDocumento } from './documento.mjs';
+import { DOCUMENTO_DO_METODO, MODELO_DO_METODO, hashDoDocumento, lerDocumento } from './documento.mjs';
 import { trechoDe } from './trecho.mjs';
 import { pluginsDuplicados } from './plugins.mjs';
 import { ARQUIVO_TRAVA, conferir, hashesDe, lerTrava } from './trava.mjs';
@@ -158,12 +158,21 @@ export const verificacoes = [
     conferir(ctx) {
       const { trava } = travaOuResultado(ctx);
       if (!trava) return { estado: 'ok' }; // o item Trava das skills já avisa
-      const instalado = trava.documentos?.[DOCUMENTO_DO_METODO];
-      if (!instalado) return { estado: 'aviso', detalhe: `${DOCUMENTO_DO_METODO} ainda não foi instalado`, conserto: 'rode tools/ah metodo instalar' };
+      // O tipo vem antes da trava: um link nunca chega à trava, e "rode o instalar" giraria em falso.
       const doc = lerDocumento(ctx.raiz);
-      if (doc.tipo === 'ausente') return { estado: 'aviso', detalhe: `${DOCUMENTO_DO_METODO} não existe`, conserto: 'rode tools/ah metodo instalar' };
-      if (doc.tipo !== 'arquivo') return { estado: 'aviso', detalhe: `${DOCUMENTO_DO_METODO} não é um arquivo comum`, conserto: 'apague-o e rode tools/ah metodo instalar' };
-      if (doc.hash === instalado) return { estado: 'ok' };
+      if (doc.tipo === 'link' || doc.tipo === 'outro') return { estado: 'aviso', detalhe: `${DOCUMENTO_DO_METODO} não é um arquivo comum`, conserto: 'apague-o e rode tools/ah metodo instalar' };
+      const instalado = trava.documentos?.[DOCUMENTO_DO_METODO];
+      if (doc.tipo === 'ausente') {
+        return { estado: 'aviso', detalhe: `${DOCUMENTO_DO_METODO} ${instalado ? 'não existe' : 'ainda não foi instalado'}`, conserto: 'rode tools/ah metodo instalar' };
+      }
+      let novo = null;
+      try { novo = hashDoDocumento(fs.readFileSync(MODELO_DO_METODO)); } catch { /* cópia do harness incompleta: o item do núcleo avisa */ }
+      // Igual ao texto desta versão do harness: nada se perde, mesmo que a trava registre outro texto.
+      if (doc.hash === novo) return { estado: 'ok' };
+      if (doc.hash === instalado) {
+        return { estado: 'aviso', detalhe: `o harness trouxe um texto novo do método, e ${DOCUMENTO_DO_METODO} ainda é o anterior`, conserto: 'rode tools/ah metodo instalar' };
+      }
+      if (!instalado) return { estado: 'aviso', detalhe: `${DOCUMENTO_DO_METODO} ainda não foi instalado (o arquivo que existe não é o do método, e a instalação recusa sobrescrevê-lo)`, conserto: 'leve o que for seu para o AGENTS.md, fora das marcas, e rode tools/ah metodo instalar --forcar' };
       return {
         estado: 'aviso',
         detalhe: `${DOCUMENTO_DO_METODO} foi mudado à mão; a próxima instalação recusa sobrescrevê-lo`,

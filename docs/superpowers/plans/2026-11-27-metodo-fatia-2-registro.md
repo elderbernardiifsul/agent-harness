@@ -92,3 +92,31 @@ Causa: `nucleo/comandos/open.mjs:61` resolve o `--plano` no checkout principal (
 `node ferramentas/verifica.mjs --node "$(mise where node@22)/bin/node" --node "$(command -v node)"`, sobre o commit da revisão C3 e I7: ver a mensagem ao orquestrador. Antes do merge da revisão (sobre `a9b8bdb`), código 0: Node v22.23.5 e v26.13.1, 1279 testes, 1278 passaram, 1 pulado; varredura ok.
 
 Itens da revisão de ponta a ponta que tocam o `metodo.md` e ficaram de fora desta fatia (não pedidos): I2 (dizer no `metodo.md` que o diário vai ao ticket sem filtro de segredo, depois do conserto na extensão registros) e a observação de que o trecho do `AGENTS.md` diz "merge na base e `tools/ah close`" sem o `git push origin dev` da `sessoes-paralelas.md`.
+
+## Rodada da revisão independente (27/11)
+
+Pedidos do orquestrador, todos aceitos; os testes primeiro onde há comportamento ou texto-chave (pontos 1, 3, 4, 5, 6, 12 e 13), vistos falhar antes do conserto.
+
+1. **Momento do `registros guardar`.** Conferido no cache, na versão fixada (Superpowers 7.0.2):
+   - o `subagent-driven-development` (`references/final-review.md`) e o `executing-plans` (fim do `SKILL.md`) fazem a revisão final do ramo e juntam as linhas `Ruling:` do diário;
+   - só depois apagam a pasta do plano;
+   - as duas usam o revisor do `requesting-code-review`.
+
+   O `metodo.md`, o trecho do `AGENTS.md` e o guia passam a dizer: rode o guardar "depois da revisão final que a própria skill de execução faz, no lugar do passo em que ela apaga a pasta do plano". Na sequência do Plano de partida, a revisão passa a ser "a revisão final, que a skill de execução já faz"; o `requesting-code-review` continua na linha **Skills:**.
+2. **Pedido de teste do guia.** Passou a ser "Pode ler arquivos, mas não mude nada", a falha do Codex que o ensaio achou.
+3. **Codex e as skills que só o humano chama.** Fonte: a documentação oficial, [Build skills](https://learn.chatgpt.com/docs/build-skills.md), para onde `developers.openai.com/codex/skills.md` redireciona (lida em 27/11). Ela diz: "In Codex CLI or the IDE extension, run `/skills` or type `$` to mention a skill". O campo `disable-model-invocation` não aparece na página. O equivalente do Codex é `policy.allow_implicit_invocation: false` em `agents/openai.yaml`, e com ele "explicit `$skill` invocation still works". O texto ficou: no Codex, a menção `$triage`, `$to-tickets` ou `$wayfinder` no pedido (ou a lista de `/skills`). No ensaio desta máquina, o Codex também não listou as três entre as que usa sozinho.
+4. **Integrar e fechar.** A regra mora em `docs/agents/sessoes-paralelas.md`, passos 4 e 5: merge `--no-ff` no checkout principal, `git push origin dev`, `tools/ah close` e push de novo. O `metodo.md` (Um commit, Plano de partida, tabela), o trecho (tópico do worktree e a tabela "No lugar", linha do `finishing-a-development-branch`) e o guia passam a apontar para ela. Teste: nenhum dos três diz "merge na base".
+5. **Protótipo × harness.** Entrou em "Atritos resolvidos", com um ajuste. Um teste à mão mostrou que o `tools/ah close` recusa a frente cujo ramo tem commit fora da base e do remoto ("perderia trabalho"). Por isso, o texto manda empurrar o ramo (`git push -u origin <ramo>`), citar o commit no ticket e só então fechar; o ramo fica no remoto, fora da base. Num projeto sem remoto, a frente do protótipo não fecha assim; fica como limite.
+6. **`doctor`.** O tipo do arquivo vem antes da trava: um link nunca entra na trava, e o "rode o instalar" giraria em falso. O arquivo igual ao texto desta versão do harness dá `ok`, mesmo com a trava de outro texto. O arquivo igual à trava, mas diferente do texto novo, avisa que o harness trouxe texto novo e manda rodar `tools/ah metodo instalar`. Isso fez mudar a expectativa de um teste da Task 4: a trava sem `documentos`, com o arquivo igual ao texto novo, passou de aviso a `ok`, porque nada se perde. O caso da trava sem `documentos` com o arquivo ausente continua avisando. O caminho do modelo passou a ser `MODELO_DO_METODO`, em `documento.mjs`, usado pelo `sincronizar` e pelo `doctor`.
+7. **`comandos.md`.** A linha em branco que quebrava a tabela do `doctor` saiu; no passo 6, "e a instalação segue sem ele".
+8. **Palavras.** `extensoes.<nome>`, `extensoes.modelo.agentes`, `extensoes.migracao.pasta` e `Nível: medio`.
+9. **Endereço do guia.** No `metodo.md`, pelo endereço completo e por `<cache>/docs/guia/comecar.md`.
+10. **Redação.**
+    - "uma pergunta sem resposta trava o trabalho";
+    - a linha da triagem no guia, sem a repetição e com o `wayfinder` como "mapa de uma investigação";
+    - "fila de pesado (`tools/ah pesado`)";
+    - glosas curtas para TDD e ADR.
+11. **Prova e migração.** `tools/ah prova <rótulo> -- <comando do teste>` roda o teste e grava a árvore; o `migracao reservar` precisa de `extensoes.migracao.pasta`.
+12. **Triagem.** "**Skills (o humano chama):**" em "Antes da trilha".
+13. **Doctor e recusa.** O trecho do `AGENTS.md` ganhou a linha "Rode `tools/ah doctor` no começo da sessão". No guia, "quando a recusa aponta o `tools/ah registros guardar`".
+14. **Guia, seção 4.** Só os nomes das extensões, com o ponteiro para o `metodo.md`, além do modo de ligar.

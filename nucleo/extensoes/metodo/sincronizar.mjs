@@ -12,7 +12,7 @@ import { buscar, dirDoCache } from './origem.mjs';
 import { ARQUIVO_ROTULOS, criarRotulos } from './rotulos.mjs';
 import { ARQUIVO_TRAVA, executaveisDe, hashesDe, lerTrava, linksDe, listarArquivos, sha256, textoDaTrava, gravarTrava } from './trava.mjs';
 import { comTrecho } from './trecho.mjs';
-import { DOCUMENTO_DO_METODO, hashDoDocumento, lerDocumento } from './documento.mjs';
+import { DOCUMENTO_DO_METODO, MODELO_DO_METODO, hashDoDocumento, lerDocumento } from './documento.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const DO_HARNESS = 'agent-harness';
@@ -239,7 +239,7 @@ export async function sincronizar(ctx, { colecoesPedidas = null, refs = {}, simu
 
   // 4. O documento do método: escreve quando falta ou quando o disco é o que a trava registrou (ninguém mexeu);
   // mudado à mão (ou do aluno, de antes do método) entra nas perdas; link simbólico não é seguido nem trocado.
-  const textoDoMetodo = fs.readFileSync(path.join(DIR, 'modelos', 'metodo.md'), 'utf8');
+  const textoDoMetodo = fs.readFileSync(MODELO_DO_METODO, 'utf8');
   const hashNovo = hashDoDocumento(textoDoMetodo);
   const hashInstalado = anterior?.documentos?.[DOCUMENTO_DO_METODO];
   const doc = lerDocumento(raiz);

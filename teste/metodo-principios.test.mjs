@@ -88,7 +88,7 @@ test('cada trilha diz as skills que entram nela', () => {
     '### Investigação longa': ['grilling', 'prototype', 'research', 'wayfinder'],
   };
   for (const [titulo, skills] of Object.entries(esperadas)) {
-    const linha = secao(texto, titulo).split('\n').find(l => l.trim().startsWith('**Skills:**') || l.trim().startsWith('- **Skills:**'));
+    const linha = secao(texto, titulo).split('\n').find(l => /^(- )?\*\*Skills( \(o humano chama\))?:\*\*/.test(l.trim()));
     assert.ok(linha, `${titulo} sem a linha **Skills:**`);
     assert.deepEqual(skillsCitadas(linha), skills, titulo);
   }
@@ -245,11 +245,41 @@ test('o que aponta para uma seção do metodo.md aponta para uma seção que exi
 });
 
 test('o trecho do AGENTS.md lembra o registros guardar antes de a skill apagar o diário', () => {
-  assert.match(ler(TRECHO), /`tools\/ah registros guardar`.*antes de a skill de execução apagar o diário/);
+  assert.match(ler(TRECHO), /`tools\/ah registros guardar`.*depois da revisão final/);
 });
 
 test('o metodo.md e o guia dizem como ligar uma extensão depois da instalação', () => {
   for (const s of [secao(ler(METODO), '## Extensões opcionais'), secao(ler(GUIA), '## 4. Ligar as extensões opcionais')]) {
     assert.match(s, /`\.harness\/config\.json`.*`tools\/ah metodo instalar`.*commit.*`tools\/ah doctor`/s);
   }
+});
+
+// ---------------------------------------------------------------- revisão da fatia 2 (orquestrador, 27/11)
+test('a guarda dos registros vem depois da revisão final da skill de execução, no lugar da remoção da pasta', () => {
+  const r = secao(ler(METODO), '## Registros da execução por subagentes');
+  assert.match(r, /depois da revisão final/);
+  assert.match(r, /em vez d[oe] .*apag|no lugar do passo em que ela apaga/);
+  assert.ok(r.includes('`subagent-driven-development`') && r.includes('`executing-plans`'), 'a regra vale para as duas skills de execução');
+  assert.doesNotMatch(r, /quando todas as tarefas do plano estiverem concluídas/);
+  assert.match(ler(TRECHO), /depois da revisão final/);
+  const plano = secao(ler(GUIA), '### Plano de partida: cupom de desconto');
+  assert.ok(plano.indexOf('`tools/ah registros guardar`') > plano.indexOf('revisão final'), 'no guia, o guardar vem na revisão final');
+  assert.doesNotMatch(plano, /→ `requesting-code-review` →/);
+});
+
+test('integrar e fechar aponta para a sessoes-paralelas em vez de repetir', () => {
+  for (const arquivo of [METODO, TRECHO, GUIA]) assert.doesNotMatch(ler(arquivo), /merge na base/i, arquivo);
+  for (const arquivo of [METODO, GUIA]) assert.ok(ler(arquivo).includes('docs/agents/sessoes-paralelas.md`, passos 4 e 5'), arquivo);
+});
+
+test('o metodo.md diz como o Codex chama as skills que só o humano chama', () => {
+  assert.ok(secao(ler(METODO), '### Antes da trilha: triar').includes('`$triage`'));
+});
+
+test('o protótipo vai numa frente própria que nunca entra na base', () => {
+  assert.match(secao(ler(METODO), '## Atritos resolvidos'), /protótipo.*frente própria.*nunca entra na base/s);
+});
+
+test('o trecho do AGENTS.md manda rodar o doctor no começo da sessão', () => {
+  assert.match(ler(TRECHO), /começo da sessão.*`tools\/ah doctor`|`tools\/ah doctor`.*começo da sessão/);
 });

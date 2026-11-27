@@ -2,7 +2,7 @@
 
 Como trabalhar dentro de uma frente. As frentes (worktree, ramo, quadro, passagem) são do harness (`tools/ah`) e estão em `docs/agents/sessoes-paralelas.md`. Este documento é para o agente, em toda tarefa, e para o aluno, quando quiser entender por que o agente faz o que faz.
 
-O método sugere; nada nele recusa. Só as travas do harness recusam. Exemplos com a loja, um por trilha: o guia `docs/guia/comecar.md` do repositório do agent-harness (o endereço que o README dele usa; a cópia em cache fica onde a instalação a buscou).
+O método sugere; nada nele recusa. Só as travas do harness recusam. Exemplos com a loja, um por trilha: o guia [Como começar](https://github.com/elderbernardiifsul/agent-harness/blob/main/docs/guia/comecar.md) (na cópia do harness em cache, `<cache>/docs/guia/comecar.md`).
 
 Código inline de uma palavra só, em minúsculas, é nome de skill (como `writing-plans`); comandos e arquivos vêm com barra ou ponto.
 
@@ -21,8 +21,8 @@ Na dúvida entre duas, a mais leve: a trilha padrão é a leve. Diga ao humano a
 
 - Pedido sem ticket, vago ou de fora: `triage` (sai um ticket com rótulo; os rótulos estão em `docs/agents/triage-labels.md`).
 - Spec ou plano grande que precisa virar vários tickets: `to-tickets`.
-- `triage`, `to-tickets` e `wayfinder` só o humano chama (no Claude Code, `/triage`, `/to-tickets` e `/wayfinder`; no Codex, o equivalente dele, se houver): o agente diz qual chamar e por quê, e segue depois que o humano chamar.
-- **Skills:** `triage`, `to-tickets`.
+- `triage`, `to-tickets` e `wayfinder` só o humano chama: o agente diz qual chamar e por quê, e segue depois que o humano chamar. No Claude Code, `/triage`, `/to-tickets` e `/wayfinder`; no Codex, a menção `$triage`, `$to-tickets` ou `$wayfinder` no pedido (ou a lista de `/skills`).
+- **Skills (o humano chama):** `triage`, `to-tickets`.
 
 ## As trilhas
 
@@ -31,13 +31,13 @@ Cada trilha diz quando usar, a sequência e as skills que entram.
 ### Um commit
 
 - Quando: comportamento pequeno, sem decisão de desenho.
-- Sequência: `tools/ah open <nome> --tickets <n>` → teste que falha e conserto (`test-driven-development`) → verificação com comando e saída (`verification-before-completion`) → commit → merge na base e `tools/ah close`. Bug: `systematic-debugging` antes do conserto.
+- Sequência: `tools/ah open <nome> --tickets <n>` → teste que falha e conserto (`test-driven-development`) → verificação com comando e saída (`verification-before-completion`) → commit → integre e feche como em `docs/agents/sessoes-paralelas.md`, passos 4 e 5. Bug: `systematic-debugging` antes do conserto.
 - **Skills:** `test-driven-development`, `verification-before-completion`, `systematic-debugging`.
 
 ### Plano de partida
 
 - Quando: várias tarefas, desenho que não muda.
-- Sequência: `tools/ah open <nome> --tickets <n>` → plano curto (`writing-plans`), com a linha `Nível: …` em cada tarefa (seção "Nível de modelo") e, no topo, a linha de partida para uma sessão nova: `tools/ah open <nome>` seguida de "execute o plano <arquivo do plano>" → commit do plano e `tools/ah handoff` nesta sessão; na nova, a linha de partida → execução por subagentes (`subagent-driven-development`) ou na própria conversa (`executing-plans`), sempre com `test-driven-development` → revisão (`requesting-code-review`) → verificação → registros (seção "Registros da execução por subagentes") → merge na base e `tools/ah close`.
+- Sequência: `tools/ah open <nome> --tickets <n>` → plano curto (`writing-plans`), com a linha `Nível: …` em cada tarefa (seção "Nível de modelo") e, no topo, a linha de partida para uma sessão nova: `tools/ah open <nome>` seguida de "execute o plano <arquivo do plano>" → commit do plano e `tools/ah handoff` nesta sessão; na nova, a linha de partida → execução por subagentes (`subagent-driven-development`) ou na própria conversa (`executing-plans`), sempre com `test-driven-development` → a revisão final, que a skill de execução já faz (com o revisor do `requesting-code-review`) → no lugar do passo em que a skill apaga a pasta do plano, `tools/ah registros guardar` (seção "Registros da execução por subagentes") → verificação → integre e feche como em `docs/agents/sessoes-paralelas.md`, passos 4 e 5.
 - O `--plano <arquivo>` do `tools/ah open` só vale quando o plano já está na base; o plano escrito na frente está no worktree que a retomada devolve.
 - **Skills:** `writing-plans`, `subagent-driven-development`, `executing-plans`, `test-driven-development`, `requesting-code-review`, `verification-before-completion`, `systematic-debugging`.
 
@@ -50,7 +50,7 @@ Cada trilha diz quando usar, a sequência e as skills que entram.
 ### Investigação longa
 
 - Quando: ainda não se sabe o que fazer.
-- Sequência: mapa de decisões em tickets (`wayfinder`, que o humano chama: ver "Antes da trilha"); leitura de fontes primárias com relatório no repositório (`research`); protótipo descartável para uma pergunta de desenho (`prototype`); decisões com o humano (`grilling`). Sai um mapa e tickets; cada ticket volta a "Escolha a trilha". O mapa e os tickets ficam no rastreador, sem frente; o relatório e o protótipo, que são arquivos, pedem a frente antes.
+- Sequência: mapa de decisões em tickets (`wayfinder`, que o humano chama: ver "Antes da trilha"); leitura de fontes primárias com relatório no repositório (`research`); protótipo descartável para uma pergunta de desenho (`prototype`, numa frente própria: ver "Atritos resolvidos"); decisões com o humano (`grilling`). Sai um mapa e tickets; cada ticket volta a "Escolha a trilha". O mapa e os tickets ficam no rastreador, sem frente; o relatório e o protótipo, que são arquivos, pedem a frente antes.
 - **Skills:** `wayfinder`, `research`, `prototype`, `grilling`.
 
 ## Um dono por etapa
@@ -63,18 +63,19 @@ Cada trilha diz quando usar, a sequência e as skills que entram.
 | Vocabulário e decisões | `domain-modeling` | `GLOSSARY.md`, `docs/adr/` | — |
 | Desenho | `brainstorming` | Spec | — |
 | Plano | `writing-plans` | Plano com o nível de cada tarefa e a linha de partida | `tools/ah open --tickets` antes; `tools/ah handoff` e a linha de partida na sessão nova |
-| Execução | `subagent-driven-development` (ou `executing-plans`, na conversa) com `test-driven-development` | Commits e diário da execução | Worktree da frente, fila de pesado, `tools/ah registros guardar` (extensão registros) |
+| Execução | `subagent-driven-development` (ou `executing-plans`, na conversa) com `test-driven-development` | Commits e diário da execução | Worktree da frente, fila de pesado (`tools/ah pesado`), `tools/ah registros guardar` (extensão registros) |
 | Depuração | `systematic-debugging` | Teste de regressão | — |
-| Revisão | `requesting-code-review` | Commit de consertos | — |
+| Revisão | `requesting-code-review` (na execução, é a revisão final da própria skill) | Commit de consertos | — |
 | Verificação | `verification-before-completion` | Comando e saída no PR ou no ticket | — |
-| Integrar e encerrar | nenhuma; é do harness | Linha do histórico | Merge na base, `tools/ah close` ou `tools/ah handoff` |
+| Integrar e encerrar | nenhuma; é do harness | Linha do histórico | `docs/agents/sessoes-paralelas.md`, passos 4 e 5; `tools/ah handoff` para passar a frente |
 
-Uma etapa, uma skill. As coleções trazem outros TDD e revisores, que não estão instalados de propósito.
+Uma etapa, uma skill. As coleções trazem outras skills de TDD (teste antes do código) e de revisão, que não estão instaladas de propósito.
 
 ## Atritos resolvidos
 
 - Worktree e encerramento de ramo são do harness (`tools/ah`): quando uma skill manda criar worktree ou encerrar o ramo, vale a tabela das skills citadas, no trecho do método do `AGENTS.md`.
 - Um TDD só (`test-driven-development`) e um revisor só (`requesting-code-review`).
+- O `prototype` pede um ramo descartável, fora da base: o protótipo vai numa frente própria que nunca entra na base. Empurre o ramo dela (`git push -u origin <ramo>`), cite o commit no ticket e, com a resposta registrada, feche com `tools/ah close`; o ramo fica no remoto, fora da base.
 - "Pronto" exige comando e saída: no ticket ou no PR vão o comando executado e a saída (cortada no que for longo). Sem isso, a tarefa não está pronta, mesmo com o código escrito.
 - Nomes com prefixo de coleção: ver o trecho do método no `AGENTS.md`.
 
@@ -92,25 +93,25 @@ Cada tarefa do plano traz `Nível: alto`, `Nível: medio` ou `Nível: leve`:
 - medio: código com interface e testes dados no plano, integração entre arquivos, tarefa descrita em prosa;
 - leve: tarefa com o código inteiro no plano, ajuste mecânico num arquivo, renomeação, texto curto, conferência.
 
-Para saber o modelo e o esforço no seu agente, rode `tools/ah modelo <nível>` (`--agente <nome>` para outro agente, `--json` para máquina; com a extensão modelo ligada). Ao abrir um subagente, passe os dois. A tradução fica na seção modelo do `.harness/config.json`. Tarefa sem nível: use medio. O nível é sugestão: o harness nunca recusa por causa de modelo.
+Para saber o modelo e o esforço no seu agente, rode `tools/ah modelo <nível>` (`--agente <nome>` para outro agente, `--json` para máquina; com a extensão modelo ligada). Ao abrir um subagente, passe os dois. A tradução fica em `extensoes.modelo.agentes`, no `.harness/config.json`. Tarefa sem nível: trate como `Nível: medio`. O nível é sugestão: o harness nunca recusa por causa de modelo.
 
 ## Registros da execução por subagentes
 
-O `subagent-driven-development` grava o diário de cada plano em `.superpowers/sdd/`, pasta que o git ignora e que some com o worktree; quando a revisão final fica limpa, a própria skill apaga a pasta do plano. Com a extensão registros ligada:
+O `subagent-driven-development` e o `executing-plans` gravam o diário de cada plano em `.superpowers/sdd/`, pasta que o git ignora e que some com o worktree. No fim, a própria skill faz a revisão final do ramo, que lê o diário (as decisões `Ruling:` e o que ficou estacionado), e só depois apaga a pasta do plano. Com a extensão registros ligada:
 
-- rode `tools/ah registros guardar` em dois momentos: quando todas as tarefas do plano estiverem concluídas, **antes** de a skill apagar a pasta do plano; e antes do `tools/ah close`. O diário vai para o ticket da frente, com uma cópia nesta máquina;
+- rode `tools/ah registros guardar` depois da revisão final que a própria skill de execução faz, no lugar do passo em que ela apaga a pasta do plano: o guardar, em vez de apagar, leva o diário para o ticket da frente (com uma cópia nesta máquina) e tira a pasta do worktree. Rode de novo antes do `tools/ah close`;
 - para continuar um plano parado, `tools/ah registros devolver` traz o diário mais novo de volta ao worktree (a retomada de uma frente passada já o devolve sozinha);
 - esqueceu de guardar: o `tools/ah close` recusa o item ignorado e diz o que rodar. O `tools/ah handoff` leva o diário sozinho.
 
 ## Extensões opcionais
 
-Desligadas até o aluno pedir. Para ligar uma depois da instalação: acrescente-a em extensoes, no `.harness/config.json`; rode `tools/ah metodo instalar`, que traz as skills dela; faça o commit que ele indica; rode `tools/ah doctor`. Uma linha por extensão, quando ligada:
+Desligadas até o aluno pedir. Para ligar uma depois da instalação: acrescente `extensoes.<nome>` no `.harness/config.json`; rode `tools/ah metodo instalar`, que traz as skills dela; faça o commit que ele indica; rode `tools/ah doctor`. Uma linha por extensão, quando ligada:
 
 - **Wiki e reunião** (extensão wiki): conhecimento espalhado e resposta sem fonte. Skills da extensão wiki: `wiki-ingerir`, `wiki-consultar`, `wiki-conferir`, e `reuniao-ingerir` para levar uma gravação até a wiki (extensão wiki); confira com `tools/ah wiki conferir`.
 - **Orquestração** (extensão orquestracao): distribuir tickets entre subagentes e sessões sem perder o fio. Skill da extensão orquestracao: `orquestrar`; a parte determinística é `tools/ah candidatos`.
 - **Ambiente** (extensão ambiente): frentes disputando banco e porta; cria e apaga o banco e reserva portas por worktree, no `tools/ah open` e no `tools/ah close`.
-- **Migração** (extensão migracao): duas frentes com o mesmo número de migração; `tools/ah migracao reservar`.
-- **Prova** (extensão prova): repetir o teste ponta a ponta depois de um merge que não mudou a árvore; `tools/ah prova <rótulo>` grava a árvore testada e `tools/ah prova --confere <ramo>` confere.
+- **Migração** (extensão migracao): duas frentes com o mesmo número de migração; `tools/ah migracao reservar`, que precisa da pasta das migrações em `extensoes.migracao.pasta`.
+- **Prova** (extensão prova): repetir o teste ponta a ponta depois de um merge que não mudou a árvore; `tools/ah prova <rótulo> -- <comando do teste>` roda o teste e, se ele passa, grava a árvore testada; `tools/ah prova --confere <ramo>` confere.
 
 ## Segredos
 
@@ -122,8 +123,8 @@ Desligadas até o aluno pedir. Para ligar uma depois da instalação: acrescente
 
 - Entender e triar: pedido vago vira trabalho errado; o ticket com rótulo diz o que está pronto para começar.
 - Investigação longa: começar a codar sem saber o que fazer gasta sessões; o mapa diz o próximo passo.
-- Decisão com o humano: pergunta solta para o trabalho; o ticket de decisões registra o padrão aplicado.
-- Vocabulário e decisões: o mesmo nome com dois sentidos; o glossário e o ADR fixam um.
+- Decisão com o humano: uma pergunta sem resposta trava o trabalho; o ticket de decisões registra o padrão aplicado, e o trabalho segue.
+- Vocabulário e decisões: o mesmo nome com dois sentidos; o glossário e o ADR (registro de uma decisão de arquitetura) fixam um.
 - Desenho: mudança de contrato descoberta no meio do código custa caro; a spec decide antes.
 - Plano: a sessão nova não sabe o que a anterior decidiu; o plano leva as decisões e o nível de cada tarefa.
 - Execução: código sem teste não prova nada; teste primeiro e commits pequenos.
