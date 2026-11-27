@@ -10,19 +10,25 @@ const COLECOES_DO_CLAUDE = ['superpowers', 'mattpocock-skills'];
 
 // `env` dá HOME e CLAUDE_CONFIG_DIR (o teste aponta para uma pasta descartável); `casa` troca a pasta pessoal.
 // Arquivo ausente ou ilegível não acusa nada: sem leitura, não há o que afirmar.
-export function pluginsDuplicados({ env = process.env, casa, agentes }) {
+export function pluginsDuplicados({ env = process.env, casa, agentes, detalhado = false }) {
   const achados = [];
+  let ilegivel = null;
   if (agentes.includes('claude-code')) {
     const base = env.CLAUDE_CONFIG_DIR || path.join(casa ?? env.HOME ?? env.USERPROFILE ?? os.homedir(), '.claude');
+    const arquivo = path.join(base, 'plugins', 'installed_plugins.json');
     let chaves = [];
     try {
-      const dados = JSON.parse(fs.readFileSync(path.join(base, 'plugins', 'installed_plugins.json'), 'utf8'));
+      const dados = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
       const plugins = dados?.plugins;
       if (plugins && typeof plugins === 'object' && !Array.isArray(plugins)) chaves = Object.keys(plugins);
-    } catch { /* sem o arquivo, sem plugin a acusar */ }
+      else ilegivel = arquivo;
+    } catch (e) {
+      // Sem o arquivo, sem plugin a acusar; arquivo que existe e não se lê é dito.
+      if (e.code !== 'ENOENT') ilegivel = arquivo;
+    }
     for (const colecao of COLECOES_DO_CLAUDE) {
       if (chaves.some(k => k.startsWith(`${colecao}@`))) achados.push(`${colecao} no Claude Code`);
     }
   }
-  return achados;
+  return detalhado ? { achados, ilegivel } : achados;
 }

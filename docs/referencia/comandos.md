@@ -667,9 +667,11 @@ Com a extensão ligada, o `ah doctor` acrescenta estes itens, depois dos do núc
 |---|---|---|
 | `Trava das skills (metodo)` | falha quando `.harness/skills.lock.json` existe e está ilegível; aviso quando falta | `git checkout -- .harness/skills.lock.json` ou apague-a, e `tools/ah metodo instalar`; no aviso, `tools/ah metodo instalar` |
 | `Skills iguais à trava (metodo)` | aviso com os arquivos alterados e ausentes por pasta de destino; também quando uma skill do harness presa a uma extensão está instalada com a extensão desligada, ou falta com a extensão ligada (`colecoes.json`, `agent-harness.extensoes`) | guarde a mudança numa skill de outro nome ou rode `tools/ah metodo instalar` (`--forcar` descarta a mudança) |
-| `Coleções na versão recomendada (metodo)` | aviso por coleção cujo commit na trava difere do de `colecoes.json`; as skills do harness (`commit: null`) ficam de fora | `tools/ah metodo atualizar` (`--simular` mostra antes o que muda) |
-| `Coleções sem plugin duplicado (metodo)` | aviso quando `claude-code` está em `agentes` e `<CLAUDE_CONFIG_DIR ou ~/.claude>/plugins/installed_plugins.json` tem uma chave `superpowers@*` ou `mattpocock-skills@*` (ex.: `superpowers no Claude Code`) | desinstale o plugin do agente ou tire a coleção do método |
+| `Coleções na versão recomendada (metodo)` | aviso por coleção cujo commit na trava difere do de `colecoes.json`; as skills do harness (`commit: null`) ficam de fora; também aviso quando a coleção da trava não está mais no `colecoes.json`, ou quando o `colecoes.json` (ou `AH_METODO_COLECOES`) não se lê | `tools/ah metodo atualizar` (`--simular` mostra antes o que muda) |
+| `Coleções sem plugin duplicado (metodo)` | aviso quando `claude-code` está em `agentes` e `<CLAUDE_CONFIG_DIR ou ~/.claude>/plugins/installed_plugins.json` tem uma chave `superpowers@*` ou `mattpocock-skills@*` (ex.: `superpowers no Claude Code`); `installed_plugins.json` ilegível segue `ok`, com `não consegui ler <caminho>; a conferência de plugin duplicado foi pulada` | desinstale o plugin do agente ou tire a coleção do método |
 | `Skills sem nome repetido (metodo)` | aviso só com `opencode` em `agentes`: o mesmo nome de skill em mais de uma entre `.claude/skills/`, `.agents/skills/` e `.opencode/skills/` com conteúdo diferente; cópias idênticas (o que o `instalar` faz) não avisam | deixe cópias iguais: renomeie a skill própria ou `tools/ah metodo instalar --forcar` |
+
+Uma pasta de skill com arquivo ilegível vira aviso nos itens `Skills iguais à trava` e `Skills sem nome repetido`, com a pasta e o código do erro.
 
 Limite: a conferência de plugin duplicado lê só o Claude Code; para o Codex e o OpenCode a sondagem não achou onde ficam os plugins instalados, e o `doctor` não chuta.
 

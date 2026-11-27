@@ -146,6 +146,7 @@ test('pluginsDuplicados: arquivo ausente ou ilegível não acusa nada', t => {
   assert.deepEqual(pluginsDuplicados({ env: { HOME: pasta }, agentes: ['claude-code'] }), ['superpowers no Claude Code', 'mattpocock-skills no Claude Code']);
   fs.writeFileSync(path.join(pasta, '.claude', 'plugins', 'installed_plugins.json'), 'xx');
   assert.deepEqual(pluginsDuplicados({ env: { HOME: pasta }, agentes: ['claude-code'] }), []);
+  assert.match(pluginsDuplicados({ env: { HOME: pasta }, agentes: ['claude-code'], detalhado: true }).ilegivel, /installed_plugins\.json$/);
 });
 
 test('Skills sem nome repetido: cópias idênticas e agente sem opencode não avisam', t => {
@@ -166,4 +167,50 @@ test('Skills sem nome repetido: aviso com opencode e conteúdo diferente; sem op
   conf.extensoes.metodo.agentes = ['claude-code', 'codex'];
   fs.writeFileSync(cfg, JSON.stringify(conf, null, 2));
   assert.equal(itemDe(p, 'Skills sem nome repetido').estado, 'ok');
+});
+
+test('Coleções na versão recomendada: colecoes.json ilegível vira aviso, e coleção que saiu da lista é dita', t => {
+  const { p, colecoes, gravarColecoes } = cenario(t);
+  const arquivo = p.env.AH_METODO_COLECOES;
+  const bom = fs.readFileSync(arquivo, 'utf8');
+  fs.writeFileSync(arquivo, '{ quebrado');
+  const i = itemDe(p, 'Coleções na versão recomendada');
+  assert.equal(i.estado, 'aviso');
+  assert.match(i.fazer, /corrija o colecoes\.json \(ou AH_METODO_COLECOES\) e rode ah doctor/);
+  fs.writeFileSync(arquivo, bom);
+  delete colecoes.colecoes.falsa;
+  gravarColecoes();
+  const j = itemDe(p, 'Coleções na versão recomendada');
+  assert.equal(j.estado, 'aviso');
+  assert.match(j.fazer, /a coleção falsa não está mais entre as recomendadas; .*metodo atualizar/);
+});
+
+test('Coleções sem plugin duplicado: installed_plugins.json ilegível segue ok e diz que pulou', t => {
+  const { p, casa } = cenario(t);
+  fs.mkdirSync(path.join(casa, '.claude', 'plugins'), { recursive: true });
+  fs.writeFileSync(path.join(casa, '.claude', 'plugins', 'installed_plugins.json'), 'xx');
+  const i = JSON.parse(p.ah(['doctor', '--json']).saida).itens.find(x => x.item.startsWith('Coleções sem plugin duplicado (metodo)'));
+  assert.match(i.item, /não consegui ler .*installed_plugins\.json; a conferência de plugin duplicado foi pulada/);
+  assert.equal(i.estado, 'ok');
+});
+
+test('arquivo de skill ilegível: aviso diz a pasta e o que fazer, nos dois itens', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, t => {
+  const { p } = cenario(t, { agentes: ['claude-code', 'opencode'] });
+  const arq = caminho(p, '.claude/skills/alfa/SKILL.md');
+  fs.chmodSync(arq, 0o000);
+  t.after(() => { try { fs.chmodSync(arq, 0o644); } catch { /* a pasta já foi apagada */ } });
+  const a = itemDe(p, 'Skills iguais à trava');
+  assert.equal(a.estado, 'aviso');
+  assert.match(a.fazer, /\.claude\/skills\/alfa \(EACCES\); .*permissão de leitura/);
+  const b = itemDe(p, 'Skills sem nome repetido');
+  assert.equal(b.estado, 'aviso');
+  assert.match(b.fazer, /\.claude\/skills\/alfa \(EACCES\)/);
+});
+
+test('link quebrado na pasta da skill: aviso de alterado, sem derrubar o item', t => {
+  const { p } = cenario(t);
+  fs.symlinkSync('/nao/existe', caminho(p, '.claude/skills/alfa/quebrado'));
+  const i = itemDe(p, 'Skills iguais à trava');
+  assert.equal(i.estado, 'aviso');
+  assert.match(i.fazer, /alfa\/quebrado/);
 });

@@ -34,6 +34,21 @@ const trilha = (lista, rotulo, partes) => {
   for (const [destino, arquivos] of porDestino) partes.push(`${rotulo} em ${destino}: ${arquivos.join(', ')}`);
 };
 
+// Pastas de skill da trava que não se leem (arquivo sem permissão, por exemplo): ['<destino>/<skill>: <código>'].
+function pastasIlegiveis(raiz, trava) {
+  const ruins = [];
+  for (const destino of trava.destinos) {
+    for (const c of Object.values(trava.colecoes)) {
+      for (const skill of c.skills) {
+        try { hashesDe(path.join(raiz, ...destino.split('/'), skill)); } catch (e) { ruins.push(`${destino}/${skill} (${e.code ?? 'erro'})`); }
+      }
+    }
+  }
+  return ruins;
+}
+
+const CONSERTO_ILEGIVEL = 'devolva a permissão de leitura (ou apague o arquivo ou link quebrado) e rode ah doctor de novo; se a skill não for sua, rode tools/ah metodo instalar --forcar';
+
 export const verificacoes = [
   {
     item: 'Trava das skills',
@@ -48,7 +63,14 @@ export const verificacoes = [
       const { trava } = travaOuResultado(ctx);
       if (!trava) return { estado: 'ok', detalhe: 'sem trava legível para conferir (veja o item Trava das skills)' };
       const partes = [];
-      const { alterados, ausentes } = conferir(ctx.raiz, trava);
+      let alterados;
+      let ausentes;
+      try {
+        ({ alterados, ausentes } = conferir(ctx.raiz, trava));
+      } catch (e) {
+        const ruins = pastasIlegiveis(ctx.raiz, trava);
+        return { estado: 'aviso', detalhe: `não consegui ler a pasta da skill: ${ruins.length ? ruins.join(', ') : String(e.message).slice(0, 100)}`, conserto: CONSERTO_ILEGIVEL };
+      }
       trilha(alterados, 'alterados', partes);
       trilha(ausentes, 'ausentes', partes);
       // Skill do harness presa a uma extensão: instalada com a extensão desligada, ou faltando com ela ligada.
@@ -75,11 +97,17 @@ export const verificacoes = [
     conferir(ctx) {
       const { trava } = travaOuResultado(ctx);
       if (!trava) return { estado: 'ok', detalhe: 'sem trava legível para conferir (veja o item Trava das skills)' };
-      const recomendadas = colecoesRecomendadas(ctx.env);
+      let recomendadas;
+      try {
+        recomendadas = colecoesRecomendadas(ctx.env);
+      } catch (e) {
+        return { estado: 'aviso', detalhe: `não consegui ler o colecoes.json: ${String(e.message).split('\n')[0].slice(0, 160)}`, conserto: 'corrija o colecoes.json (ou AH_METODO_COLECOES) e rode ah doctor' };
+      }
       const partes = [];
       for (const [nome, c] of Object.entries(trava.colecoes)) {
         // As skills do harness não têm commit: acompanham o clone do núcleo.
-        if (c.commit === null || !recomendadas[nome]?.commit) continue;
+        if (c.commit === null) continue;
+        if (!recomendadas[nome]) { partes.push(`a coleção ${nome} não está mais entre as recomendadas`); continue; }
         if (c.commit !== recomendadas[nome].commit) partes.push(`${nome}: instalado ${curto(c.commit)}, recomendado ${curto(recomendadas[nome].commit)}`);
       }
       if (!partes.length) return { estado: 'ok' };
@@ -89,7 +117,8 @@ export const verificacoes = [
   {
     item: 'Coleções sem plugin duplicado',
     conferir(ctx) {
-      const achados = pluginsDuplicados({ env: ctx.env, agentes: ctx.config.agentes });
+      const { achados, ilegivel } = pluginsDuplicados({ env: ctx.env, agentes: ctx.config.agentes, detalhado: true });
+      if (ilegivel) return { estado: 'ok', detalhe: `não consegui ler ${ilegivel}; a conferência de plugin duplicado foi pulada` };
       if (!achados.length) return { estado: 'ok' };
       return {
         estado: 'aviso',
@@ -105,12 +134,18 @@ export const verificacoes = [
       if (!ctx.config.agentes.includes('opencode')) return { estado: 'ok' };
       const pastas = [...PASTAS, '.opencode/skills'];
       const porNome = new Map();
+      const ilegiveis = [];
       for (const pasta of pastas) {
         const abs = path.join(ctx.raiz, ...pasta.split('/'));
         let nomes = [];
         try { nomes = fs.readdirSync(abs, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name); } catch { /* pasta ausente */ }
-        for (const nome of nomes) porNome.set(nome, [...(porNome.get(nome) ?? []), { pasta, hashes: JSON.stringify(Object.entries(hashesDe(path.join(abs, nome)))) }]);
+        for (const nome of nomes) {
+          let hashes;
+          try { hashes = JSON.stringify(Object.entries(hashesDe(path.join(abs, nome)))); } catch (e) { ilegiveis.push(`${pasta}/${nome} (${e.code ?? 'erro'})`); continue; }
+          porNome.set(nome, [...(porNome.get(nome) ?? []), { pasta, hashes }]);
+        }
       }
+      if (ilegiveis.length) return { estado: 'aviso', detalhe: `não consegui ler a pasta da skill: ${ilegiveis.join(', ')}`, conserto: CONSERTO_ILEGIVEL };
       const repetidas = [...porNome].filter(([, v]) => v.length > 1 && new Set(v.map(x => x.hashes)).size > 1).sort(([a], [b]) => (a < b ? -1 : 1));
       if (!repetidas.length) return { estado: 'ok' };
       return {
