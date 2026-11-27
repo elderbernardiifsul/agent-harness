@@ -1,6 +1,8 @@
 // Lista fixada das coleções de skills de terceiros (colecoes.json) e a tabela agente -> pasta de skills.
 // Resolve a dor de "qual versão de cada skill o projeto recebe": o commit fica fixado aqui, não na origem.
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Pasta onde cada agente procura as skills do projeto (sondagem dos três agentes).
 const PASTA_DO_AGENTE = {
@@ -77,3 +79,12 @@ export function lerColecoes(arquivo) {
   if (!bruto.colecoes['agent-harness']) conferirDoHarness(undefined);
   return { colecoes: bruto.colecoes };
 }
+
+// O colecoes.json em uso: AH_METODO_COLECOES (para os testes e para quem experimenta outra lista) ou o da extensão.
+export const arquivoDasColecoes = env => (env.AH_METODO_COLECOES
+  ? path.resolve(env.AH_METODO_COLECOES)
+  : path.join(path.dirname(fileURLToPath(import.meta.url)), 'colecoes.json'));
+
+// As extensões ligadas na configuração do projeto: `true` ou um objeto (a mesma regra do núcleo).
+const eLigada = v => v === true || eObjeto(v);
+export const extensoesLigadas = configDoProjeto => new Set(Object.entries(configDoProjeto?.extensoes ?? {}).filter(([, v]) => eLigada(v)).map(([k]) => k));

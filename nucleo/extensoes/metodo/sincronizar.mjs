@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { passosDoCommit } from '../../comandos/init.mjs';
 import { VERSAO } from '../../versao.mjs';
-import { destinosDe, lerColecoes } from './colecoes.mjs';
+import { arquivoDasColecoes, destinosDe, extensoesLigadas, lerColecoes } from './colecoes.mjs';
 import { buscar, dirDoCache } from './origem.mjs';
 import { ARQUIVO_ROTULOS, criarRotulos } from './rotulos.mjs';
 import { ARQUIVO_TRAVA, executaveisDe, hashesDe, lerTrava, linksDe, listarArquivos, sha256, textoDaTrava, gravarTrava } from './trava.mjs';
@@ -24,7 +24,6 @@ const ARQUIVO_CONFIG = '.harness/config.json';
 export const CAMINHOS_DO_METODO = [ARQUIVO_TRAVA, ARQUIVO_CONFIG, ARQUIVO_AGENTS, DOCUMENTO_DO_METODO];
 const MENSAGEM_DO_COMMIT = 'chore: instala o método do agent-harness';
 
-const eLigada = v => v === true || (v !== null && typeof v === 'object' && !Array.isArray(v));
 const umaLinha = t => String(t ?? '').split('\n').map(l => l.trim()).find(Boolean)?.slice(0, 200) ?? '';
 const absoluto = (raiz, rel) => path.join(raiz, ...rel.split('/'));
 const mesmosHashes = (a, b) => Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([k, h]) => b[k] === h);
@@ -199,7 +198,7 @@ function diferencas(plano) {
 export async function sincronizar(ctx, { colecoesPedidas = null, refs = {}, simular = false, forcar = false, comando = 'instalar' } = {}) {
   const recusa = (motivo, passo) => new ctx.ErroDeUso(`${motivo}\nPróximo passo: ${passo}`);
   const raiz = ctx.raiz;
-  const arquivoColecoes = ctx.env.AH_METODO_COLECOES ? path.resolve(ctx.env.AH_METODO_COLECOES) : path.join(DIR, 'colecoes.json');
+  const arquivoColecoes = arquivoDasColecoes(ctx.env);
   let colecoes;
   try {
     ({ colecoes } = lerColecoes(arquivoColecoes));
@@ -219,7 +218,7 @@ export async function sincronizar(ctx, { colecoesPedidas = null, refs = {}, simu
 
   // 1 e 2: buscar tudo e montar a cópia em memória.
   const fontes = buscarFontes(ctx, colecoes, [...pedidas].sort(), refs, arquivoColecoes, recusa, comando);
-  const ligadas = new Set(Object.entries(ctx.configDoProjeto?.extensoes ?? {}).filter(([, v]) => eLigada(v)).map(([k]) => k));
+  const ligadas = extensoesLigadas(ctx.configDoProjeto);
   const copias = {};
   const donas = new Map();
   for (const nome of Object.keys(fontes)) {
