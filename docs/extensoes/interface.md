@@ -199,6 +199,8 @@ ignorados(ctx) {
 },
 ```
 
+O exemplo é simplificado: a `registros` real declara só as pastas de plano e o `.gitignore` do `sdd-workspace`, para que um arquivo do aluno em `.superpowers/sdd/` continue barrando o `close`.
+
 - `ignorados(ctx)` é chamada pelo `close`, na primeira fase, com `ctx.frente` definida; pode ser assíncrona. Ela roda sob a trava das frentes, que segura as outras sessões: deve ser rápida e sem rede (ler o estado ou o disco, não o GitHub). Não roda com `--descartar-ignorados`.
 - `caminho` é relativo à raiz do worktree, com `/` como separador em qualquer sistema: um arquivo, ou uma pasta terminada em `/` (que cobre tudo dentro dela). Caminho absoluto, com `..`, com `\` ou vazio é inválido.
 - Uma pasta declarada descartável é apagada inteira com o worktree, sem perguntar, inclusive o que outra pessoa ou ferramenta pôs nela. Declare como descartável só a pasta que a extensão possui inteira; na dúvida, declare os arquivos um a um. O mesmo cuidado vale para quem roda o comando de `guardar`: ele não deve apagar o que não guardou.

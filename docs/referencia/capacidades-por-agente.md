@@ -23,6 +23,21 @@ Fontes (consultadas em 2026-11-12):
 
 Quando a documentação e o ensaio divergem, a célula registra os dois e indica qual prevalece.
 
+## Nota de 27/11/2026: skills e instruções do projeto
+
+A tabela abaixo é da sondagem de 12/11. Os ensaios do projeto 2 conferiram, em versões mais novas, o que o método usa. Fontes: [registro da fatia 1](../superpowers/plans/2026-11-26-metodo-fatia-1-registro.md) ("Sondagem" e "Ensaio final") e [registro da fatia 2](../superpowers/plans/2026-11-27-metodo-fatia-2-registro.md) ("Ensaio de leitura").
+
+**Codex 0.172.0.**
+- Lê as skills de `.agents/skills/` e o `AGENTS.md`.
+- Resolve `superpowers:<nome>` para a skill local `<nome>`, sem instrução.
+- Skill que só o humano chama (`disable-model-invocation: true`) não entra na lista das que ele usa sozinho; o humano a chama com a menção `$<skill>` no pedido, pela documentação.
+- Com o sandbox `workspace-write`, o Node não consegue iniciar o git (`EPERM`), e o `tools/ah` falha (README, "Instalar num projeto", passo 5).
+
+**Claude Code 2.1.332.**
+- Lê as skills de `.claude/skills/`.
+- Lê o `AGENTS.md` pelo `CLAUDE.md` com a linha `@AGENTS.md`, ou sozinho, sem `CLAUDE.md`.
+- Não carrega `CLAUDE.md` nem `AGENTS.md` de uma pasta dentro do rascunho de uma sessão (`scratchpad`); um ensaio montado ali parece ignorar as instruções.
+
 ## Tabela
 
 | | Claude Code 2.1.319 | Codex 0.166.0 | OpenCode 2.2.2 |

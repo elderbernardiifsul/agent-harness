@@ -8,7 +8,7 @@ As regras que o harness instala nos projetos não se aplicam ao desenvolvimento 
 
 - não há `.harness/`, `tools/ah` nem ganchos de agente; não abra frentes, não rode `ah open`, `ah close` ou `ah handoff` aqui;
 - as travas T0 a T6, a reserva de tickets, o papel de executor ou orquestrador e o PR obrigatório para `stage` e `main` são comportamento a construir e testar, não regra de trabalho deste repositório;
-- `docs/referencia/comandos.md`, `docs/agentes/` e `modelos/` descrevem o projeto que recebe o harness. Leia-os como especificação, não como instrução para esta sessão.
+- `docs/referencia/comandos.md`, `docs/agentes/`, `modelos/` e os textos que o método instala (`nucleo/extensoes/metodo/skills/` e `nucleo/extensoes/metodo/modelos/`) descrevem o projeto que recebe o harness. Leia-os como especificação, não como instrução para esta sessão.
 
 Para ver o harness em funcionamento, instale-o num projeto descartável (README, seção "Laboratório").
 

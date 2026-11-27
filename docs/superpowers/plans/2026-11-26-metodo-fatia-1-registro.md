@@ -50,3 +50,37 @@ Pergunta feita a cada agente, sem sessão anterior: a senha; as skills que ele v
 - **(b) Nome repetido:** o Claude Code e o Codex leem uma pasta só cada um, e para eles a repetição entre pastas não muda nada. Pela documentação, o OpenCode V2 resolve por precedência ("the source registered later supplies the skill") e não lista duas vezes. Uma cópia idêntica em duas pastas, como o `metodo instalar` faz para `claude-code` com `codex` ou `opencode`, é inofensiva. A regra da conferência do `doctor` (Task 6): **avisa quando o mesmo nome de skill existe em mais de uma das três pastas com conteúdo diferente e `opencode` está em `metodo.agentes`**, porque só aí o OpenCode pode usar a versão que o aluno não espera. Custo se a documentação estiver errada: um aviso a menos para o OpenCode, corrigível quando a coluna do OpenCode for ensaiada.
 - **(c) Regra do prefixo:** os dois agentes resolveram `superpowers:<nome>` para a skill local sem instrução nenhuma. A regra no trecho do `AGENTS.md` continua, curta, por custar uma linha e cobrir o agente que não fizer isso sozinho.
 - **`CLAUDE.md` com `@AGENTS.md`:** funciona. O Claude Code 2.1.332 também leu o `AGENTS.md` sem `CLAUDE.md`, como a documentação diz. A P1 continua necessária para o projeto que já tem `CLAUDE.md`.
+
+## Ensaio final (Task 8), 27/11
+
+**Claude Code 2.1.332.**
+- Isolamento: `HOME` e `CLAUDE_CONFIG_DIR` descartáveis, só `CLAUDE_CODE_OAUTH_TOKEN`, sem plugins nem skills de usuário.
+- Pedido: só o endereço do harness, numa pasta vazia. O endereço era o `file://` de um repositório nu cuja `main` estava em `be235b4`, sem tag.
+- O agente instalou sozinho o núcleo e o método, com dois commits na `dev`: "chore: instala o agent-harness" e "chore: instala o método do agent-harness".
+- Resultado: `CLAUDE.md` com `@AGENTS.md`; 16 skills em `.claude/skills/` e as mesmas em `.agents/skills/`; `.harness/config.json` com `metodo`, `registros` e `modelo`, commitado.
+- `doctor`: 0 falhas e 4 avisos esperados (sigla não conferida sem `gh`; `gh` sem login; ramos sem proteção no servidor; CI sem comando de teste).
+- As coleções vieram do cache da máquina, aquecido antes pelo orquestrador; o download não foi exercitado neste ensaio.
+
+**Codex 0.172.0**, com `-s workspace-write`: o Node recebe `EPERM` ao iniciar o git (limite do sandbox), e o `init` recusa. A rodada sem sandbox foi negada pelo classificador de permissões do orquestrador e espera o autor.
+
+**OpenCode:** sem ensaio, porque as chaves de provedor venceram (ver "Sondagem").
+
+**Outros ensaios, feitos pelas sessões das fatias:**
+- fatia 2, teste de leitura: Claude Code 4 de 4; Codex 4 de 4 quando pôde ler arquivos ([registro](2026-11-27-metodo-fatia-2-registro.md));
+- fatias 6 e 7 (wiki e reunião): Claude Code ([registro](2026-11-26-metodo-fatias-6-e-7-registro.md));
+- fatia 5: pendente de autorização ([registro](2026-11-27-metodo-fatia-5-registro.md)).
+
+**Incidentes.**
+- Um `ah init` sem `AH_ESTADO`, rodado por um subagente da revisão, criou `$HOME/.local/state/agent-harness/`. A remoção foi negada pelo classificador.
+- Processos de teste travados de antes do conserto do `pesado` (pids 989900, 990558, 1034143 e 1051893). O `kill` foi negado pelo classificador.
+
+## Pendências
+
+Para o autor:
+- Codex: autorizar a rodada sem sandbox (ou com um sandbox que permita ao Node iniciar o git) e repetir o ensaio final.
+- OpenCode: renovar uma chave de provedor e repetir a sondagem e o ensaio final.
+- Fatia 5: autorizar o ensaio com agente real.
+- Apagar `$HOME/.local/state/agent-harness/`, criada pelo `init` sem `AH_ESTADO`, depois de conferir que nenhum projeto real a usa.
+- Encerrar os processos de teste travados 989900, 990558, 1034143 e 1051893.
+- Decidir a P6 (`open --plano` só no checkout principal) e a P7 (marcadores do núcleo sem conferir o `authorAssociation`).
+- Revisar o texto de `docs/agents/metodo.md`.

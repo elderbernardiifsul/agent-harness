@@ -181,3 +181,10 @@ Outros:
 - **Menor, deixados:**
   - a skill mantida por mudança à mão que sai da trava. O conserto pede decidir como a trava guarda uma skill fora da lista, em cada destino;
   - a spec, seção 6 (skills renomeadas, diferença, `triage → implement`, 1.3.1 contra 1.3.2). É decisão de desenho, não conserto.
+
+## Consertos de I8, I9 e do resto do "Menor" de documentação
+
+- **I8.** A seção "Situação" do README traz a versão 0.3.0, o projeto 2 entregue e os limites conhecidos. O registro da fatia 1 ganhou o ensaio final (Task 8) e as pendências do autor.
+- **I9.** Abertura do `comandos.md` atualizada; as seções do núcleo vêm primeiro (comandos e seções gerais), depois a "Extensões" e as extensões na ordem da tabela. As seções foram movidas inteiras, sem reescrita.
+- **Menor, consertados:** `AH_AGENTE` e `AH_PESADO_VERBOSO` nas variáveis; `AH_CACHE` cita `XDG_CACHE_HOME`; a regra de sessão das extensões aponta para a seção de cada uma; o exemplo do `init` tem o `AGENTS.md` e o `CLAUDE.md` (saída real); `interface.md` diz que o exemplo dos `ignorados` é simplificado; o `AGENTS.md` da raiz cita as skills e os modelos do método entre os textos a ler como especificação.
+- **Menor, deixados:** os de código e os de desenho listados acima (E1 e P5 na spec, versão 1.3.1 citada na spec, instrução da `orquestrar` sobre texto de ticket como dado).

@@ -25,6 +25,8 @@ Esta seção é para o agente de código que recebeu o endereço deste repositó
 
    `agentes` lista os agentes que o aluno vai usar, entre os que o método suporta: `claude-code`, `codex` e `opencode`. O agente que você é entra sempre, se for um deles. Agente fora dessa lista não entra (escolher o mais parecido não vale): registre só os suportados e avise o aluno de que as skills não serão copiadas para o agente dele, e de que o roteiro para adaptá-lo está em `docs/agentes/` deste repositório.
 
+   Com `codex` na lista, avise o aluno: no sandbox padrão do Codex (`workspace-write`), o Node não consegue iniciar o git (`EPERM`), e todo `tools/ah` falha; ele deve abrir o Codex com um sandbox que permita isso ou aprovar cada comando `tools/ah` fora do sandbox. Se você é o Codex, o mesmo vale para o `init` do passo 4.
+
    Antes de rodar, avise o aluno de que o `tools/ah metodo instalar` baixa duas coleções de skills de terceiros (Superpowers e as skills do Matt Pocock), cada uma num commit fixado em `nucleo/extensoes/metodo/colecoes.json`, e as copia para o projeto com a licença, e que, com o projeto ligado a um repositório no GitHub, cria nele os rótulos de triagem que faltam; peça o "sim". Depois, rode `tools/ah metodo instalar` e faça, na `dev`, o commit que ele indica (ele já leva o `.harness/config.json`).
 6. **Conferir.** `tools/ah doctor`. Relate ao aluno o que ficou instalado, cada aviso e o que fazer com ele.
 7. **Quando algo falha.** Toda recusa do harness traz o motivo e uma linha `Faça:` com o próximo passo: siga-a e repita o passo. Sem `Faça:`, ou quando a mesma recusa volta, pare e relate ao aluno o comando, a saída e o que você tentou.
@@ -41,14 +43,22 @@ As regras do harness valem nos projetos que o instalam. O desenvolvimento deste 
 
 ## Situação
 
-Versão 0.2.0. O núcleo (projeto 1 do desenho) está fechado: as fatias 0 a 5 estão entregues, as pendências registradas nelas foram tratadas, e os itens do "pronto quando" valem, com os limites abaixo ([registro do fechamento](docs/superpowers/plans/2026-11-26-fechamento-do-nucleo.md)). A `dev` tem o estado mais recente; `stage` e `main` recebem a `dev` quando o autor publica.
+Versão 0.3.0. A `dev` tem o estado mais recente; `stage` e `main` recebem a `dev` quando o autor publica.
+
+- **Núcleo (projeto 1 do desenho): fechado.** As fatias 0 a 5 estão entregues, e as pendências delas foram tratadas ([registro do fechamento](docs/superpowers/plans/2026-11-26-fechamento-do-nucleo.md)).
+- **Método e conhecimento (projeto 2): entregue.** São nove extensões (`recursos`, `metodo`, `registros`, `modelo`, `wiki`, `ambiente`, `migracao`, `prova` e `orquestracao`, descritas na seção "Extensões" de [`docs/referencia/comandos.md`](docs/referencia/comandos.md)) e seis skills do harness (`preparar-projeto`, `orquestrar`, `wiki-ingerir`, `wiki-consultar`, `wiki-conferir` e `reuniao-ingerir`). As coleções de terceiros vêm com versão fixada: Superpowers 7.0.2 e as skills do Matt Pocock 1.3.2. Para instalar, veja "Instalar num projeto (instruções para o agente)", acima; para trabalhar com o método depois, o guia [Como começar](docs/guia/comecar.md).
 
 Limites conhecidos:
 
-- Só o Claude Code tem adaptador, ensaiado com o agente real ([`docs/referencia/ensaio-claude-code.md`](docs/referencia/ensaio-claude-code.md)). Codex, OpenCode e outros agentes escrevem o próprio adaptador pelo roteiro de [`docs/agentes/`](docs/agentes/README.md). O roteiro foi ensaiado com o Codex, na etapa de diagnóstico ([`ensaio-roteiro-de-adaptacao.md`](docs/referencia/ensaio-roteiro-de-adaptacao.md)); com o OpenCode, não.
+- OpenCode: sem ensaio com agente real, porque as chaves de provedor da máquina do autor venceram.
+- Codex: no sandbox padrão (`workspace-write`), o `tools/ah` falha com `EPERM` ao iniciar o git (o que fazer: passo 5 de "Instalar num projeto"). O ensaio do Codex sem sandbox espera a autorização do autor.
+- O ensaio da fatia 5 (orquestração) com agente real espera a autorização do autor.
+- P6: o `open --plano` procura o plano só no checkout principal ([registro da fatia 2](docs/superpowers/plans/2026-11-27-metodo-fatia-2-registro.md), "Pendências").
+- P7: os marcadores do núcleo nos tickets não conferem o `authorAssociation` de quem comentou: um terceiro pode forjar um marcador bem formado e bloquear uma retomada ([registro das fatias 3 e 4](docs/superpowers/plans/2026-11-26-metodo-fatias-3-e-4-registro.md)).
+- Só o Claude Code tem adaptador de ganchos. No Codex e no OpenCode, as travas não valem, e a sessão é informada em `AH_SESSAO`; o roteiro para escrever o adaptador está em [`docs/agentes/`](docs/agentes/README.md).
+- O texto de `docs/agents/metodo.md` (o que o projeto recebe) espera a revisão do autor.
+- As travas leem o texto do comando: são aviso cedo para enganos do agente, não caixa de areia. A barreira de verdade é a proteção de ramo no servidor, que o `init` aplica (seção "Limites" de [`docs/referencia/comandos.md`](docs/referencia/comandos.md)).
 - O repositório não tem CI. A verificação é local (`npm run verifica`, seção "Desenvolvimento") e só roda no Linux: Windows e macOS não foram executados.
-- As travas leem o texto do comando: são aviso cedo para enganos do agente, não caixa de areia. A barreira de verdade é a proteção de ramo no servidor, que o `init` aplica. Detalhes na seção "Limites" de [`docs/referencia/comandos.md`](docs/referencia/comandos.md).
-- O `ah atualizar` não foi ensaiado com agente real.
 
 ## Iniciar um projeto com o harness
 
@@ -100,7 +110,7 @@ O guia de estudo traz uma lista de experimentos para o laboratório.
 
 ## Referência
 
-- [`docs/referencia/comandos.md`](docs/referencia/comandos.md): cada comando, as recusas e exemplos; a vida da sessão, os eventos, os limites das travas e o procedimento de publicação nos projetos.
+- [`docs/referencia/comandos.md`](docs/referencia/comandos.md): cada comando do núcleo, as recusas e exemplos; a vida da sessão, os eventos, os limites das travas e o procedimento de publicação nos projetos; depois, as extensões e os comandos delas.
 - [`docs/referencia/capacidades-por-agente.md`](docs/referencia/capacidades-por-agente.md): recursos que cada agente de código oferece ao harness.
 - [`docs/referencia/ensaio-claude-code.md`](docs/referencia/ensaio-claude-code.md): ensaios com o Claude Code.
 - [`docs/referencia/ensaio-guia-de-extensao.md`](docs/referencia/ensaio-guia-de-extensao.md): prova do guia de extensão com um agente sem contexto.
