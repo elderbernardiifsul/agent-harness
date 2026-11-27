@@ -32,7 +32,7 @@ Se a pasta da wiki não existe, crie só o que falta, sem sobrescrever: `index.m
 4. **Cascata.** Busque na wiki inteira (não só no índice) as entidades e afirmações que a fonte toca e atualize cada artigo afetado, com nova data em Atualizado. Página arquivada nunca entra na cascata.
 5. **Índice e log.** Uma linha por artigo tocado no índice; tema novo ganha a linha de descrição. Uma entrada de ingestão no log.
 6. **Conferência.** Rode `tools/ah wiki conferir <artigos tocados>`. Cada suspeito é corrigido (achar na fonte, mostrar componentes, tirar) ou explicado ao humano. Nenhum erro de evidência fica.
-7. **Commit** dos artigos, do índice e do log juntos: o commit que toca o log marca a última ingestão, e é por ele que o harness deixa de lembrar desta fonte.
+7. **Commit** dos artigos, do índice e do log juntos: o commit que acrescenta a entrada de ingestão ao log marca a última ingestão, e é por ele que o harness deixa de lembrar desta fonte.
 
 ## Em lote
 

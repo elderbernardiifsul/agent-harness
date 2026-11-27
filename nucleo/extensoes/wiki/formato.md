@@ -174,7 +174,7 @@ Omita as linhas `- Atualizado:` quando não houver cascata. A fonte que não tro
 - Disposição: Sem material
 ```
 
-O primeiro commit que toca o log depois de uma ingestão marca a "última ingestão": o lembrete do começo de sessão e a sugestão do fechamento contam as fontes mudadas depois dele. Commite o log junto com os artigos.
+O commit que acrescenta uma entrada de ingestão ao log (inclusive "sem material") marca a "última ingestão": o lembrete do começo de sessão e a sugestão do fechamento contam as fontes mudadas depois dele. As entradas de conferência, consulta e movimento não contam. Commite o log junto com os artigos.
 
 ## Convenções
 

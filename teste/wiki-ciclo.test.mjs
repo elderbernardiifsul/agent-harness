@@ -39,7 +39,7 @@ test('resumo: wiki vazia, sem log commitado, nada novo e fontes novas', async t 
   assert.match(await resumo(p), /^Wiki: ainda vazia; a primeira ingestão \(skill wiki-ingerir\) cria docs\/wiki\/\.$/m);
 
   gravar(p, 'docs/wiki/index.md', '# Índice da wiki\n');
-  gravar(p, 'docs/wiki/log.md', '# Log da wiki\n');
+  gravar(p, 'docs/wiki/log.md', '# Log da wiki\n\n## [2026-11-20] ingestão | Frete\n- Disposição: Novo\n- Fonte: docs/adr/0001.md\n');
   gravar(p, 'docs/wiki/frete/gratis.md', '# Frete\n\n> Fontes: [a](../../adr/0001.md)\n');
   assert.match(await resumo(p), /^Wiki: 1 artigo\(s\); nenhuma ingestão registrada no git ainda \(commite docs\/wiki\/log\.md\)\.$/m);
 
@@ -52,6 +52,11 @@ test('resumo: wiki vazia, sem log commitado, nada novo e fontes novas', async t 
   commitar(p, 'adr do cupom');
   assert.match(await resumo(p), /^Wiki: 1 artigo\(s\); 1 fonte\(s\) nova\(s\) desde a última ingestão \(docs\/adr\/0002-cupom\.md\): skill wiki-ingerir\.$/m);
 
+  // Conferência e consulta também escrevem no log, mas não são ingestão: o lembrete continua.
+  fs.appendFileSync(path.join(p.raiz, 'docs/wiki/log.md'), '\n## [2026-11-27] lint | 1 problemas, 0 corrigidos\n\n## [2026-11-27] consulta | Arquivado: Frete\n');
+  commitar(p, 'lint da wiki');
+  assert.match(await resumo(p), /1 fonte\(s\) nova\(s\) desde a última ingestão \(docs\/adr\/0002-cupom\.md\)/);
+
   for (const n of ['3', '4', '5']) gravar(p, `docs/adr/000${n}.md`, 'x\n');
   commitar(p, 'mais adrs');
   assert.match(await resumo(p), /4 fonte\(s\) nova\(s\) desde a última ingestão \(docs\/adr\/0002-cupom\.md, docs\/adr\/0003\.md, docs\/adr\/0004\.md, …\)/);
@@ -59,7 +64,7 @@ test('resumo: wiki vazia, sem log commitado, nada novo e fontes novas', async t 
 
 test('close sugere a ingestão quando a frente trouxe fonte e não ingeriu', t => {
   const p = projeto(t);
-  gravar(p, 'docs/wiki/log.md', '# Log da wiki\n');
+  gravar(p, 'docs/wiki/log.md', '# Log da wiki\n\n## [2026-11-20] ingestão | sem material: docs/adr/0001.md\n- Disposição: Sem material\n');
   commitar(p, 'wiki');
   ok(p.ah(['open', 'cupom']));
   const wt = worktree(p);
@@ -72,7 +77,7 @@ test('close sugere a ingestão quando a frente trouxe fonte e não ingeriu', t =
 
 test('close não sugere quando a frente ingeriu o que trouxe', t => {
   const p = projeto(t);
-  gravar(p, 'docs/wiki/log.md', '# Log da wiki\n');
+  gravar(p, 'docs/wiki/log.md', '# Log da wiki\n\n## [2026-11-20] ingestão | sem material: docs/adr/0001.md\n- Disposição: Sem material\n');
   commitar(p, 'wiki');
   ok(p.ah(['open', 'cupom']));
   const wt = worktree(p);
