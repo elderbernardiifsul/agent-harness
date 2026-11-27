@@ -1,6 +1,6 @@
 # Comandos do harness
 
-Referência dos comandos das fatias 1 a 5, na versão 0.2.0, e das extensões (seção "Extensões", com o comando `recursos` da extensão que acompanha o harness). Os comandos são executados como `tools/ah <comando>` dentro do projeto, com exceção do `init`, executado a partir do clone do agent-harness. Os exemplos usam o projeto fictício `loja`, as pessoas `ana-souza` (sigla `as`) e `carla-dias` (sigla `cd`), os tickets `#1` a `#9` e as sessões `sessao-teste-0001`, `sessao-b-0002` e `sessao-c-0003`. As saídas foram copiadas de um projeto descartável, e `<worktrees>` designa a pasta dos worktrees das frentes.
+Referência dos comandos das fatias 1 a 5, na versão 0.2.0, e das extensões (seção "Extensões", com os comandos `recursos` e `metodo` das extensões que acompanham o harness). Os comandos são executados como `tools/ah <comando>` dentro do projeto, com exceção do `init`, executado a partir do clone do agent-harness. Os exemplos usam o projeto fictício `loja`, as pessoas `ana-souza` (sigla `as`) e `carla-dias` (sigla `cd`), os tickets `#1` a `#9` e as sessões `sessao-teste-0001`, `sessao-b-0002` e `sessao-c-0003`. As saídas foram copiadas de um projeto descartável, e `<worktrees>` designa a pasta dos worktrees das frentes.
 
 Toda recusa segue o mesmo formato: o motivo em uma linha e, na linha seguinte, o próximo passo. A recusa de um comando `ah` sai com código 1 (`Recusado: motivo` / `Faça: …`) e também é registrada nos eventos (`recusa-de-comando`); a recusa de uma trava, emitida pelo gancho do agente, sai com código 2 (`Recusado (Tn): motivo` / `Faça: …`).
 
@@ -20,6 +20,8 @@ Nas mensagens, a sessão é identificada pelo id curto, formado pelos 8 primeiro
 | `AH_PESADO_ANINHADO` | definida pelo `ah pesado` no ambiente do comando que ele executa, com o número da senha. Só tem efeito depois de conferida: se a senha está em execução na fila, com o `ah` dela vivo, um `ah pesado` interno roda diretamente e a T6 do gancho não recusa; caso contrário, é ignorada. Escrita como prefixo no texto do comando (`AH_PESADO_ANINHADO=3 npm run build`), não libera a T6 |
 | `AH_FILA_MEMORIA_LIVRE_MB`, `AH_FILA_PAUSA_MS` | para ensaio: substituem a memória livre medida e o intervalo (100 ms) com que os comandos em espera releem a fila |
 | `AH_CLOSE_ESPERA_DA_TRAVA_MS` | para ensaio: substitui a espera (30 s) do `close` pela trava das frentes na última fase |
+| `AH_CACHE` | pasta onde o `metodo instalar` guarda as coleções de skills baixadas; substitui o cache da máquina (`~/.cache/agent-harness/colecoes` no Linux, `~/Library/Caches/agent-harness/colecoes` no macOS, `%LOCALAPPDATA%\agent-harness\colecoes` no Windows) |
+| `AH_METODO_COLECOES` | só para teste: caminho de um `colecoes.json` que substitui o da extensão `metodo`; caminhos relativos dentro dele valem a partir da pasta do arquivo |
 
 Do agente, o harness lê `CLAUDE_CODE_SESSION_ID` (id da sessão, na ausência de `AH_SESSAO`) e, no gancho, `CLAUDE_PROJECT_DIR` (um dos locais em que procura o projeto).
 
@@ -498,7 +500,7 @@ Bloqueia: nada
 
 ## Extensões
 
-Uma extensão acrescenta comandos, travas, verificações do `doctor`, reações ao ciclo de vida, linhas no resumo e colunas no quadro sem alterar o núcleo. A interface está em `docs/extensoes/interface.md`, e o passo a passo de criação, em `docs/extensoes/como-estender.md`. As do projeto ficam em `.harness/extensoes/<nome>/extensao.mjs`; as que acompanham o harness, em `.harness/nucleo/extensoes/<nome>/` (nesta versão, só a `recursos`).
+Uma extensão acrescenta comandos, travas, verificações do `doctor`, reações ao ciclo de vida, linhas no resumo e colunas no quadro sem alterar o núcleo. A interface está em `docs/extensoes/interface.md`, e o passo a passo de criação, em `docs/extensoes/como-estender.md`. As do projeto ficam em `.harness/extensoes/<nome>/extensao.mjs`; as que acompanham o harness, em `.harness/nucleo/extensoes/<nome>/` (nesta versão, a `recursos` e a `metodo`).
 
 **Configuração.** Uma extensão só carrega quando a chave dela existe em `extensoes`, no `.harness/config.json` (padrão: `{}`, nenhuma ligada):
 
@@ -574,6 +576,55 @@ Liberados 1 recurso(s) da frente as-1 carrinho.
 $ AH_SESSAO=ana-terminal tools/ah close
 Frente as-1 carrinho fechada.
 ```
+
+## metodo
+
+```
+ah metodo instalar [--forcar]
+```
+
+Comando da extensão `metodo`, que acompanha o harness e só existe com ela ligada em `extensoes`, com a lista dos agentes que o projeto usa: `"metodo": {"agentes": ["claude-code", "codex"]}` (valem `claude-code`, `codex` e `opencode`). Sem `agentes`, ou com agente desconhecido, a extensão não carrega: `ah metodo` sai como `comando desconhecido`, com o aviso `a extensão metodo não carregou (configuração recusada: …)`, e o `doctor` mostra a falha no item `Extensão metodo`. Não exige sessão.
+
+O `instalar` copia para o projeto as skills das coleções fixadas em `.harness/nucleo/extensoes/metodo/colecoes.json` (origem git, commit e lista de skills de cada uma) e as skills do próprio harness (`preparar-projeto`; uma skill ligada a uma extensão só entra com ela ligada). Passos:
+
+1. **Busca.** Cada coleção é buscada no commit fixado numa pasta de cache da máquina (`AH_CACHE`), nunca no projeto; um clone raso por coleção, reaproveitado enquanto o commit não muda. O git roda sem pedir senha no terminal. Uma origem inacessível recusa antes de qualquer escrita.
+2. **Cópia.** Cada skill da lista vai para a pasta de cada agente (`claude-code` → `.claude/skills/`; `codex` e `opencode` → `.agents/skills/`), com a licença da coleção (`LICENSE`) e com o bit de execução dos scripts. A pasta da skill é recriada inteira; skill que saiu da lista (ou de extensão desligada, ou de agente retirado) é apagada quando está igual à trava, e mantida, com aviso, quando tem mudança à mão.
+3. **Trava.** `.harness/skills.lock.json` registra por coleção a origem, o commit, a versão, as skills e o sha256 de cada arquivo copiado, e as pastas de destino. As skills do harness entram com a origem `agent-harness`, `commit: null` e a versão do harness.
+4. **Mudança à mão.** Um arquivo de skill que difere da trava e da versão nova (inclusive arquivo acrescentado na pasta da skill) não é sobrescrito: o comando recusa e lista os arquivos; `--forcar` descarta as mudanças.
+5. **AGENTS.md.** O trecho do método entre as marcas `<!-- agent-harness/metodo: início … -->` e `<!-- agent-harness/metodo: fim -->`, com as mesmas regras do trecho do núcleo: só o texto entre as marcas é reescrito. Ele diz onde estão as skills e a trava, que `superpowers:<nome>` e `mattpocock-skills:<nome>` valem como a skill `<nome>` do projeto, e o que usar no lugar das skills citadas que não foram instaladas.
+6. **Arquivos do projeto.** `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md` e `docs/agents/domain.md` (a preparação que as skills do Matt Pocock esperam) são copiados só quando faltam; depois, são do projeto.
+7. **Rótulos.** Com `github.repo` na configuração, cria (ou atualiza) pelo `gh` os rótulos de triagem `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human` e `wontfix`. Falha do `gh` vira aviso e o comando termina com código 0.
+8. **Commit.** Termina com os comandos do commit no ramo base, como o `init`. Sem nada a mudar, diz `Nada a mudar: as skills já estão como a trava.`
+
+| Recusa | Faça |
+|---|---|
+| `não consegui buscar a coleção <nome> (<origem>): <erro do git>` | confira a conexão com a internet e o endereço da origem e rode tools/ah metodo instalar de novo; nada foi gravado |
+| `a instalação sobrescreveria arquivos de skill mudados à mão (.claude/skills: alfa/SKILL.md)` | guarde as suas mudanças fora da pasta da skill (ou numa skill de outro nome) e rode tools/ah metodo instalar de novo; para descartá-las, rode tools/ah metodo instalar --forcar |
+| `a coleção <nome> não tem a pasta da skill <skill> (<pasta>)` | na coleção `agent-harness`: a cópia do harness está incompleta, rode tools/ah atualizar a partir do clone; nas outras: confira o commit em colecoes.json |
+| `a trava .harness/skills.lock.json está ilegível: …` | recupere-a do git (git checkout -- .harness/skills.lock.json), ou apague-a, e rode tools/ah metodo instalar de novo |
+| `o destino sai do projeto: <caminho>` | remova o link simbólico no caminho e rode tools/ah metodo instalar de novo |
+| `Opção desconhecida: …` / `Argumento a mais: …` / `Falta o subcomando.` / `Subcomando desconhecido: …` | use ah metodo instalar [--forcar] \| atualizar |
+
+```
+$ tools/ah metodo instalar
+Instalei 1 skill(s) de agent-harness (0.2.0) em .claude/skills, .agents/skills.
+Instalei 7 skill(s) de mattpocock-skills (1.3.2, d1478fc) em .claude/skills, .agents/skills.
+Instalei 8 skill(s) de superpowers (7.0.2, 22f0b46) em .claude/skills, .agents/skills.
+Criei docs/agents/issue-tracker.md.
+Criei docs/agents/triage-labels.md.
+Criei docs/agents/domain.md.
+Escrevi o trecho do método no AGENTS.md.
+Gravei a trava .harness/skills.lock.json.
+Falta levar o método para o ramo base dev (as frentes partem dele):
+  git add -- .harness/skills.lock.json .claude/skills .agents/skills AGENTS.md docs/agents/issue-tracker.md docs/agents/triage-labels.md docs/agents/domain.md
+  git commit -m "chore: instala o método do agent-harness"
+Depois rode: tools/ah doctor
+$ tools/ah metodo instalar
+Nada a mudar: as skills já estão como a trava.
+Agora rode: tools/ah doctor
+```
+
+O `ah metodo atualizar` ainda recusa nesta versão (`ah metodo atualizar ainda não implementado.`).
 
 ## whoami
 

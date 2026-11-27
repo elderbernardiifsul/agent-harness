@@ -75,6 +75,22 @@ test('dirDoCache respeita AH_CACHE e o cache da máquina', () => {
   assert.equal(dirDoCache({}, 'linux', '/home/ana'), path.join('/home/ana', '.cache', 'agent-harness', 'colecoes'));
   assert.equal(dirDoCache({}, 'darwin', '/Users/ana'), path.join('/Users/ana', 'Library', 'Caches', 'agent-harness', 'colecoes'));
   assert.equal(dirDoCache({ LOCALAPPDATA: 'C:\\Dados' }, 'win32', 'C:\\Users\\ana'), path.join('C:\\Dados', 'agent-harness', 'colecoes'));
+  // Variável vazia vale como ausente; AH_CACHE relativo vira absoluto.
+  assert.equal(dirDoCache({ LOCALAPPDATA: '' }, 'win32', 'C:\\Users\\ana'), path.join('C:\\Users\\ana', 'AppData', 'Local', 'agent-harness', 'colecoes'));
+  assert.equal(dirDoCache({ AH_CACHE: 'cache-local' }, 'linux', '/home/ana'), path.resolve('cache-local'));
+});
+
+test('buscar nunca espera credencial: o git roda sem pergunta no terminal e com tempo limite', t => {
+  const c = colecao(t, { skills: { grilling: { 'SKILL.md': 'a\n' } } });
+  const opcoesVistas = [];
+  const g = (args, opcoes) => { opcoesVistas.push(opcoes); return git(args, opcoes); };
+  buscar({ nome: 'ex', origem: c.origem, ref: c.commit, dirCache: descartavel(t), git: g, env: { ...process.env, ANA: '1' } });
+  assert.ok(opcoesVistas.length > 0);
+  for (const o of opcoesVistas) {
+    assert.equal(o.env.GIT_TERMINAL_PROMPT, '0');
+    assert.equal(o.env.ANA, '1');
+    assert.ok(o.timeoutMs >= 60000);
+  }
 });
 
 // O `git` que a extensão recebe no ctx, com contagem dos fetches.
@@ -135,11 +151,9 @@ test('validarConfig recusa agente desconhecido, lista vazia e repetição', asyn
   assert.equal(ext.validarConfig({ agentes: ['claude-code'] }), null);
 });
 
-test('metodo instalar e atualizar ainda recusam com próximo passo', async () => {
+test('metodo atualizar ainda recusa, e subcomando faltando recusa, com próximo passo', async () => {
   const ext = await carregarParaTeste(path.join(DIR_METODO, 'extensao.mjs'), { agentes: ['codex'] });
   const ctx = ctxFalso({ extensao: 'metodo', config: { agentes: ['codex'] } });
-  for (const sub of ['instalar', 'atualizar']) {
-    assert.throws(() => ext.comandos.metodo.executar([sub], ctx), e => /ainda não implementado[^]*Próximo passo/.test(e.saida));
-  }
-  assert.throws(() => ext.comandos.metodo.executar([], ctx), e => /Falta o subcomando[^]*Próximo passo/.test(e.saida));
+  await assert.rejects(async () => ext.comandos.metodo.executar(['atualizar'], ctx), e => /ainda não implementado[^]*Próximo passo/.test(e.saida));
+  await assert.rejects(async () => ext.comandos.metodo.executar([], ctx), e => /Falta o subcomando[^]*Próximo passo/.test(e.saida));
 });

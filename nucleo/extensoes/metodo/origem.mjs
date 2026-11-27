@@ -4,23 +4,29 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// Onde ficam as coleções baixadas: AH_CACHE, ou o cache da máquina conforme o sistema.
+// O git da busca nunca para esperando senha (sem terminal, o comando ficaria pendurado) e tem tempo limite folgado.
+const TEMPO_DO_GIT_MS = 300000;
+
+// Onde ficam as coleções baixadas: AH_CACHE (relativo vira absoluto), ou o cache da máquina conforme o sistema.
+// Variável vazia vale como ausente.
 export function dirDoCache(env, plataforma = process.platform, casa = os.homedir()) {
-  if (env.AH_CACHE) return env.AH_CACHE;
+  if (env.AH_CACHE) return path.resolve(env.AH_CACHE);
   let base;
-  if (plataforma === 'win32') base = env.LOCALAPPDATA ?? path.join(casa, 'AppData', 'Local');
+  if (plataforma === 'win32') base = env.LOCALAPPDATA || path.join(casa, 'AppData', 'Local');
   else if (plataforma === 'darwin') base = path.join(casa, 'Library', 'Caches');
   else base = env.XDG_CACHE_HOME || path.join(casa, '.cache');
   return path.join(base, 'agent-harness', 'colecoes');
 }
 
 // Garante `<dirCache>/<nome>` com `ref` (commit ou tag) em HEAD destacado e devolve {dir, commit}.
-// `git` é o ctx.git: recebe a lista de argumentos e devolve {codigo, saida, erro}. Falha lança Error com a mensagem do git.
-export function buscar({ nome, origem, ref, dirCache, git }) {
+// `git` é o ctx.git: recebe a lista de argumentos e as opções ({env, timeoutMs}) e devolve {codigo, saida, erro}.
+// `env` é o ambiente de quem chama. Falha lança Error com a mensagem do git.
+export function buscar({ nome, origem, ref, dirCache, git, env = process.env }) {
   // Um ref começando por "-" seria lido pelo git como opção.
   if (!ref || ref.startsWith('-') || /\s/.test(ref)) throw new Error(`ref inválido: ${String(ref).slice(0, 40)} (use um commit completo ou o nome de uma tag)`);
   const dir = path.join(dirCache, nome);
-  const g = (...args) => git(['-C', dir, ...args]);
+  const opcoes = { env: { ...env, GIT_TERMINAL_PROMPT: '0' }, timeoutMs: TEMPO_DO_GIT_MS };
+  const g = (...args) => git(['-C', dir, ...args], opcoes);
   const certo = (r, o_que) => {
     if (r.codigo !== 0) throw new Error(`${o_que}: ${(r.erro || r.saida).trim()}`);
     return r.saida.trim();

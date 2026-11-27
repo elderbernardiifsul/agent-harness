@@ -18,8 +18,8 @@ export function destinosDe(agentes) {
 const eObjeto = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const texto = v => typeof v === 'string' && v.trim() !== '';
 // Caminho relativo e sem `..`: a skill nunca aponta para fora da origem ou do projeto.
-const caminhoSeguro = v => texto(v) && !v.startsWith('/') && !v.includes('\\') && !v.split('/').some(p => p === '..' || p === '');
-const NOME = /^[a-z][a-z0-9-]*$/;
+export const caminhoSeguro = v => texto(v) && !v.startsWith('/') && !v.includes('\\') && !v.split('/').some(p => p === '..' || p === '');
+export const NOME = /^[a-z][a-z0-9-]*$/;
 
 function mapa(valor, onde, o_que) {
   if (!eObjeto(valor) || !Object.keys(valor).length) throw new Error(`${onde}: precisa ser um objeto não vazio (${o_que})`);
