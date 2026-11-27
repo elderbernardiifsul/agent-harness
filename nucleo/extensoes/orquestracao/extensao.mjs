@@ -68,6 +68,38 @@ function candidatos(args, ctx) {
   return 0;
 }
 
+// Um padrão de caminho casa com o caminho inteiro: `**` atravessa pastas (`src/**` casa `src/a/b.js`; `src/**/x.js`
+// casa também `src/x.js`), `*` e `?` ficam dentro de uma pasta. O resto vale literalmente.
+export function casaGlob(caminho, glob) {
+  const partes = glob.split(/(\*\*\/|\*\*|\*|\?)/).map(t => ({
+    '**/': '(?:.*/)?', '**': '.*', '*': '[^/]*', '?': '[^/]',
+  })[t] ?? t.replace(/[.+^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(`^${partes.join('')}$`).test(caminho);
+}
+
+// Os arquivos que o ramo muda em relação à base e que casam com `revisao`: pede revisor novo quando há algum.
+function pedeRevisao(args, ctx) {
+  const json = args.includes('--json');
+  const [ramo, ...resto] = args.filter(a => a !== '--json');
+  if (!ramo || resto.length) throw recusa(ctx, ramo ? `Argumento a mais: ${resto[0].slice(0, 40)}` : 'Falta o ramo.', 'use ah pede-revisao <ramo> [--json]');
+  const o = opcoes(ctx);
+  const base = ctx.configDoProjeto?.git?.base ?? 'dev';
+  if (ctx.git(['rev-parse', '--verify', '-q', `${ramo}^{commit}`]).codigo !== 0) {
+    throw recusa(ctx, `${ramo.slice(0, 60)} não é um ramo deste repositório.`, 'confira o nome com git branch');
+  }
+  const d = ctx.git(['diff', '--name-only', `${base}...${ramo}`]);
+  if (d.codigo !== 0) throw recusa(ctx, `não consegui comparar ${ramo} com a ${base}: ${umaLinha(d.erro)}`, `confira se a ${base} existe (git branch)`);
+  const arquivos = d.saida.split('\n').filter(Boolean).filter(a => o.revisao.some(g => casaGlob(a, g))).sort();
+  if (json) {
+    ctx.escrever(`${JSON.stringify({ ramo, base, pede: arquivos.length > 0, arquivos })}\n`);
+    return 0;
+  }
+  if (!o.revisao.length) ctx.escrever(`${ramo} não pede revisão (extensoes.orquestracao.revisao está vazia).\n`);
+  else if (!arquivos.length) ctx.escrever(`${ramo} não pede revisão: nenhum arquivo do diff casa com extensoes.orquestracao.revisao.\n`);
+  else ctx.escrever(`${ramo} pede revisão: toca ${arquivos.join(', ')} (extensoes.orquestracao.revisao).\n`);
+  return 0;
+}
+
 function erroDaConfig(c) {
   const fora = Object.keys(c).find(k => !CAMPOS.includes(k));
   if (fora) return `campo desconhecido: ${fora} (valem ${CAMPOS.join(', ')})`;
@@ -87,6 +119,12 @@ export default {
       uso: 'ah candidatos [--json]',
       requisitos: { sessao: false },
       executar: candidatos,
+    },
+    'pede-revisao': {
+      descricao: 'diz se o diff de um ramo toca os caminhos que pedem revisor novo, e quais arquivos',
+      uso: 'ah pede-revisao <ramo> [--json]',
+      requisitos: { sessao: false },
+      executar: pedeRevisao,
     },
   },
 };

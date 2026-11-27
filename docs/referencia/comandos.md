@@ -772,6 +772,7 @@ $ tools/ah prova --confere dev; echo $?      # depois que outra frente entrou na
 
 ```
 ah candidatos [--json]
+ah pede-revisao <ramo> [--json]
 ```
 
 Comandos da extensão `orquestracao`, que acompanha o harness, desligada por padrão. São a parte determinística do trabalho de quem orquestra (a skill `orquestrar`): a escolha a olho deixa passar ticket bloqueado, já começado por outra sessão ou à espera de uma decisão do humano.
@@ -789,10 +790,13 @@ Comandos da extensão `orquestracao`, que acompanha o harness, desligada por pad
 | `revisao` | `[]` | padrões de caminho cujo diff pede revisor novo (`pede-revisao`, abaixo) |
 
 - **`candidatos`.** Cruza os livres do `ah deps --json` (abertos, sem bloqueio pendente, sem frente) com os tickets abertos que têm o rótulo `pronto` (`gh issue list --label`) e tira os que têm a marca `pendencia`. A saída lista os candidatos, na ordem do `deps` (o mais novo primeiro), e em `Fora:` cada outro ticket aberto com o motivo: `bloqueada`, `com frente <id>`, `sem o rótulo <pronto>`, `"<pendencia>" no corpo` ou `"<pendencia>" num comentário de <autor>`. Quando o `deps` usou a leitura guardada (sem GitHub), a primeira linha diz a data dela. `--json` imprime `{"pronto","pendencia","deCache","candidatos":[{"numero","titulo"}],"fora":[{"numero","titulo","motivo"}]}`. Não exige sessão.
+- **`pede-revisao`.** Compara o ramo com a base (`git diff --name-only <base>...<ramo>`) e diz se algum arquivo do diff casa com `revisao`: `feat/cartao pede revisão: toca src/pagamento/cartao.js (extensoes.orquestracao.revisao).` ou `… não pede revisão: …`. Nos padrões, `**` atravessa pastas (`src/**/x.js` casa também `src/x.js`); `*` e `?` ficam dentro de uma pasta. Sai sempre com 0; `--json` imprime `{"ramo","base","pede","arquivos"}`. Não exige sessão.
 - **Windows.** Não ensaiado no Windows.
 
 | Recusa | Faça |
 |---|---|
+| `Falta o ramo.` / `Argumento a mais: …` (em `pede-revisao`) | use ah pede-revisao <ramo> [--json] |
+| `<ramo> não é um ramo deste repositório.` | confira o nome com git branch |
 | `o ah deps não respondeu: …` | rode tools/ah deps para ver o motivo e conserte antes |
 | `não consegui ler os tickets com o rótulo <pronto>: …` | confira o acesso ao GitHub (gh auth status) e rode de novo |
 | `Argumento desconhecido: …` | use ah candidatos [--json] |
