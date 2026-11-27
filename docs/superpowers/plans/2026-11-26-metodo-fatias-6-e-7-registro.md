@@ -90,3 +90,20 @@ Não ensaiado: Codex e OpenCode (o plano previa só o Claude Code nos ensaios de
 - **`docs/referencia/comandos.md`, seção "Extensões"** (fora das minhas seções): diz "nesta versão, só a `recursos`" entre as que acompanham o harness; com a integração, passa a ter também `wiki` (e as das outras fatias).
 - **Pasta `nucleo/extensoes/metodo/`** existe neste ramo só com `skills/` (sem `extensao.mjs`); na integração com o `p2-metodo`, ela se junta à extensão do orquestrador. A suíte passa assim (pasta sem `extensao.mjs` e desligada não carrega).
 - **Julgamento da ingestão:** na sessão (a), o agente não marcou Contestado a proposta do Norte que a ADR deixou para depois, contra o exemplo do `formato.md`; é leitura defensável. Se o autor quiser a regra mais firme, o lugar é a seção "Decisão prevalece" da `wiki-ingerir`.
+
+## Verificação final
+
+`node ferramentas/verifica.mjs --node "$(mise where node@22)/bin/node" --node "$(command -v node)"`, em 27/11, sobre `f13ee72`:
+
+- Primeira execução, código 1: no Node v22.23.5, 1028 de 1030 passaram, e falhou "cadeia de eval tem orçamento global" (`teste/shell.test.mjs`, limite de 2 s), o mesmo teste de tempo da nota acima; no Node v26.13.1, 1029 passaram. O ramo não toca `nucleo/lib` nem esse teste. Rodado sozinho no Node 22, passou três vezes (cerca de 0,6 s); a carga média da máquina estava entre 13 e 16, com outras sessões rodando suítes.
+- Segunda execução, código 0:
+
+```
+ok      suíte no Node v22.23.5: 1030 testes, 1029 passaram, 0 falharam, 1 pulados
+ok      suíte no Node v26.13.1: 1030 testes, 1029 passaram, 0 falharam, 1 pulados
+ok      varredura de termos
+```
+
+Pendência para o autor: o limite de 2 s desse teste falha sob carga alta da máquina; é do núcleo, fora deste ramo.
+
+Revisão do diff contra `p2-metodo`: 22 arquivos, todos nos caminhos permitidos a este ramo; nenhum nome do projeto de origem (varredura de termos e busca manual).
