@@ -37,7 +37,7 @@ Use todas as que houver: a transcrição da plataforma, a faixa de legenda da gr
 
 ## Cuidados
 
-- Dado sensível dito em voz alta (senha, documento pessoal, dado de cartão) sai da transcrição e dos blocos, com a marca `[trecho suprimido: <motivo>]` no lugar e uma linha no README. Não capture a tela nesse instante.
+- Dado sensível dito em voz alta (senha, documento pessoal, dado de cartão) sai da transcrição e dos blocos, com a marca `[trecho suprimido: <motivo>]` no lugar e uma linha no README. Não capture a tela nesse instante. Ao localizar e conferir o corte, não repita o trecho na conversa, em comando de busca, em mensagem de commit nem em arquivo temporário que fique para trás; procure pelo instante ou por palavras vizinhas. Apague as transcrições brutas que o contenham quando terminar.
 - Conversa pessoal fica fora dos blocos.
 - O arquivo de áudio ou vídeo nunca é fonte da wiki; a wiki cita os `.md` da pasta.
 
