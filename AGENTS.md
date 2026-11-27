@@ -28,6 +28,7 @@ Para ver o harness em funcionamento, instale-o num projeto descartável (README,
 
 | Pasta | Conteúdo |
 |---|---|
+| `README.md` | Na seção "Instalar num projeto (instruções para o agente)", o procedimento que um agente segue para instalar o harness e o método num projeto (o único lugar dele) |
 | `nucleo/` | O que o `init` copia para `.harness/nucleo/` no projeto: `bin/ah.mjs`, `comandos/`, `lib/`, `adaptadores/`, `extensoes/` |
 | `modelos/` | Arquivos que o `init` instala no projeto (configuração, ponto de entrada, ganchos, CI, trecho do `AGENTS.md`) |
 | `teste/` | Testes do harness; `teste/apoio/` monta repositórios descartáveis e o `gh` falso |
