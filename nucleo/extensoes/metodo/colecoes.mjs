@@ -9,6 +9,8 @@ const PASTA_DO_AGENTE = {
   opencode: '.agents/skills',
 };
 export const AGENTES = Object.keys(PASTA_DO_AGENTE);
+// As pastas possíveis: a trava só pode apontar para elas (o que a trava lista pode ser apagado).
+export const PASTAS = [...new Set(Object.values(PASTA_DO_AGENTE))];
 
 // Pastas de destino dos agentes dados, sem repetir (Codex e OpenCode dividem a mesma), na ordem dos agentes.
 export function destinosDe(agentes) {

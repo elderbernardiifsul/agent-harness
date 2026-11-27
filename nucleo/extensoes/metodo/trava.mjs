@@ -4,7 +4,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { NOME, caminhoSeguro } from './colecoes.mjs';
+import { NOME, PASTAS, caminhoSeguro } from './colecoes.mjs';
 
 export const ARQUIVO_TRAVA = '.harness/skills.lock.json';
 
@@ -12,22 +12,34 @@ const eObjeto = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const emOrdem = lista => [...lista].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 export const sha256 = conteudo => crypto.createHash('sha256').update(conteudo).digest('hex');
 
-// Arquivos comuns dentro de `dir`, em qualquer nível, sem seguir link simbólico (nem o próprio `dir`):
-// [{caminho, absoluto}], com `caminho` relativo a `dir`, separado por `/` e em ordem.
-export function listarArquivos(dir) {
-  const lista = [];
+// Percorre `dir` sem seguir link simbólico: {arquivos: [{caminho, absoluto}], links: [caminho]}, com `caminho`
+// relativo a `dir`, separado por `/` e em ordem. `dir` que é ele mesmo um link dá links: [''].
+function percorrer(dir) {
+  const arquivos = [];
+  const links = [];
   const visitar = (abs, rel) => {
     for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
       const caminho = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) visitar(path.join(abs, e.name), caminho);
-      else if (e.isFile()) lista.push({ caminho, absoluto: path.join(abs, e.name) });
+      else if (e.isFile()) arquivos.push({ caminho, absoluto: path.join(abs, e.name) });
+      else if (e.isSymbolicLink()) links.push(caminho);
     }
   };
   let st = null;
   try { st = fs.lstatSync(dir); } catch { /* não existe */ }
-  if (st?.isDirectory()) visitar(dir, '');
-  return lista.sort((a, b) => (a.caminho < b.caminho ? -1 : 1));
+  if (st?.isSymbolicLink()) links.push('');
+  else if (st?.isDirectory()) visitar(dir, '');
+  return { arquivos: arquivos.sort((a, b) => (a.caminho < b.caminho ? -1 : 1)), links: links.sort() };
 }
+
+// Arquivos comuns dentro de `dir`, em qualquer nível, sem seguir link simbólico (nem o próprio `dir`).
+export const listarArquivos = dir => percorrer(dir).arquivos;
+
+// Links simbólicos dentro de `dir` ('' quando o próprio `dir` é um link). Nunca vêm da instalação: são mudança à mão.
+export const linksDe = dir => percorrer(dir).links;
+
+// Os arquivos de `dir` com bit de execução (para devolver o bit a um script que o perdeu).
+export const executaveisDe = dir => listarArquivos(dir).filter(f => fs.statSync(f.absoluto).mode & 0o111).map(f => f.caminho);
 
 // {caminho: sha256} dos arquivos de uma pasta de skill; pasta ausente dá {}.
 export function hashesDe(dirSkill) {
@@ -38,7 +50,7 @@ export function hashesDe(dirSkill) {
 // pode sair da pasta de destino. Devolve o motivo, ou null.
 function errosDaTrava(t) {
   if (!eObjeto(t) || t.versaoDoFormato !== 1) return 'versaoDoFormato precisa ser 1';
-  if (!Array.isArray(t.destinos) || !t.destinos.every(caminhoSeguro)) return 'destinos precisa ser uma lista de pastas relativas';
+  if (!Array.isArray(t.destinos) || !t.destinos.every(d => PASTAS.includes(d))) return `destinos só pode ter ${PASTAS.join(', ')}`;
   if (!eObjeto(t.colecoes)) return 'colecoes precisa ser um objeto';
   for (const [nome, c] of Object.entries(t.colecoes)) {
     if (!eObjeto(c) || !Array.isArray(c.skills) || !c.skills.every(s => typeof s === 'string' && NOME.test(s))) return `colecoes.${nome}.skills precisa ser uma lista de nomes simples`;
@@ -84,15 +96,17 @@ export function gravarTrava(raiz, trava) {
   fs.writeFileSync(arquivo, textoDaTrava(trava));
 }
 
-// O disco contra a trava, em cada destino: `alterados` (conteúdo diferente, ou arquivo a mais na pasta da skill,
-// que se perderia ao recopiá-la) e `ausentes`. `arquivo` no formato '<skill>/<caminho>'.
+// O disco contra a trava, em cada destino: `alterados` (conteúdo diferente, arquivo a mais ou link simbólico na pasta
+// da skill, que se perderiam ao recopiá-la) e `ausentes` (a pasta que é link conta como ausente: tudo nela falta).
+// `arquivo` no formato '<skill>/<caminho>'.
 export function conferir(raiz, trava) {
   const alterados = [];
   const ausentes = [];
   for (const destino of trava.destinos) {
     for (const c of Object.values(trava.colecoes)) {
       for (const skill of c.skills) {
-        const noDisco = hashesDe(path.join(raiz, ...destino.split('/'), skill));
+        const dir = path.join(raiz, ...destino.split('/'), skill);
+        const noDisco = hashesDe(dir);
         const prefixo = `${skill}/`;
         const esperados = Object.keys(c.arquivos).filter(k => k.startsWith(prefixo));
         for (const arquivo of esperados) {
@@ -103,6 +117,7 @@ export function conferir(raiz, trava) {
         for (const rel of Object.keys(noDisco)) {
           if (!Object.hasOwn(c.arquivos, prefixo + rel)) alterados.push({ destino, arquivo: prefixo + rel });
         }
+        for (const rel of linksDe(dir).filter(Boolean)) alterados.push({ destino, arquivo: prefixo + rel });
       }
     }
   }

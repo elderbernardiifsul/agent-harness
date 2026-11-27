@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { criarProjeto } from './apoio/repo.mjs';
 import { criarColecao } from './apoio/colecao-falsa.mjs';
+import { comTrecho } from '../nucleo/extensoes/metodo/trecho.mjs';
 
 const sha = t => crypto.createHash('sha256').update(t).digest('hex');
 const ok = r => { assert.equal(r.codigo, 0, r.erro); return r; };
@@ -73,6 +74,11 @@ function cenario(t, { agentes = ['claude-code'], executaveis = [], github = null
     if (github) cfg.github.repo = github;
   });
   return { p, c, colecoes, gravarColecoes, instalar: (args = [], o) => p.ah(['metodo', 'instalar', ...args], o) };
+}
+
+// Grava uma trava escrita à mão (para os testes de trava inválida).
+function gravarTravaFalsa(p, trava) {
+  fs.writeFileSync(caminho(p, '.harness/skills.lock.json'), JSON.stringify(trava));
 }
 
 // Roda os passos do commit que o instalar imprimiu.
@@ -148,13 +154,33 @@ test('instalar cria os rótulos de triagem pelo gh; sem gh, avisa e termina', t 
   const { p, instalar } = cenario(t, { github: 'exemplo/loja' });
   ok(instalar());
   const criados = p.ghChamadas().filter(c => c.argv[0] === 'label' && c.argv[1] === 'create');
+  // O triage-labels.md da coleção falsa não tem a tabela: valem os nomes padrão.
   assert.deepEqual(criados.map(c => c.argv[2]), ROTULOS);
-  for (const c of criados) assert.ok(c.argv.includes('--force') && c.argv.includes('exemplo/loja'), c.argv.join(' '));
+  for (const c of criados) {
+    assert.ok(!c.argv.includes('--force'), c.argv.join(' '));
+    assert.ok(c.argv.includes('exemplo/loja'), c.argv.join(' '));
+    assert.match(c.argv[c.argv.indexOf('--color') + 1], /^[0-9A-F]{6}$/);
+    assert.ok(c.argv[c.argv.indexOf('--description') + 1], c.argv.join(' '));
+  }
 
   const fora = instalar([], { env: { GH_FALSO_FORA: '1' } });
   assert.equal(fora.codigo, 0, fora.erro);
   assert.match(fora.erro, /não criei os rótulos de triagem/);
   assert.match(fora.erro, /Faça:/);
+});
+
+test('os rótulos vêm do triage-labels.md do projeto e só os que faltam são criados', t => {
+  const { p, instalar } = cenario(t, { github: 'exemplo/loja' });
+  const linhas = ROTULOS.map(r => `| \`${r}\` | \`${r === 'needs-triage' ? 'triagem' : r}\` | papel |`);
+  fs.mkdirSync(caminho(p, 'docs/agents'), { recursive: true });
+  fs.writeFileSync(caminho(p, 'docs/agents/triage-labels.md'), ['# Rótulos', '', '| Label in mattpocock/skills | Label in our tracker | Meaning |', '| --- | --- | --- |', ...linhas, ''].join('\n'));
+  fs.writeFileSync(p.env.GH_FALSO_TICKETS, JSON.stringify({ _rotulos: ['wontfix'] }));
+  ok(instalar());
+  const doGh = () => p.ghChamadas().filter(c => c.argv[0] === 'label').map(c => c.argv.slice(0, 3).join(' '));
+  assert.deepEqual(doGh().filter(c => c.startsWith('label create')).map(c => c.split(' ')[2]), ['triagem', 'needs-info', 'ready-for-agent', 'ready-for-human']);
+  const antes = doGh().length;
+  ok(instalar());
+  assert.deepEqual(doGh().slice(antes).map(c => c.split(' ').slice(0, 2).join(' ')), ['label list']);
 });
 
 test('instalar sem github.repo não chama o gh', t => {
@@ -181,7 +207,8 @@ test('skill do harness ligada a uma extensão só é instalada com a extensão l
   ok(instalar());
   assert.ok(!existe(p, '.claude/skills/so-com-recursos'));
   configurar(p, cfg => { cfg.extensoes.recursos = true; });
-  ok(instalar());
+  // Só a skill escrita conta: preparar-projeto já estava igual.
+  assert.match(ok(instalar()).saida, /^Instalei 1 skill\(s\) de agent-harness \(/m);
   assert.equal(ler(p, '.claude/skills/so-com-recursos/SKILL.md'), 'so-com-recursos\n');
   assert.deepEqual(travaDe(p).colecoes['agent-harness'].skills, ['preparar-projeto', 'so-com-recursos']);
   configurar(p, cfg => { cfg.extensoes.recursos = false; });
@@ -239,4 +266,79 @@ test('instalar sem a extensão configurada com agentes recusa com o próximo pas
   assert.match(r.erro, /Faça:/);
   const d = p.ah(['doctor']);
   assert.match(d.saida, /^FALHOU {2}Extensão metodo: configuração recusada: agentes .*; corrija extensoes\.metodo em \.harness\/config\.json$/m);
+});
+
+test('origem nova com o disco igual à trava instala sem recusa', t => {
+  const { p, c, colecoes, gravarColecoes, instalar } = cenario(t);
+  ok(instalar());
+  colecoes.colecoes.falsa.commit = c.novoCommit({ 'skills/alfa/SKILL.md': 'alfa v2\n', 'skills/alfa/novo.md': 'novo\n', 'skills/alfa/scripts/rodar': null });
+  gravarColecoes();
+  const r = ok(instalar());
+  assert.match(r.saida, /Instalei 1 skill\(s\) de falsa/);
+  assert.equal(ler(p, '.claude/skills/alfa/SKILL.md'), 'alfa v2\n');
+  assert.equal(ler(p, '.claude/skills/alfa/novo.md'), 'novo\n');
+  assert.ok(!existe(p, '.claude/skills/alfa/scripts/rodar'));
+  assert.equal(travaDe(p).colecoes.falsa.commit, colecoes.colecoes.falsa.commit);
+});
+
+test('instalar devolve o bit de execução perdido, mesmo com o conteúdo igual', { skip: process.platform === 'win32' }, t => {
+  const { p, instalar } = cenario(t, { executaveis: ['skills/alfa/scripts/rodar'] });
+  ok(instalar());
+  fs.chmodSync(caminho(p, '.claude/skills/alfa/scripts/rodar'), 0o644);
+  const r = ok(instalar());
+  assert.match(r.saida, /Instalei 1 skill\(s\) de falsa/);
+  assert.ok(fs.statSync(caminho(p, '.claude/skills/alfa/scripts/rodar')).mode & 0o100);
+});
+
+test('trava com destino fora da tabela dos agentes é ilegível, mesmo com --forcar', t => {
+  const { p, instalar } = cenario(t);
+  gravarTravaFalsa(p, { versaoDoFormato: 1, destinos: ['docs'], colecoes: { falsa: { origem: 'x', commit: null, versao: '1', skills: ['agents'], arquivos: {} } } });
+  for (const args of [[], ['--forcar']]) {
+    const r = instalar(args);
+    assert.equal(r.codigo, 1);
+    assert.match(r.erro, /^Recusado: a trava \.harness\/skills\.lock\.json está ilegível: destinos/);
+    assert.match(r.erro, /Faça:/);
+  }
+  assert.ok(existe(p, 'docs/agents/sessoes-paralelas.md'));
+});
+
+test('link simbólico dentro da pasta da skill conta como mudança à mão', { skip: process.platform === 'win32' }, t => {
+  const { p, instalar } = cenario(t);
+  ok(instalar());
+  const fora = path.join(path.dirname(p.raiz), 'meu-skill.md');
+  fs.writeFileSync(fora, 'a skill da Ana\n');
+  fs.rmSync(caminho(p, '.claude/skills/alfa/SKILL.md'));
+  fs.symlinkSync(fora, caminho(p, '.claude/skills/alfa/SKILL.md'));
+  const r = instalar();
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /\.claude\/skills: alfa\/SKILL\.md \(link simbólico\)/);
+  assert.ok(fs.lstatSync(caminho(p, '.claude/skills/alfa/SKILL.md')).isSymbolicLink());
+  ok(instalar(['--forcar']));
+  assert.ok(fs.lstatSync(caminho(p, '.claude/skills/alfa/SKILL.md')).isFile());
+  assert.equal(fs.readFileSync(fora, 'utf8'), 'a skill da Ana\n');
+});
+
+test('pasta de skill que é link simbólico conta como mudança à mão', { skip: process.platform === 'win32' }, t => {
+  const { p, instalar } = cenario(t);
+  ok(instalar());
+  const fora = path.join(path.dirname(p.raiz), 'alfa-da-ana');
+  fs.cpSync(caminho(p, '.claude/skills/alfa'), fora, { recursive: true });
+  fs.rmSync(caminho(p, '.claude/skills/alfa'), { recursive: true });
+  fs.symlinkSync(fora, caminho(p, '.claude/skills/alfa'));
+  const r = instalar();
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /\.claude\/skills: alfa \(link simbólico\)/);
+  ok(instalar(['--forcar']));
+  assert.ok(fs.lstatSync(caminho(p, '.claude/skills/alfa')).isDirectory());
+  assert.equal(fs.readFileSync(path.join(fora, 'SKILL.md'), 'utf8'), 'alfa v1\n');
+});
+
+test('comTrecho com marcas do método quebradas acrescenta no fim e avisa', () => {
+  const trecho = '<!-- agent-harness/metodo: início (x) -->\nnovo\n<!-- agent-harness/metodo: fim -->\n';
+  const r = comTrecho('antes\n<!-- agent-harness/metodo: início (x) -->\nvelho\n', trecho);
+  assert.ok(r.texto.startsWith('antes\n<!-- agent-harness/metodo: início (x) -->\nvelho\n'));
+  assert.ok(r.texto.endsWith(trecho));
+  assert.match(r.aviso, /^AGENTS\.md tem as marcas do método incompletas ou repetidas/);
+  assert.match(r.aviso, /rode tools\/ah metodo instalar de novo/);
+  assert.deepEqual(comTrecho('a\r\n', trecho).texto, `a\r\n\r\n${trecho.replace(/\n/g, '\r\n')}`);
 });

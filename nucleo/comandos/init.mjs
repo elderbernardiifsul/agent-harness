@@ -171,30 +171,33 @@ function settingsDoClaude(raiz, dirModelos) {
 
 const ocorrencias = (texto, marca) => texto.split(marca).length - 1;
 
-// AGENTS.md com o trecho do harness: {texto, aviso}. Só troca o trecho quando há exatamente um par de
-// marcas, com o fim depois do início; sem marcas, acrescenta no fim; marca faltando ou repetida não
-// reescreve nada do que existe: acrescenta o trecho novo no fim (uma vez só) e avisa. O fim de linha
-// do arquivo (CRLF ou LF) é mantido.
-export function agentsComTrecho(atual, trecho) {
+// `atual` com `trecho` entre as marcas `inicio` e `fim`: {texto, aviso}. Só troca o trecho quando há exatamente um
+// par de marcas, com o fim depois do início; sem marcas, acrescenta no fim; marca faltando ou repetida não reescreve
+// nada do que existe: acrescenta o trecho novo no fim (uma vez só) e avisa. O fim de linha do arquivo (CRLF ou LF) é
+// mantido. `inicio` é o começo da marca (o resto dela pode mudar); `arquivo`, `dono` e `comando` entram no aviso.
+export function trechoEntreMarcas(atual, trecho, { inicio, fim: marcaFim, arquivo, dono = 'do harness', comando = 'ah init' }) {
   if (atual === null) return { texto: trecho, aviso: null };
   const fimDeLinha = atual.includes('\r\n') ? '\r\n' : '\n';
   const novo = trecho.replace(/\r?\n/g, fimDeLinha);
   const acrescentado = () => `${atual}${atual === '' || atual.endsWith(fimDeLinha) ? '' : fimDeLinha}${atual === '' ? '' : fimDeLinha}${novo}`;
-  const ini = ocorrencias(atual, MARCA_INICIO);
-  const fim = ocorrencias(atual, MARCA_FIM);
+  const ini = ocorrencias(atual, inicio);
+  const fim = ocorrencias(atual, marcaFim);
   if (ini === 0 && fim === 0) return { texto: acrescentado(), aviso: null };
-  const i = atual.indexOf(MARCA_INICIO);
-  const f = atual.indexOf(MARCA_FIM);
+  const i = atual.indexOf(inicio);
+  const f = atual.indexOf(marcaFim);
   if (ini === 1 && fim === 1 && f > i) {
-    let depois = f + MARCA_FIM.length;
+    let depois = f + marcaFim.length;
     if (atual.startsWith(fimDeLinha, depois)) depois += fimDeLinha.length;
     return { texto: atual.slice(0, i) + novo + atual.slice(depois), aviso: null };
   }
   return {
     texto: atual.endsWith(novo) ? atual : acrescentado(),
-    aviso: `${ARQUIVO_AGENTS} tem as marcas do harness incompletas ou repetidas; não mexi no que existe e acrescentei o trecho novo no fim.\nFaça: apague do ${ARQUIVO_AGENTS} o trecho antigo e as marcas soltas, deixe só o trecho do fim e rode ah init de novo\n`,
+    aviso: `${arquivo} tem as marcas ${dono} incompletas ou repetidas; não mexi no que existe e acrescentei o trecho novo no fim.\nFaça: apague do ${arquivo} o trecho antigo e as marcas soltas, deixe só o trecho do fim e rode ${comando} de novo\n`,
   };
 }
+
+// AGENTS.md com o trecho do harness (as regras em trechoEntreMarcas).
+export const agentsComTrecho = (atual, trecho) => trechoEntreMarcas(atual, trecho, { inicio: MARCA_INICIO, fim: MARCA_FIM, arquivo: ARQUIVO_AGENTS });
 
 // CLAUDE.md com a linha `@AGENTS.md`: {texto, muda}. Sem arquivo, nasce só com a linha; se alguma linha
 // já é `@AGENTS.md` (em qualquer posição), nada muda; senão a linha entra no topo, seguida de uma linha

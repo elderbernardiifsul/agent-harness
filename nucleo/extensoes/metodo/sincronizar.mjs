@@ -9,21 +9,21 @@ import { passosDoCommit } from '../../comandos/init.mjs';
 import { VERSAO } from '../../versao.mjs';
 import { destinosDe, lerColecoes } from './colecoes.mjs';
 import { buscar, dirDoCache } from './origem.mjs';
-import { ARQUIVO_TRAVA, hashesDe, lerTrava, listarArquivos, sha256, textoDaTrava, gravarTrava } from './trava.mjs';
+import { ARQUIVO_ROTULOS, criarRotulos } from './rotulos.mjs';
+import { ARQUIVO_TRAVA, executaveisDe, hashesDe, lerTrava, linksDe, listarArquivos, sha256, textoDaTrava, gravarTrava } from './trava.mjs';
 import { comTrecho } from './trecho.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const DO_HARNESS = 'agent-harness';
 const ARQUIVO_AGENTS = 'AGENTS.md';
-// Os cinco rótulos de triagem das skills do Matt Pocock, com os nomes padrão do triage-labels.md da coleção.
-const ARQUIVO_ROTULOS = 'docs/agents/triage-labels.md';
-const ROTULOS = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'wontfix'];
 const MENSAGEM_DO_COMMIT = 'chore: instala o método do agent-harness';
 
 const eLigada = v => v === true || (v !== null && typeof v === 'object' && !Array.isArray(v));
 const umaLinha = t => String(t ?? '').split('\n').map(l => l.trim()).find(Boolean)?.slice(0, 200) ?? '';
 const absoluto = (raiz, rel) => path.join(raiz, ...rel.split('/'));
 const mesmosHashes = (a, b) => Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([k, h]) => b[k] === h);
+const mesmaLista = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+const comoLink = (destino, skill, rel) => `${destino}: ${rel ? `${skill}/${rel}` : skill} (link simbólico)`;
 
 // Caminho `rel` ainda dentro do projeto depois de resolver os links simbólicos do que já existe nele?
 function dentroDoProjeto(raiz, rel) {
@@ -88,7 +88,9 @@ function montarCopia(nome, c, fonte, extensoesLigadas, recusa) {
 }
 
 // 3. O que muda no disco, sem gravar nada: escritas e remoções de pastas de skill, e o que se perderia (`perdas`).
-// Um arquivo do disco pode ser trocado quando é igual à trava anterior ou ao novo; senão, é mudança à mão.
+// Um arquivo do disco pode ser trocado quando é igual à trava anterior ou ao novo; senão, é mudança à mão. Link
+// simbólico na pasta (ou a pasta que é link) é sempre mudança à mão. Script com o bit de execução diferente da
+// origem é recopiado (não é perda: o conteúdo é o mesmo).
 function planejar(raiz, { copias, destinos, anterior, tocadas, forcar }) {
   const daTrava = new Map(); // skill -> {arquivos da trava anterior}, só nos destinos que a trava conhece
   for (const c of Object.values(anterior?.colecoes ?? {})) for (const s of c.skills) daTrava.set(s, c.arquivos);
@@ -100,14 +102,19 @@ function planejar(raiz, { copias, destinos, anterior, tocadas, forcar }) {
   for (const [nome, copia] of Object.entries(copias)) {
     for (const [skill, arquivos] of Object.entries(copia.skills)) {
       const desejado = Object.fromEntries(arquivos.map(f => [f.caminho, sha256(f.conteudo)]));
+      const executaveis = arquivos.filter(f => f.modo === 0o755).map(f => f.caminho);
       for (const destino of destinos) {
         novas.add(`${destino}/${skill}`);
-        const noDisco = hashesDe(absoluto(raiz, `${destino}/${skill}`));
-        if (mesmosHashes(noDisco, desejado)) continue;
+        const dir = absoluto(raiz, `${destino}/${skill}`);
+        const noDisco = hashesDe(dir);
+        const links = linksDe(dir);
+        const bitsIguais = process.platform === 'win32' || mesmaLista(executaveisDe(dir), executaveis);
+        if (!links.length && bitsIguais && mesmosHashes(noDisco, desejado)) continue;
         escritas.push({ colecao: nome, destino, skill, arquivos });
         for (const [rel, h] of Object.entries(noDisco)) {
           if (h !== desejado[rel] && h !== hashAntigo(destino, skill, rel)) perdas.push(`${destino}: ${skill}/${rel}`);
         }
+        perdas.push(...links.map(rel => comoLink(destino, skill, rel)));
       }
     }
   }
@@ -121,9 +128,11 @@ function planejar(raiz, { copias, destinos, anterior, tocadas, forcar }) {
     for (const skill of c.skills) {
       for (const destino of anterior.destinos) {
         if (novas.has(`${destino}/${skill}`)) continue;
-        const noDisco = hashesDe(absoluto(raiz, `${destino}/${skill}`));
-        if (!Object.keys(noDisco).length) continue;
-        const mudada = Object.entries(noDisco).some(([rel, h]) => h !== hashAntigo(destino, skill, rel));
+        const dir = absoluto(raiz, `${destino}/${skill}`);
+        const noDisco = hashesDe(dir);
+        const links = linksDe(dir);
+        if (!Object.keys(noDisco).length && !links.length) continue;
+        const mudada = links.length > 0 || Object.entries(noDisco).some(([rel, h]) => h !== hashAntigo(destino, skill, rel));
         (mudada && !forcar ? mantidas : remocoes).push({ destino, skill });
       }
     }
@@ -154,17 +163,6 @@ function novaTrava({ anterior, tocadas, copias, fontes, destinos }) {
     trava.colecoes[nome] = { origem, commit, versao, skills: Object.keys(copia.skills), arquivos };
   }
   return trava;
-}
-
-// 7. Rótulos de triagem no GitHub. Falha do gh nunca derruba a instalação: vira aviso com o que fazer.
-function criarRotulos(ctx, repo, comando) {
-  for (const rotulo of ROTULOS) {
-    const r = ctx.gh(['label', 'create', rotulo, '--repo', repo, '--force']);
-    if (r.codigo !== 0) {
-      ctx.avisar(`Aviso: não criei os rótulos de triagem no GitHub (${umaLinha(r.erro || r.saida) || `código ${r.codigo}`}).\nFaça: confira o gh (gh auth status) e github.repo em .harness/config.json e rode tools/ah metodo ${comando} de novo, ou crie à mão os rótulos ${ROTULOS.join(', ')}\n`);
-      return;
-    }
-  }
 }
 
 // Instala ou atualiza as coleções (`colecoesPedidas`: só essas; null: todas) nos commits de `refs` ({nome: ref}) ou nos
@@ -230,9 +228,11 @@ export async function sincronizar(ctx, { colecoesPedidas = null, refs = {}, simu
   // Relatório (o mesmo na simulação).
   const linhas = [];
   for (const nome of Object.keys(copias).sort()) {
-    if (!plano.escritas.some(e => e.colecao === nome)) continue;
+    // Contam só as skills escritas agora; as que já estavam iguais ficam de fora.
+    const escritas = new Set(plano.escritas.filter(e => e.colecao === nome).map(e => e.skill)).size;
+    if (!escritas) continue;
     const f = fontes[nome];
-    linhas.push(`Instalei ${Object.keys(copias[nome].skills).length} skill(s) de ${nome} (${f.versao}${f.commit ? `, ${f.commit.slice(0, 7)}` : ''}) em ${destinos.join(', ')}.`);
+    linhas.push(`Instalei ${escritas} skill(s) de ${nome} (${f.versao}${f.commit ? `, ${f.commit.slice(0, 7)}` : ''}) em ${destinos.join(', ')}.`);
   }
   for (const r of plano.remocoes) linhas.push(`Removi a skill ${r.skill} de ${r.destino}.`);
   for (const rel of copiar) linhas.push(`Criei ${rel}.`);

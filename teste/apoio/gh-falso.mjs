@@ -1,6 +1,6 @@
 // gh de mentira para os testes: grava cada chamada e responde conforme um arquivo JSON.
 // Com GH_FALSO_TICKETS, guarda os tickets nesse arquivo ({"<n>": {state, assignees, labels, comments, apagado?}})
-// e responde a issue view/comment/edit/list e label create como o gh faria. Responde também à API REST de issues
+// e responde a issue view/comment/edit/list e label list/create como o gh faria. Responde também à API REST de issues
 // e de dependências (`gh api repos/<dono>/<repo>/issues[/<n>[/dependencies/blocked_by|blocking]]`).
 import { appendFileSync, existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 
@@ -100,6 +100,13 @@ function noFormatoDoGh(n, tk, campos) {
     comments: tk.comments.map((c, i) => ({ author: { login: c.author }, body: c.body, url: `https://github.com/exemplo/loja/issues/${n}#issuecomment-${c.numero ?? i + 1}` })),
   };
   return Object.fromEntries(campos.map(c => [c, tudo[c] ?? null]));
+}
+
+// `label list --json name`: os rótulos que existem (criados ou postos em algum ticket).
+if (argv[0] === 'label' && argv[1] === 'list') {
+  const t = lerTickets();
+  const nomes = [...new Set([...(t[CHAVE_ROTULOS] ?? []), ...numeros(t).flatMap(n => t[n].labels ?? [])])];
+  responder(0, `${JSON.stringify(nomes.map(name => ({ name })))}\n`);
 }
 
 if (argv[0] === 'label' && argv[1] === 'create') {
