@@ -12,6 +12,7 @@ import { comTrava } from './estado.mjs';
 import { gravarFrente, lerFrente, listarFrentesTolerante } from './frente.mjs';
 import { git } from './git.mjs';
 import { gh } from './github.mjs';
+import { lerSessao } from './sessao.mjs';
 import { vidaDaDona } from './vida.mjs';
 
 export const VERSAO_DA_INTERFACE = 1;
@@ -237,6 +238,13 @@ export function montarCtx(ext, amb, extra = {}) {
     avisar: amb.avisar ?? (() => {}),
     frente: copiaSoDeLeitura(frente),
     frentes: () => (dirEstado ? listarFrentesTolerante(dirEstado).frentes.map(copiaSoDeLeitura) : []),
+    // O registro da sessão `id` (agente, modelo, papel, frente…), cópia só de leitura, ou null. Serve, por exemplo,
+    // para a coluna do quadro mostrar o modelo da sessão dona de cada frente. Nunca lança: sem id, sem estado,
+    // sem arquivo ou com o arquivo ilegível, devolve null, e quem chama mostra "—".
+    sessao(id) {
+      if (!dirEstado || typeof id !== 'string' || !id) return null;
+      try { return copiaSoDeLeitura(lerSessao(dirEstado, id)); } catch { return null; }
+    },
     // A sessão dona da frente (`frente.dona`) está viva? Mesma regra do takeover e do board (vida.mjs): registro
     // ilegível conta como viva (pode estar), e frente sem dona, como não. Para a extensão não mexer em frente
     // ativa de outra sessão de pé.

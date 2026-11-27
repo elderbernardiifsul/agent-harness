@@ -15,6 +15,7 @@ import { gravarFrente, lerFrente } from '../nucleo/lib/frente.mjs';
 import { ErroDeUso } from '../nucleo/lib/caminhos.mjs';
 import { tratar } from '../nucleo/adaptadores/contrato.mjs';
 import { lerEventos } from '../nucleo/lib/estado.mjs';
+import { registrarSessao } from '../nucleo/lib/sessao.mjs';
 
 const ECO = path.join(path.dirname(fileURLToPath(import.meta.url)), 'extensoes-de-teste', 'eco');
 
@@ -152,6 +153,24 @@ test('ctx: frente só de leitura e gravarCampos só nos campos da extensão', as
   assert.equal(ctx.ErroDeUso, ErroDeUso);
   assert.equal(typeof ctx.git, 'function');
   assert.equal(typeof ctx.gh, 'function');
+});
+
+test('ctx.sessao lê o registro da sessão, só de leitura, e devolve null sem ele', async t => {
+  const pp = pastas(t, { eco: fonte() });
+  const r = await carregar(pp, { eco: true });
+  registrarSessao(pp.dirEstado, { id: 's1', agente: 'claude-code', modelo: 'modelo-de-teste' });
+  const ctx = montarCtx(r.ativas[0], { raiz: pp.raiz, config: aplicarPadroes({ projeto: 'loja' }), dirEstado: pp.dirEstado, sessaoId: 's1', env: {} });
+  const s = ctx.sessao('s1');
+  assert.deepEqual([s.agente, s.modelo], ['claude-code', 'modelo-de-teste']);
+  assert.ok(Object.isFrozen(s));
+  assert.equal(ctx.sessao('nao-existe'), null);
+  assert.equal(ctx.sessao(null), null);
+  assert.equal(ctx.sessao('../fora'), null);
+  // Registro ilegível: null, sem lançar (a coluna do quadro não pode derrubar o board).
+  fs.writeFileSync(path.join(pp.dirEstado, 'sessoes', 's1.json'), '{');
+  assert.equal(ctx.sessao('s1'), null);
+  // Sem pasta de estado: null.
+  assert.equal(montarCtx(r.ativas[0], { raiz: pp.raiz, config: aplicarPadroes({ projeto: 'loja' }), sessaoId: 's1', env: {} }).sessao('s1'), null);
 });
 
 // ---------------------------------------------------------------- travas (no próprio processo)

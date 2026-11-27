@@ -72,6 +72,7 @@ Toda função da extensão recebe o mesmo formato de contexto:
 | `git(args, opcoes)`, `gh(args, opcoes)` | Os auxiliares do núcleo, na raiz do projeto; devolvem `{codigo, saida, erro}` e não lançam |
 | `ErroDeUso` | Classe para recusar dentro de um comando |
 | `donaViva(frente)` | `true` quando a sessão `frente.dona` está viva, pela mesma regra do `board` e do `takeover` (processo e sinal de vida); registro de sessão ilegível conta como viva; frente sem dona conta como `false` |
+| `sessao(id)` | O registro da sessão `id` (`<estado>/sessoes/<id>.json`: `agente`, `modelo`, `papel`, `frente`, `inicio`…), cópia só de leitura, ou `null` sem id, sem estado, sem arquivo ou com o arquivo ilegível; nunca lança. A coluna `MODELO` da extensão `modelo` usa `ctx.sessao(frente.dona)?.modelo`. Acréscimo compatível de 26/11/2026 (P2 do desenho do método); a interface continua na versão 1 |
 
 ### Registro da frente
 
@@ -204,6 +205,7 @@ Cada reação é `async (ctx)`. Em todas, `ctx.frente` é a frente do comando.
 - `frente` (o registro de partida, montado à mão; basta trazer os campos que a função lê) e `frentes` formam o estado em memória; `ctx.frente` sai congelado, como no núcleo.
 - `saida` e `avisos` são listas com cada texto passado a `escrever` e `avisar`, na ordem (`['Frente as-1 carrinho: aberta há 2 h 13 min\n']`); `gravados` lista cada `gravarCampos` como `{frente, secao}`; `chamadas` lista cada `git`/`gh` como `{programa, args, opcoes}`, que respondem `{codigo: 0, saida: '', erro: ''}` salvo funções `git`/`gh` dadas.
 - `ErroDeUso` é a mesma classe do núcleo: `assert.rejects(() => cmd.executar([], ctx), ctx.ErroDeUso)` confere uma recusa.
+- `sessao(id)` responde pela opção `sessoes`, um objeto `{<id>: registro}`; id fora dele dá `null`: `ctxFalso({sessoes: {'sessao-b-0002': {id: 'sessao-b-0002', modelo: 'modelo-leve'}}})`.
 - `donaViva(frente)` responde pela opção `vivas`, lista dos ids de sessão dados como vivos; o padrão é `[sessaoId]`: `ctxFalso({frente, vivas: ['sessao-b-0002']})`.
 - `sessaoId` vale `sessao-teste-0001` por padrão; `env` é `{}`; `dirEstado` é `null`; outros campos (`retomada`, `reparar`, `soLocal`) entram pelo resto do objeto: `ctxFalso({frente, retomada: true})`.
 
