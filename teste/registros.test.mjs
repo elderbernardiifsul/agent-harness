@@ -6,6 +6,8 @@ import { amb as ambDoTeste, criarProjeto, dirDoTeste, envelhecerSinal, outraMaqu
 import { tratar } from '../nucleo/adaptadores/contrato.mjs';
 import { esquecerExtensoes } from '../nucleo/lib/extensoes.mjs';
 import { corpoDoDiario, devolverDiario, lerMarcador } from '../nucleo/extensoes/registros/diario.mjs';
+import { carregarParaTeste, ctxFalso } from '../nucleo/lib/extensoes-teste.mjs';
+import os from 'node:os';
 
 const PLANO = 'docs/superpowers/plans/2026-11-20-carrinho.md';
 const DIARIO = `# SDD ledger — plan: ${PLANO}
@@ -101,7 +103,7 @@ test('arquivo do aluno em .superpowers/sdd/: fica, com o aviso, e o close recusa
   const wt = frenteComDiario(p);
   fs.writeFileSync(path.join(wt, '.superpowers', 'sdd', 'minhas-notas.txt'), 'notas');
   const r = ok(p.ah(['registros', 'guardar']));
-  assert.match(r.erro, /Aviso: deixei no worktree o que não é do subagent-driven-development: \.superpowers\/sdd\/minhas-notas\.txt/);
+  assert.match(r.erro, /Aviso: deixei no worktree o que não é do subagent-driven-development ou não foi guardado: \.superpowers\/sdd\/minhas-notas\.txt/);
   assert.ok(fs.existsSync(path.join(wt, '.superpowers', 'sdd', 'minhas-notas.txt')));
   assert.ok(!fs.existsSync(path.join(wt, '.superpowers', 'sdd', 'carrinho')));
   // O close recusa pelo arquivo do aluno na linha de sempre, sem mandar rodar o guardar de novo.
@@ -549,4 +551,90 @@ test('comentário sem authorAssociation (gh antigo) é ignorado, com aviso', t =
   const r = ok(q.ah(['open', 'carrinho']));
   assert.ok(!fs.existsSync(diarioNoWt(wtDe(q), 'carrinho')));
   assert.match(r.erro, /Aviso: ignorei o diário que @ana-souza comentou em #7 \(associação desconhecida: o gh não informou\)/);
+});
+
+// ---------------------------------------------------------------- revisão final de 27/11 (C1, I1, I2)
+
+const EXTENSAO = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'nucleo', 'extensoes', 'registros', 'extensao.mjs');
+
+test('id de frente fora da pasta de estado: a registros não grava nem apaga fora dela', async t => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ah-registros-')));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const dirEstado = path.join(base, 'estado', 'loja');
+  const vitima = path.join(base, 'vitima');
+  fs.mkdirSync(vitima, { recursive: true });
+  fs.writeFileSync(path.join(vitima, 'importante.txt'), 'não apague');
+  fs.mkdirSync(path.join(dirEstado, 'registros'), { recursive: true });
+  const wt = path.join(base, 'wt');
+  fs.mkdirSync(wt);
+  devolverDiario(wt, { pasta: 'carrinho', plano: PLANO, texto: DIARIO });
+  const def = await carregarParaTeste(EXTENSAO);
+  // `<estado>/registros/../../../vitima` é a pasta `vitima`, fora do estado.
+  const frente = { id: '../../../vitima', nome: 'carrinho', worktree: wt, tickets: [] };
+  const ctx = ctxFalso({ extensao: 'registros', dirEstado, frente, soLocal: true });
+  await assert.rejects(def.reacoes.depoisDeFechar(ctx), /fora da pasta de estado/);
+  await assert.rejects(def.comandos.registros.executar(['guardar'], ctx), /fora da pasta de estado/);
+  assert.equal(fs.readFileSync(path.join(vitima, 'importante.txt'), 'utf8'), 'não apague');
+  assert.deepEqual(fs.readdirSync(vitima), ['importante.txt']);
+  // O diário continua no worktree: nada foi guardado, então nada sai.
+  assert.ok(fs.existsSync(path.join(wt, '.superpowers', 'sdd', 'carrinho', 'progress.md')));
+});
+
+test('guardar tira só o que o subagent-driven-development cria; o arquivo do aluno fica, e o close recusa por ele', t => {
+  const p = projeto(t);
+  const wt = frenteComDiario(p);
+  const sdd = path.join(wt, '.superpowers', 'sdd');
+  const plano = path.join(sdd, 'carrinho');
+  for (const [nome, texto] of [['task-1-brief.md', 'instruções'], ['task-1-report.md', 'relatório'], ['review-a1b2c3d..e4f5a6b.diff', 'diff']]) fs.writeFileSync(path.join(plano, nome), texto);
+  fs.writeFileSync(path.join(plano, 'notas-do-aluno.md'), 'minhas notas');
+  fs.writeFileSync(path.join(plano, 'log.txt'), 'log');
+  const r = ok(p.ah(['registros', 'guardar']));
+  const dir = copia(p, 'as-1', 'carrinho');
+  for (const nome of ['progress.md', 'plan-path', 'task-1-brief.md', 'task-1-report.md', 'review-a1b2c3d..e4f5a6b.diff']) {
+    assert.ok(fs.existsSync(path.join(dir, 'arquivos', nome)), nome);
+    assert.ok(!fs.existsSync(path.join(plano, nome)), nome);
+  }
+  assert.deepEqual(fs.readdirSync(plano).sort(), ['log.txt', 'notas-do-aluno.md']);
+  assert.match(r.erro, /Aviso: deixei no worktree o que não é do subagent-driven-development ou não foi guardado: \.superpowers\/sdd\/carrinho\/log\.txt, \.superpowers\/sdd\/carrinho\/notas-do-aluno\.md/);
+  const c = p.ah(['close']);
+  assert.equal(c.codigo, 1);
+  assert.match(c.erro, /itens ignorados no worktree/);
+  assert.doesNotMatch(c.erro, /extensão registros guarda/);
+  assert.equal(fs.readFileSync(path.join(plano, 'notas-do-aluno.md'), 'utf8'), 'minhas notas');
+});
+
+test('a cópia local nasce só para o dono (0700 nas pastas, 0600 nos arquivos)', { skip: process.platform === 'win32' ? 'permissões do POSIX' : false }, t => {
+  const p = projeto(t);
+  const wt = frenteComDiario(p);
+  fs.writeFileSync(path.join(wt, '.superpowers', 'sdd', 'carrinho', 'task-1-brief.md'), 'instruções');
+  ok(p.ah(['registros', 'guardar']));
+  const dir = copia(p, 'as-1', 'carrinho');
+  const modo = f => fs.statSync(f).mode & 0o777;
+  for (const d of [path.dirname(dir), dir, path.join(dir, 'arquivos')]) assert.equal(modo(d), 0o700, d);
+  for (const f of [path.join(dir, 'progress.md'), path.join(dir, 'meta.json'), path.join(dir, 'arquivos', 'task-1-brief.md')]) assert.equal(modo(f), 0o600, f);
+});
+
+test('arquivo acima de 5 MB e link simbólico ficam no worktree, sem cópia, com aviso', { skip: process.platform === 'win32' ? 'link simbólico do POSIX' : false }, t => {
+  const p = projeto(t);
+  const wt = frenteComDiario(p);
+  const plano = path.join(wt, '.superpowers', 'sdd', 'carrinho');
+  fs.writeFileSync(path.join(plano, 'review-a1b2c3d..e4f5a6b.diff'), Buffer.alloc(5 * 1024 * 1024 + 1, 'x'));
+  fs.mkdirSync(path.join(wt, 'fora'));
+  fs.symlinkSync(path.join(wt, 'fora'), path.join(plano, 'task-2-report.md'));
+  const r = ok(p.ah(['registros', 'guardar']));
+  assert.ok(fs.existsSync(path.join(plano, 'review-a1b2c3d..e4f5a6b.diff')));
+  assert.ok(fs.lstatSync(path.join(plano, 'task-2-report.md')).isSymbolicLink());
+  assert.ok(!fs.existsSync(path.join(copia(p, 'as-1', 'carrinho'), 'arquivos', 'review-a1b2c3d..e4f5a6b.diff')));
+  assert.match(r.erro, /Aviso: não copiei .*review-a1b2c3d\.\.e4f5a6b\.diff \(maior que 5 MB\)/);
+  assert.match(r.erro, /Aviso: não copiei .*task-2-report\.md \(link simbólico\)/);
+});
+
+test('guardar e handoff mascaram segredo do diário antes de comentar, e avisam', t => {
+  const p = projeto(t);
+  frenteComDiario(p, { planos: { carrinho: `${DIARIO}Ruling: rodei com GITHUB_TOKEN=abc123segredo — custa nada\n` } });
+  const r = ok(p.ah(['handoff']));
+  assert.match(r.erro, /Aviso: tirei 1 trecho com cara de segredo do diário do plano carrinho antes de comentar \(\[removido\]\); o filtro é uma rede, não garantia: não guarde segredo no diário\./);
+  const [c] = comentariosDoRegistro(p, 7);
+  assert.ok(!c.body.includes('abc123segredo'));
+  assert.match(c.body, /GITHUB_TOKEN=\[removido\]/);
 });

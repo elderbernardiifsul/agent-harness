@@ -27,7 +27,7 @@ import path from 'node:path';
 // extensão acompanha o harness: o caminho vale no clone (nucleo/) e na cópia instalada (.harness/nucleo/).
 import { lerMarcadores } from '../../lib/reserva.mjs';
 import {
-  acharDiarios, corpoDoDiario, devolverDiario, diarioDoComentario, gitignoreDoSdd, lerDiario, lerMarcador, limparPastaDoSdd,
+  acharDiarios, arquivosDoSdd, corpoDoDiario, devolverDiario, diarioDoComentario, gitignoreDoSdd, lerDiario, lerMarcador, limparPastaDoSdd,
   pastasDoSdd, resumoDoFechamento,
 } from './diario.mjs';
 
@@ -48,9 +48,43 @@ const worktreeDe = frente => (typeof frente?.worktree === 'string' && fs.existsS
 const pastaSdd = wt => path.join(wt, '.superpowers', 'sdd');
 const entradasDoSdd = wt => { try { return fs.readdirSync(pastaSdd(wt)); } catch { return []; } };
 
+// Um caminho montado com dados de fora (o id da frente, que pode ter vindo de um marcador de ticket, ou a pasta de um
+// plano) só vale dentro de `base`: `path.relative` diz se ele sai de lá (`..`) ou vai para outro disco (absoluto).
+// O núcleo já recusa o id fora do formato; esta conferência é a segunda camada, antes de gravar ou apagar.
+function dentroDe(base, ...partes) {
+  const alvo = path.resolve(base, ...partes.map(String));
+  const rel = path.relative(base, alvo);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`o caminho ${alvo} fica fora da pasta de estado (${base}); não gravo nem apago nada lá`);
+  }
+  return alvo;
+}
+
 // Pasta das cópias da frente nesta máquina: <estado>/registros/<id da frente>/<pasta do plano>/. O id (as-1) não se
 // repete na máquina; o nome da frente pode voltar depois de fechada.
-export const dirDasCopias = (ctx, frente) => path.join(ctx.dirEstado, 'registros', frente.id);
+export const dirDasCopias = (ctx, frente) => dentroDe(path.join(ctx.dirEstado, 'registros'), frente.id);
+const dirDaCopia = (ctx, frente, pasta) => dentroDe(dirDasCopias(ctx, frente), pasta);
+
+// A cópia local guarda o diário e os relatórios da execução, que podem citar dados do projeto: nasce só para o dono
+// (0700 nas pastas, 0600 nos arquivos), da pasta registros/ até o arquivo.
+function pastaPrivada(ctx, dir) {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const base = path.join(ctx.dirEstado, 'registros');
+  for (let d = dir; d.startsWith(base) && d !== path.dirname(base); d = path.dirname(d)) {
+    try { fs.chmodSync(d, 0o700); } catch { /* sistema sem permissões do POSIX */ }
+  }
+}
+function arquivoPrivado(arquivo, conteudo) {
+  fs.writeFileSync(arquivo, conteudo, { mode: 0o600 });
+  try { fs.chmodSync(arquivo, 0o600); } catch { /* sistema sem permissões do POSIX */ }
+}
+
+// O aviso de que o filtro tirou algo do comentário: é uma rede, não garantia.
+function avisarSegredos(ctx, pasta, removidos) {
+  if (!removidos) return;
+  const trechos = removidos === 1 ? '1 trecho' : `${removidos} trechos`;
+  ctx.avisar(`Aviso: tirei ${trechos} com cara de segredo do diário do plano ${pasta} antes de comentar ([removido]); o filtro é uma rede, não garantia: não guarde segredo no diário.\n`);
+}
 
 // O corpo vai pela entrada padrão, como no núcleo (nucleo/lib/github.mjs): o diário pode ser grande.
 function comentar(ctx, ticket, corpo) {
@@ -61,11 +95,11 @@ function comentar(ctx, ticket, corpo) {
 // A cópia de um plano: progress.md com o diário inteiro e meta.json com o que se sabe dele (em que tickets está, em
 // que fase, desde quando).
 function gravarCopia(ctx, frente, { pasta, plano, texto, commit, fase, em, tickets, cortado }) {
-  const dir = path.join(dirDasCopias(ctx, frente), pasta);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'progress.md'), texto);
+  const dir = dirDaCopia(ctx, frente, pasta);
+  pastaPrivada(ctx, dir);
+  arquivoPrivado(path.join(dir, 'progress.md'), texto);
   const meta = { id: frente.id, nome: frente.nome, pasta, plano, commit, fase, em, tickets, cortado };
-  fs.writeFileSync(path.join(dir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`);
+  arquivoPrivado(path.join(dir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`);
 }
 
 // As cópias guardadas da frente nesta máquina: [{pasta, plano, texto, meta}], em ordem de pasta.
@@ -74,8 +108,9 @@ function lerCopias(ctx, frente) {
   let nomes;
   try { nomes = fs.readdirSync(base).sort(); } catch { return []; }
   return nomes.map(pasta => {
-    const texto = lerOuNada(path.join(base, pasta, 'progress.md'));
-    const meta = lerJson(path.join(base, pasta, 'meta.json')) ?? {};
+    const dir = dirDaCopia(ctx, frente, pasta);
+    const texto = lerOuNada(path.join(dir, 'progress.md'));
+    const meta = lerJson(path.join(dir, 'meta.json')) ?? {};
     return texto === null ? null : { pasta, plano: meta.plano ?? null, texto, meta };
   }).filter(Boolean);
 }
@@ -109,7 +144,8 @@ export async function guardar(frente, ctx, { remover, calado = false }) {
     const copia = lerCopias(ctx, frente).find(c => c.pasta === d.pasta);
     const igual = copia?.texto === d.texto && copia.meta.fase === fase;
     const em = igual ? emDa(copia) : new Date().toISOString();
-    const { corpo, cortado } = corpoDoDiario({ frente, diario: d, commit, fase, em });
+    const { corpo, cortado, removidos } = corpoDoDiario({ frente, diario: d, commit, fase, em });
+    if (tickets.some(n => !(igual && copia.meta.tickets?.[n] === 'comentado'))) avisarSegredos(ctx, d.pasta, removidos);
     const estado = {};
     for (const n of tickets) {
       // `erro` null: já estava comentado, ou o comentário deu certo agora.
@@ -136,16 +172,41 @@ export async function guardar(frente, ctx, { remover, calado = false }) {
       ctx.avisar(`Aviso: o plano ${d.plano ?? d.pasta} tem tarefa parada (${parada.ultima.slice(0, 100)}); o diário saiu do worktree e está guardado. Para continuar o plano: tools/ah registros devolver --frente ${frente.nome}\n`);
     }
   }
-  limpar(ctx, wt);
+  const rastreados = rastreadosDe(ctx, wt);
+  const copiados = new Set(diarios.flatMap(d => copiarPastaDoPlano(ctx, frente, wt, d.pasta, rastreados)));
+  limpar(ctx, wt, rastreados, copiados);
   return { planos: diarios.length, comentados: [...comentados], pendentes: [...falhas.keys()] };
 }
 
-// Tira do worktree o que é do subagent-driven-development, sem tocar no que o git versiona, e avisa do que sobrou.
-function limpar(ctx, wt) {
+// Os arquivos de .superpowers/sdd/ que o git versiona (relativos ao worktree): o guardar não os copia nem apaga.
+function rastreadosDe(ctx, wt) {
   const r = ctx.git(['ls-files', '-z', '--', '.superpowers/sdd'], { cwd: wt });
-  const rastreados = new Set(r.codigo === 0 ? r.saida.split('\0').filter(Boolean) : []);
-  const sobras = limparPastaDoSdd(wt, rastreados);
-  if (sobras.length) ctx.avisar(`Aviso: deixei no worktree o que não é do subagent-driven-development: ${sobras.join(', ')}. O ah close recusa enquanto isso estiver lá: mova o que importa para fora de ${pastaSdd(wt)} ou apague.\n`);
+  return new Set(r.codigo === 0 ? r.saida.split('\0').filter(Boolean) : []);
+}
+
+// Copia para a cópia do plano (`arquivos/`) o que o subagent-driven-development grava na pasta dele (o diário, o
+// plan-path, as instruções, os relatórios e os pacotes de revisão), fora o que o git versiona. Link simbólico e
+// arquivo acima de 5 MB não são copiados e ficam, com aviso. Devolve os caminhos absolutos copiados, os únicos que o
+// guardar tira do worktree.
+function copiarPastaDoPlano(ctx, frente, wt, pasta, rastreados) {
+  const origem = path.join(pastaSdd(wt), pasta);
+  const destino = dentroDe(dirDaCopia(ctx, frente, pasta), 'arquivos');
+  const { copiar, recusados } = arquivosDoSdd(origem);
+  for (const r of recusados) ctx.avisar(`Aviso: não copiei ${path.relative(wt, r.abs)} (${r.motivo}); ele fica no worktree.\n`);
+  const copiados = [];
+  for (const abs of copiar) {
+    if (rastreados.has(path.relative(wt, abs).split(path.sep).join('/'))) continue;
+    pastaPrivada(ctx, destino);
+    arquivoPrivado(dentroDe(destino, path.basename(abs)), fs.readFileSync(abs));
+    copiados.push(abs);
+  }
+  return copiados;
+}
+
+// Tira do worktree só o que foi copiado, sem tocar no que o git versiona, e avisa do que sobrou.
+function limpar(ctx, wt, rastreados = rastreadosDe(ctx, wt), copiados = new Set()) {
+  const sobras = limparPastaDoSdd(wt, rastreados, copiados);
+  if (sobras.length) ctx.avisar(`Aviso: deixei no worktree o que não é do subagent-driven-development ou não foi guardado: ${sobras.join(', ')}. O ah close recusa enquanto isso estiver lá: mova o que importa para fora de ${pastaSdd(wt)} ou apague.\n`);
 }
 
 // Os logins que tiveram a frente num ticket, pelos marcadores do núcleo, com a mesma regra dele: o marcador só vale
@@ -306,7 +367,9 @@ async function resumir(ctx) {
       if (c.meta.tickets?.[n] === 'comentado') continue;
       // O pendente sai com a fase e a data de quando foi guardado, não as de agora.
       const quando = emDa(c) ? { em: emDa(c) } : {};
-      tentar(n, corpoDoDiario({ frente, diario: c, commit: c.meta.commit ?? 'desconhecido', fase: c.meta.fase ?? 'passagem', ...quando }).corpo);
+      const { corpo, removidos } = corpoDoDiario({ frente, diario: c, commit: c.meta.commit ?? 'desconhecido', fase: c.meta.fase ?? 'passagem', ...quando });
+      avisarSegredos(ctx, c.pasta, removidos);
+      tentar(n, corpo);
     }
   }
   const corpo = resumoDoFechamento({ frente, copias });

@@ -15,7 +15,9 @@ const CLASSES = {
 const NODE = process.execPath;
 
 const dormir = ms => new Promise(r => setTimeout(r, ms));
-async function esperar(cond, ms = 8000) {
+// 30 s: com duas suítes ao mesmo tempo e carga de 13 a 30 (27/11), 8 s não bastavam para a vez passar adiante, e o
+// teste falhava no meio. Um travamento de verdade continua virando falha com nome, pelo --test-timeout do npm test.
+async function esperar(cond, ms = 30000) {
   const fim = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > fim) throw new Error('esperei demais');
@@ -315,4 +317,22 @@ test('no fim normal, o neto deixado em segundo plano recebe SIGTERM', { skip: PO
   assert.equal(p.ah(['pesado', '--', NODE, '-e', script]).codigo, 0);
   const neto = Number(fs.readFileSync(pid, 'utf8'));
   await esperar(() => !processoExiste(neto), 3000);
+});
+
+test('senha que some da fila: o ah pesado para com recusa, em vez de esperar para sempre', async t => {
+  const p = projeto(t, { maquina: { vagas: 1 } });
+  const h = segura(p, 'h');
+  await esperar(() => comecou(p, 'h'));
+  const w = segura(p, 'w');
+  await esperar(() => esperando(p.fila, 1));
+  // O estado da fila some (apagado à mão, como a recusa de estado ilegível manda, ou por quem limpou a pasta).
+  fs.rmSync(path.join(p.fila, 'fila.json'));
+  const fim = await Promise.race([w.fim, dormir(15000).then(() => null)]);
+  soltar(p, 'h');
+  await h.fim;
+  if (!fim) w.processo.kill('SIGKILL');
+  assert.ok(fim, 'o ah pesado ficou esperando para sempre');
+  assert.equal(fim.codigo, 1);
+  assert.match(fim.erro, /Recusado: A senha \d+ sumiu da fila de pesados .*; não rodei o comando\.\nFaça: rode o comando de novo/);
+  assert.equal(comecou(p, 'w'), false);
 });

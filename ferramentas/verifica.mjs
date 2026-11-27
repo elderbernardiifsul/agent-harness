@@ -54,13 +54,23 @@ function versaoDe(node) {
   return versao;
 }
 
+// Os argumentos da suíte: as opções `--test-*` do `npm test` (package.json), com o relatório `spec` que o resumo lê.
+// As opções moram só no package.json, e o teste de verifica.test.mjs confere que as duas linhas coincidem.
+// Ficaram de fora de propósito (27/11): o `--test-timeout`, que no Node 22 vale para o arquivo inteiro e o mata sem
+// rodar t.after nem o exit (deixa ah pesado órfãos; o close.test.mjs sozinho leva 65 s no Node 22); e o
+// `--test-force-exit`, que encerrava arquivos antes do fim e fazia a suíte perder testes sem acusar falha.
+export function argumentosDaSuite(pacote = JSON.parse(readFileSync(join(RAIZ, 'package.json'), 'utf8'))) {
+  const opcoes = String(pacote?.scripts?.test ?? '').match(/--test-[a-z-]+(=\S+)?/g) ?? [];
+  return ['--test', '--test-reporter=spec', ...opcoes.filter(o => !o.startsWith('--test-reporter')), 'teste/*.test.mjs'];
+}
+
 function rodarSuite(node, versao) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   // Sem cor: os testes que leem a saída de outro `node --test` (guia de extensão) esperam texto puro.
   delete env.FORCE_COLOR;
   env.NO_COLOR = '1';
-  const r = spawnSync(node, ['--test', '--test-reporter=spec', 'teste/*.test.mjs'], { cwd: RAIZ, env, encoding: 'utf8', maxBuffer: GRANDE });
+  const r = spawnSync(node, argumentosDaSuite(), { cwd: RAIZ, env, encoding: 'utf8', maxBuffer: GRANDE });
   const s = resumoDaSuite(`${r.stdout}\n${r.stderr}`);
   const passou = r.status === 0 && s.falharam === 0;
   if (s.testes == null) console.log(`FALHOU  suíte no Node ${versao}: não terminou (código ${r.status})\n${String(r.stderr).trim().split('\n').slice(-5).join('\n')}`);

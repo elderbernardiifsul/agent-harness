@@ -5,6 +5,9 @@ import { conferirEsquema, ESQUEMA_DO_ESTADO } from './sessao.mjs';
 
 export const siglaValida = s => typeof s === 'string' && /^[a-z]{2,4}$/.test(s);
 export const nomeValido = n => typeof n === 'string' && /^[a-z0-9][a-z0-9-]{1,48}$/.test(n);
+// O id que o núcleo cria: `<sigla>-<n>` (`as-1`). O id lido de fora (marcador de ticket) vira nome de pasta e de
+// arquivo; fora deste formato, não vale.
+export const idValido = id => typeof id === 'string' && /^[a-z]{2,4}-\d+$/.test(id);
 
 // Só a proposta: quem confirma a sigla é a pessoa, no init.
 export function siglaDeLogin(login) {

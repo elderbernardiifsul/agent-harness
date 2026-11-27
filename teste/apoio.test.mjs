@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { criarRepo } from './apoio/repo.mjs';
+import { criarRepo, escreverConfig } from './apoio/repo.mjs';
 import { gh } from '../nucleo/lib/github.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { processoExiste } from '../nucleo/lib/vida.mjs';
 
 test('criarRepo entrega ramos e remoto', () => {
   const r = criarRepo();
@@ -103,4 +104,69 @@ console.log(JSON.stringify([path.dirname(a.raiz), path.dirname(b.raiz)]));`;
   assert.equal(r.status, 0, r.stderr);
   const pastas = JSON.parse(r.stdout);
   for (const pasta of pastas) assert.ok(!fs.existsSync(pasta), `sobrou ${pasta}`);
+});
+
+// No Windows, o SIGTERM termina o processo na hora e o ah pesado não mata a árvore: estes dois testes são do POSIX.
+const SO_POSIX = process.platform === 'win32' ? 'SIGTERM no Windows termina o processo sem tratador' : false;
+
+// Projeto de teste com uma fila de uma vaga só dele.
+function comFila() {
+  const p = criarRepo();
+  escreverConfig(p);
+  const fila = path.join(p.raiz, '..', 'fila');
+  fs.mkdirSync(fila, { recursive: true });
+  fs.writeFileSync(path.join(fila, 'config.json'), JSON.stringify({ versao: 1, vagas: 1, memoriaLivreMinimaMb: 0 }));
+  return { p, fila, env: { AH_FILA: fila, AH_FILA_PAUSA_MS: '20' } };
+}
+const esperarQue = async (cond, ms = 10000) => { const fim = Date.now() + ms; while (!cond() && Date.now() < fim) await new Promise(r => setTimeout(r, 20)); };
+
+test('limpar encerra os processos que o teste iniciou ao fundo, para um teste que falha não prender a suíte', { skip: SO_POSIX }, async () => {
+  const { p, fila, env } = comFila();
+  const marca = path.join(p.raiz, '..', 'comecou');
+  // O primeiro segura a única vaga por 60 s; o segundo fica esperando a vez, como o que prendeu a suíte.
+  const primeiro = p.ahAoFundo(['pesado', '--', process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(marca)}, ''); setTimeout(() => {}, 60000)`], { env });
+  await esperarQue(() => fs.existsSync(marca));
+  assert.ok(fs.existsSync(marca), 'o primeiro não começou');
+  const segundo = p.ahAoFundo(['pesado', '--', process.execPath, '-e', '0'], { env });
+  await esperarQue(() => { try { return JSON.parse(fs.readFileSync(path.join(fila, 'fila.json'), 'utf8')).entradas.length === 2; } catch { return false; } });
+  assert.equal(JSON.parse(fs.readFileSync(path.join(fila, 'fila.json'), 'utf8')).entradas.length, 2, 'o segundo não entrou na fila');
+  const inicio = Date.now();
+  await p.limpar();
+  // Quem sai no SIGTERM é visto pelo evento exit, sem esperar a folga inteira (o filho morto vira zumbi até o
+  // Node o recolher, e perguntar ao sistema se o pid existe diria que sim).
+  assert.ok(Date.now() - inicio < 2500, `o limpar levou ${Date.now() - inicio} ms`);
+  const vivos = [primeiro, segundo].filter(x => processoExiste(x.processo.pid));
+  for (const x of vivos) x.processo.kill('SIGKILL');
+  assert.equal(vivos.length, 0, 'sobrou ah pesado vivo depois do limpar');
+  assert.ok(!fs.existsSync(fila), 'a pasta do teste continua lá');
+});
+
+test('limpar espera o ah pesado matar a árvore: o comando que ignora SIGTERM também sai', { skip: SO_POSIX }, async () => {
+  const { p, env } = comFila();
+  const marca = path.join(p.raiz, '..', 'comando.pid');
+  const pesado = p.ahAoFundo(['pesado', '--', process.execPath, '-e', `process.on('SIGTERM', () => {}); require('node:fs').writeFileSync(${JSON.stringify(marca)}, String(process.pid)); setInterval(() => {}, 1000)`], { env });
+  await esperarQue(() => fs.existsSync(marca) && fs.readFileSync(marca, 'utf8') !== '');
+  const comando = Number(fs.readFileSync(marca, 'utf8'));
+  await p.limpar();
+  const sobrou = [pesado.processo.pid, comando].filter(processoExiste);
+  for (const pid of sobrou) { try { process.kill(pid, 'SIGKILL'); } catch { /* já saiu */ } }
+  assert.deepEqual(sobrou, [], 'sobrou processo depois do limpar');
+});
+
+test('limpar mata o grupo que a fila do teste registrou quando o ah pesado morreu sem matar a árvore', { skip: SO_POSIX }, async () => {
+  const { p, fila, env } = comFila();
+  const marca = path.join(p.raiz, '..', 'comando.pid');
+  const pesado = p.ahAoFundo(['pesado', '--', process.execPath, '-e', `require('node:fs').writeFileSync(${JSON.stringify(marca)}, String(process.pid)); setInterval(() => {}, 1000)`], { env });
+  const grupoGravado = () => { try { return JSON.parse(fs.readFileSync(path.join(fila, 'fila.json'), 'utf8')).entradas[0]?.grupo != null; } catch { return false; } };
+  await esperarQue(() => fs.existsSync(marca) && fs.readFileSync(marca, 'utf8') !== '' && grupoGravado());
+  const comando = Number(fs.readFileSync(marca, 'utf8'));
+  // SIGKILL no ah: ele não mata a árvore, e o comando fica órfão.
+  pesado.processo.kill('SIGKILL');
+  await new Promise(r => pesado.processo.once('exit', r));
+  assert.ok(processoExiste(comando), 'o comando devia seguir vivo, órfão');
+  await p.limpar();
+  await esperarQue(() => !processoExiste(comando), 3000);
+  const sobrou = processoExiste(comando);
+  if (sobrou) process.kill(comando, 'SIGKILL');
+  assert.equal(sobrou, false, 'o comando órfão sobreviveu ao limpar');
 });

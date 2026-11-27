@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { comentar, criarRotulo, editarTicket, gh } from './github.mjs';
 import { ENVIADO, NA_FILA, PERDIDO, comentarOuEnfileirar, editarOuEnfileirar, enfileirar, pendentesDoTicket } from './pendentes.mjs';
 import { idCurto, listarSessoes } from './sessao.mjs';
+import { idValido, nomeValido } from './frente.mjs';
 
 const ORDEM = ['id', 'nome', 'ramo', 'estado', 'login', 'sessao', 'tickets', 'plano', 'abertaPor', 'abertaEm'];
 export const ESTADO_DO_TIPO = { frente: 'ativa', retomada: 'ativa', tomada: 'ativa', passagem: 'passada', fechamento: 'livre', desistencia: 'livre' };
@@ -62,6 +63,10 @@ function marcadoresDosComentarios(comentarios) {
       // Sem `login` só vale o `ah:frente` no formato da fatia 1 (sem `v`), com o login do autor.
       const antigo = m.campos.login === undefined && m.tipo === 'frente' && m.campos.v === undefined;
       if (!autor || (m.campos.login === undefined ? !antigo : m.campos.login !== autor)) continue;
+      // O id e o nome do marcador viram nomes de pasta e de arquivo (o registro da frente, as cópias das extensões):
+      // fora do formato que o núcleo cria (`as-1`, `carrinho`), o marcador não vale. Um terceiro que comente
+      // `id=../../../vitima` não vira a frente retomada.
+      if ((m.campos.id !== undefined && !idValido(m.campos.id)) || (m.campos.nome !== undefined && !nomeValido(m.campos.nome))) continue;
       marcadores.push({ ...m, autor, ordem: numeroDoComentario(c?.url) ?? i });
     }
   });

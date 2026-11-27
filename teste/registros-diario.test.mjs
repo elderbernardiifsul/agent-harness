@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  acharDiarios, corpoDoDiario, devolverDiario, diarioDoComentario, lerDiario, lerMarcador, limparPastaDoSdd, resumoDoFechamento,
+  acharDiarios, corpoDoDiario, devolverDiario, diarioDoComentario, lerDiario, lerMarcador, limparPastaDoSdd, mascararSegredos, resumoDoFechamento,
 } from '../nucleo/extensoes/registros/diario.mjs';
 
 const PLANO = 'docs/superpowers/plans/2026-11-20-carrinho.md';
@@ -119,31 +119,24 @@ test('acharDiarios e devolverDiario: ida e volta com dois planos, sem reescrever
   }
 });
 
-test('limparPastaDoSdd tira só as pastas de plano e o .gitignore do sdd-workspace; o resto fica e é devolvido', t => {
+test('limparPastaDoSdd tira só os arquivos copiados e o .gitignore do sdd-workspace; o resto fica e é devolvido', t => {
   const wt = pasta(t);
   const sdd = path.join(wt, '.superpowers', 'sdd');
   devolverDiario(wt, { pasta: 'carrinho', plano: PLANO, texto: DIARIO });
   fs.writeFileSync(path.join(sdd, 'carrinho', 'task-1-brief.md'), 'instruções');
-  // Pasta de plano sem diário ainda (só plan-path e as instruções): também é do subagent-driven-development.
-  fs.mkdirSync(path.join(sdd, 'frete'));
-  fs.writeFileSync(path.join(sdd, 'frete', 'plan-path'), 'docs/frete.md\n');
-  assert.deepEqual(limparPastaDoSdd(wt), []);
+  const copiados = ['carrinho/progress.md', 'carrinho/plan-path', 'carrinho/task-1-brief.md'].map(r => path.join(sdd, r));
+  assert.deepEqual(limparPastaDoSdd(wt, new Set(), new Set(copiados)), []);
   assert.ok(!fs.existsSync(path.join(wt, '.superpowers')));
-  // Arquivo do aluno e pasta sem marcador: ficam, com o .gitignore, e saem na lista de sobras.
+  // O que não foi copiado fica: um arquivo novo na pasta do plano, um arquivo do aluno e uma pasta sem marcador.
   devolverDiario(wt, { pasta: 'carrinho', plano: PLANO, texto: DIARIO });
+  fs.writeFileSync(path.join(sdd, 'carrinho', 'novo.md'), 'apareceu depois');
   fs.writeFileSync(path.join(sdd, 'minhas-notas.txt'), 'notas');
   fs.mkdirSync(path.join(sdd, 'rascunhos'));
   fs.writeFileSync(path.join(sdd, 'rascunhos', 'a.txt'), 'a');
-  assert.deepEqual(limparPastaDoSdd(wt), ['.superpowers/sdd/minhas-notas.txt', '.superpowers/sdd/rascunhos/']);
-  assert.ok(!fs.existsSync(path.join(sdd, 'carrinho')));
+  const sobras = limparPastaDoSdd(wt, new Set(), new Set(['carrinho/progress.md', 'carrinho/plan-path'].map(r => path.join(sdd, r))));
+  assert.deepEqual(sobras, ['.superpowers/sdd/carrinho/novo.md', '.superpowers/sdd/minhas-notas.txt', '.superpowers/sdd/rascunhos/']);
+  assert.ok(!fs.existsSync(path.join(sdd, 'carrinho', 'progress.md')));
   assert.ok(fs.existsSync(path.join(sdd, '.gitignore')));
-  // Outra coisa em .superpowers/ (fora do sdd) não é tocada.
-  fs.rmSync(sdd, { recursive: true });
-  devolverDiario(wt, { pasta: 'carrinho', plano: PLANO, texto: DIARIO });
-  fs.mkdirSync(path.join(wt, '.superpowers', 'brainstorm'));
-  assert.deepEqual(limparPastaDoSdd(wt), []);
-  assert.ok(fs.existsSync(path.join(wt, '.superpowers', 'brainstorm')));
-  assert.ok(!fs.existsSync(sdd));
   assert.deepEqual(limparPastaDoSdd(path.join(wt, 'nao-existe')), []);
 });
 
@@ -155,4 +148,52 @@ test('marcador v=2: em e fase; o v=1 ainda se lê, como o mais antigo e de passa
   const antigo = lerMarcador('<!-- ah:registro id=as-1 nome=carrinho pasta=carrinho plano= commit=abc1234 cortado=0 v=1 -->\n');
   assert.deepEqual([antigo.em, antigo.fase, antigo.pasta], ['', 'passagem', 'carrinho']);
   assert.equal(lerMarcador('<!-- ah:registro id=as-1 pasta=x fase=outra v=2 -->'), null);
+});
+
+test('mascararSegredos troca padrões evidentes de segredo por [removido] e conta quantos', () => {
+  // Valores inventados, montados por partes para nenhum deles parecer um segredo de verdade no repositório.
+  const gh = `ghp_${'a1B2'.repeat(9)}`;
+  const pat = `github_pat_${'X9y8'.repeat(8)}`;
+  const sk = `sk-${'q'.repeat(24)}`;
+  const aws = `AKIA${'B'.repeat(16)}`;
+  const pem = ['-----BEGIN OPENSSH PRIVATE KEY-----', 'b3BlbnNzaC1rZXktdjEAAAAA', '-----END OPENSSH PRIVATE KEY-----'].join('\n');
+  const texto = [
+    `Ruling: usei o token ${gh} só no teste`,
+    `chave nova: ${pat}`,
+    `OPENAI ${sk} e AWS ${aws}`,
+    pem,
+    'GITHUB_TOKEN=abc123segredo',
+    'DB_PASSWORD: "minha senha"',
+    'export API_KEY=valor-qualquer',
+    'DATABASE_URL=postgres://ana:SenhaReal123@db.exemplo.test/loja',
+  ].join('\n');
+  const r = mascararSegredos(texto);
+  assert.equal(r.n, 9);
+  for (const segredo of [gh, pat, sk, aws, 'b3BlbnNzaC1rZXktdjEAAAAA', 'abc123segredo', 'minha senha', 'valor-qualquer', 'SenhaReal123']) {
+    assert.ok(!r.texto.includes(segredo), segredo);
+  }
+  assert.match(r.texto, /^GITHUB_TOKEN=\[removido\]$/m);
+  assert.match(r.texto, /^DATABASE_URL=postgres:\/\/ana:\[removido\]@db\.exemplo\.test\/loja$/m);
+  // Texto comum do diário não muda.
+  const comum = `${DIARIO}Ruling: a chave do cache é o id do carrinho — TOKEN de sessão fica fora — custa pouco\nTask 4: minor (deferred): KEY_PREFIX constante\n`;
+  assert.deepEqual(mascararSegredos(comum), { texto: comum, n: 0 });
+});
+
+test('corpoDoDiario mascara os segredos antes de cortar e diz quantos removeu', () => {
+  const texto = `${DIARIO}Ruling: rodei com GITHUB_TOKEN=abc123segredo — custa nada\n`;
+  const { corpo, removidos } = corpoDoDiario({ frente: FRENTE, diario: { pasta: 'carrinho', plano: PLANO, texto }, commit: 'abc1234' });
+  assert.equal(removidos, 1);
+  assert.ok(!corpo.includes('abc123segredo'));
+  assert.match(corpo, /GITHUB_TOKEN=\[removido\]/);
+  assert.match(resumoDoFechamento({ frente: FRENTE, copias: [{ pasta: 'carrinho', plano: PLANO, texto }] }), /GITHUB_TOKEN=\[removido\]/);
+});
+
+test('mascararSegredos: nomes simples, Bearer e nomes em minúsculas', () => {
+  const linhas = ['PASSWORD=hunter2', 'SECRET=abc', 'TOKEN=def', 'APIKEY=ghi', 'PASSWD=jkl', 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.e30.x', 'password=hunter3', 'api_key: zzz999'];
+  const r = mascararSegredos(linhas.join('\n'));
+  assert.equal(r.n, linhas.length);
+  for (const segredo of ['hunter2', 'abc', 'def', 'ghi', 'jkl', 'eyJhbGciOiJIUzI1NiJ9', 'hunter3', 'zzz999']) assert.ok(!r.texto.includes(segredo), segredo);
+  assert.match(r.texto, /^PASSWORD=\[removido\]$/m);
+  assert.match(r.texto, /^Authorization: Bearer \[removido\]$/m);
+  assert.match(r.texto, /^api_key: \[removido\]$/m);
 });

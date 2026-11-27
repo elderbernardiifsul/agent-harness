@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { carregarConfig } from '../../nucleo/lib/config.mjs';
+import { inicioDoProcesso } from '../../nucleo/lib/vida.mjs';
 
 const RAIZ_HARNESS = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -43,7 +44,59 @@ export function apagarPastaDeTeste(pasta) {
   if (!existsSync(pasta)) PASTAS_A_LIMPAR.delete(pasta);
 }
 
+// Processos iniciados ao fundo (`ahAoFundo`) ainda vivos. Um teste que falha no meio os deixaria esperando para
+// sempre (um `ah pesado` na fila de uma pasta já apagada), e o arquivo de teste nunca terminaria: o `limpar` os
+// encerra, e a saída do processo de teste mata os que sobrarem.
+const AO_FUNDO = new Set();
+// Folga para o SIGTERM: maior que a do matarArvore do ah pesado (3 s de SIGTERM no grupo do comando e mais 2 s de
+// SIGKILL), para ele terminar de matar a árvore antes de levar SIGKILL e deixar o comando órfão.
+const FOLGA_DO_SIGTERM_MS = 8000;
+const saiu = pr => pr.exitCode !== null || pr.signalCode !== null;
+// A espera é pelo evento `exit`, e não por `kill(pid, 0)`: o filho que já morreu fica zumbi até o Node o recolher,
+// e o sistema diria que ele ainda existe.
+const fimDe = (pr, ms) => new Promise(r => {
+  if (saiu(pr)) return r(true);
+  const prazo = setTimeout(() => r(false), ms);
+  pr.once('exit', () => { clearTimeout(prazo); r(true); });
+});
+
+// SIGTERM primeiro (o `ah pesado` mata a árvore do comando e solta a vaga); quem não sai na folga leva SIGKILL.
+export async function encerrarAoFundo(processos = [...AO_FUNDO]) {
+  const vivos = processos.filter(pr => pr.pid != null && !saiu(pr));
+  for (const pr of vivos) { try { pr.kill('SIGTERM'); } catch { /* já saiu */ } }
+  await Promise.all(vivos.map(pr => fimDe(pr, FOLGA_DO_SIGTERM_MS)));
+  for (const pr of vivos.filter(x => !saiu(x))) { try { pr.kill('SIGKILL'); } catch { /* já saiu */ } }
+  await Promise.all(vivos.map(pr => fimDe(pr, 2000)));
+  for (const pr of processos) AO_FUNDO.delete(pr);
+}
+
+// Os grupos de comando que as filas do teste registraram (`grupo` nas entradas de cada fila.json dentro da pasta do
+// teste) e que ainda são os mesmos (hora de início do líder igual à gravada): sobra de um `ah pesado` que morreu sem
+// matar a árvore. Levam SIGKILL antes de a pasta ser apagada.
+function matarGruposDasFilas(base) {
+  const filas = [];
+  const procurar = (dir, nivel) => {
+    let itens = [];
+    try { itens = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of itens) {
+      if (e.isFile() && e.name === 'fila.json') filas.push(join(dir, e.name));
+      else if (e.isDirectory() && nivel < 2 && e.name !== 'repo' && e.name !== 'remoto.git') procurar(join(dir, e.name), nivel + 1);
+    }
+  };
+  procurar(base, 0);
+  for (const arquivo of filas) {
+    let entradas = [];
+    try { entradas = JSON.parse(readFileSync(arquivo, 'utf8')).entradas ?? []; } catch { continue; }
+    for (const e of entradas) {
+      if (!Number.isInteger(e.grupo) || e.grupo <= 1 || e.grupoInicio == null || inicioDoProcesso(e.grupo) !== e.grupoInicio) continue;
+      try { process.kill(-e.grupo, 'SIGKILL'); } catch { /* o grupo já acabou */ }
+    }
+  }
+}
+
+// Na saída do processo não há como esperar: quem ainda vive leva SIGKILL.
 process.on('exit', () => {
+  for (const pr of AO_FUNDO) if (!saiu(pr)) { try { pr.kill('SIGKILL'); } catch { /* já saiu */ } }
   for (const pasta of [...PASTAS_A_LIMPAR]) apagarPastaDeTeste(pasta);
 });
 
@@ -110,6 +163,7 @@ export function criarRepo({ ramos = ['main', 'dev', 'stage'], remoto = true, suf
 // O objeto de projeto de teste (o mesmo para criarRepo e outraMaquina).
 function montarProjeto({ base, raiz, remoto, estado, env }) {
   const git = (args, { cwd = raiz } = {}) => executar(args, { cwd, env });
+  const aoFundo = new Set();
   return {
     raiz,
     remoto,
@@ -147,6 +201,8 @@ function montarProjeto({ base, raiz, remoto, estado, env }) {
     // Como `ah`, mas sem esperar: devolve o processo e a promessa do fim ({codigo, saida, erro}).
     ahAoFundo(args, { cwd = raiz, env: extra = {} } = {}) {
       const processo = spawn(process.execPath, [join(RAIZ_HARNESS, 'nucleo', 'bin', 'ah.mjs'), ...args], { cwd, env: { ...env, ...extra } });
+      aoFundo.add(processo);
+      AO_FUNDO.add(processo);
       let saida = '';
       let erro = '';
       processo.stdout.on('data', d => { saida += d; });
@@ -154,8 +210,14 @@ function montarProjeto({ base, raiz, remoto, estado, env }) {
       const fim = new Promise(resolve => processo.on('close', (codigo, sinal) => resolve({ codigo: codigo ?? 1, sinal, saida, erro })));
       return { processo, fim };
     },
+    // Devolve uma promessa: com processo ao fundo vivo, espera ele sair (t.after(() => p.limpar()) espera junto).
+    // Sem nenhum, apaga a pasta na hora, e quem chama p.limpar() sem esperar continua valendo.
     limpar() {
-      apagarPastaDeTeste(base);
+      const vivos = [...aoFundo].filter(pr => !saiu(pr));
+      aoFundo.clear();
+      const apagar = () => { matarGruposDasFilas(base); apagarPastaDeTeste(base); };
+      if (!vivos.length) { apagar(); return Promise.resolve(); }
+      return encerrarAoFundo(vivos).then(apagar);
     },
   };
 }
