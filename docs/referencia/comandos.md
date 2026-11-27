@@ -728,7 +728,7 @@ Falta: git commit no worktree.
 ## prova
 
 ```
-ah prova <rótulo> [-- <comando>…]
+ah prova <rótulo> [--frente <nome>] [-- <comando>…]
 ah prova --confere <ramo> [<rótulo>]
 ```
 
@@ -741,6 +741,7 @@ Comando da extensão `prova`, que acompanha o harness, desligada por padrão. Se
 ```
 
 - **Gravar** (`ah prova <rótulo>`, exige sessão com frente). Recusa o worktree com mudança fora do commit: arquivo rastreado alterado ou arquivo novo não rastreado, que o teste usaria e a árvore não tem (o que o `.gitignore` ignora não conta). Roda o teste no worktree da frente: o comando depois de `--` (um argumento só vai para o shell; vários rodam direto) ou, sem ele, o de `comandos.<rótulo>`. Teste que falha: `O teste <rótulo> falhou (código N): nada gravado.`, e o `ah` sai com o código do teste. Teste que passa sem mudar a árvore: grava `{rotulo, arvore, commit, comando, em}` em `frente.extensoes.prova.provas` (uma por rótulo, a última) e acrescenta uma linha em `<estado>/extensoes/prova/provas.jsonl`, que sobrevive ao `close`. Teste pesado vai pela fila pondo `tools/ah pesado --` no comando.
+- **`--frente <nome>`** (nome ou id). Grava a prova dessa frente, com o teste rodado no worktree dela e a árvore dela, e não a da frente em foco: é como a orquestradora, que tem várias frentes e não troca o foco entre elas, prova cada uma no fechamento. Frente passada, órfã (dona morta) ou sem dona vale; frente ativa de outra sessão viva recusa, como na extensão `recursos`.
 - **Conferir** (`ah prova --confere <ramo>`, não exige sessão). Procura uma prova com a mesma árvore do ramo (e o mesmo rótulo, se dado) na lista durável e nas frentes do estado. Achou: código 0, com a frente, o rótulo e o commit. Não achou: código 3 (`nenhuma prova. Rode o teste.`). Ref que não existe: recusa, código 1.
 - **Fluxo.** Na frente: reintegrar a base (`git merge dev`), rodar `ah prova e2e`. Ao integrar: `git merge --no-ff` na base e `ah prova --confere dev`; com 0, o teste não se repete; com 3 (outra frente entrou no meio), roda o teste de novo.
 - **Windows.** Não ensaiado no Windows.
@@ -749,7 +750,10 @@ Comando da extensão `prova`, que acompanha o harness, desligada por padrão. Se
 | Recusa | Faça |
 |---|---|
 | `não sei qual é a sessão` | defina AH_SESSAO ou ligue o adaptador do agente |
-| `Esta sessão não tem frente.` | abra uma com ah open <nome> |
+| `Esta sessão não tem frente.` | abra uma com ah open <nome>, ou diga qual com --frente <nome> |
+| `Não achei a frente <nome>.` | rode ah board para ver as frentes abertas |
+| `A frente <id> <nome> é da sessão <s>, que está viva.` | peça à sessão dona (<s>) que grave a prova; com a sessão morta (frente órfã) ou a frente passada, o --frente vale |
+| `A opção --frente precisa do nome da frente.` | use o uso acima |
 | `Rótulo inválido: …` | use minúsculas, números, hífen e dois-pontos, começando por letra (ex.: e2e) |
 | `Não sei qual é o teste <rótulo>.` | diga depois de -- (ah prova <rótulo> -- npm test) ou declare em extensoes.prova.comandos.<rótulo> |
 | `o worktree tem mudança fora do commit (…)` | commite, ponha no .gitignore o que é gerado, ou desfaça, e rode ah prova de novo |

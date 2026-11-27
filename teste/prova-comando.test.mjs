@@ -130,3 +130,30 @@ test('coluna PROVA no quadro', t => {
   ok(p.ah(['prova', 'unit']));
   assert.match(ok(p.ah(['board'])).saida, /unit [0-9a-f]{7}/);
 });
+
+test('--frente grava na frente indicada, com a árvore do worktree dela, não a do foco nem a do cwd', t => {
+  const p = novoProjeto(t);
+  ok(p.ah(['papel', 'orquestrador']));
+  const wt = frenteComCommit(p);
+  ok(p.ah(['open', 'cupom']));
+  const r = ok(p.ah(['prova', 'unit', '--frente', 'carrinho']));
+  assert.match(r.saida, /^Prova gravada: unit na frente as-1 carrinho/m);
+  const arvore = p.git(['rev-parse', 'HEAD^{tree}'], { cwd: wt }).saida.trim();
+  assert.notEqual(arvore, p.git(['rev-parse', 'HEAD^{tree}']).saida.trim(), 'a árvore do worktree difere da do principal');
+  assert.equal(p.frente('carrinho').extensoes.prova.provas[0].arvore, arvore);
+  assert.equal(p.frente('cupom').extensoes?.prova, undefined);
+  ok(p.ah(['prova', 'unit', '--frente', 'as-2', '--', 'node', '-e', 'process.exit(0)']));
+  assert.equal(p.frente('cupom').extensoes.prova.provas[0].rotulo, 'unit');
+});
+
+test('--frente de outra sessão viva recusa; frente que não existe recusa', t => {
+  const p = novoProjeto(t);
+  ok(p.ah(['open', 'frete'], { env: { AH_SESSAO: 'sessao-b-0002' } }));
+  const r = p.ah(['prova', 'unit', '--frente', 'frete']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /A frente as-1 frete é da sessão sessao-b-0002, que está viva\.\nFaça: \S/);
+  const n = p.ah(['prova', 'unit', '--frente', 'nada']);
+  assert.equal(n.codigo, 1);
+  assert.match(n.erro, /Não achei a frente nada\.\nFaça: rode ah board/);
+  assert.equal(p.ah(['prova', 'unit', '--frente']).codigo, 1);
+});

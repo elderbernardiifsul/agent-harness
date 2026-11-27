@@ -66,6 +66,10 @@ Consertados num commit curto, com teste primeiro: a recusa específica do `renum
 
 Ficam como limites conhecidos: o `listar` marca "renumerar" na frente já integrada e não fechada; a sondagem percorre a faixa inteira; os exemplos com `createdb`, `dropdb` e `psql` na doc; sem teste de concorrência real das aberturas; `renumerar` longo; reservas, portas e provas valem só no estado desta máquina; `provas.jsonl` cresce sem limite e grava o comando como veio. O teste intermitente de `teste/shell.test.mjs` foi resolvido no `p2-metodo` (limite de 10 s).
 
+## `--frente` no `ah prova` (27/11)
+
+Achado ao escrever a skill `orquestrar` (fatia 5): a orquestradora com várias frentes próprias não troca o foco (`ah open` de frente própria recusa), e o `ah prova` gravava só na frente em foco. O orquestrador aprovou `--frente <nome>`, com a regra da `recursos` e da `migracao` (frente ativa de outra sessão viva recusa). O teste roda no worktree da frente indicada, e o teste confere que a árvore gravada é a desse worktree, não a do foco nem a do checkout de onde o comando foi chamado.
+
 ## Limitações
 
 - Na retomada em outra máquina, `preparar` não recria um banco já marcado `criado`.
