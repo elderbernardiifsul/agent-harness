@@ -574,6 +574,57 @@ $ AH_SESSAO=ana-terminal tools/ah close
 Frente as-1 carrinho fechada.
 ```
 
+## migracao
+
+```
+ah migracao reservar [--frente <nome>]
+ah migracao liberar [--frente <nome>]
+ah migracao listar [--json]
+```
+
+Comando da extensão `migracao`, que acompanha o harness, desligada por padrão. Resolve o número repetido: duas frentes abertas sobre a mesma base criam, cada uma, a "próxima" migração, com o mesmo número. A reserva diz que número cada frente terá se a base receber as frentes na ordem das reservas. O número sai do nome do arquivo; a extensão não depende de ferramenta de migração.
+
+**Configuração:**
+
+```json
+"extensoes": { "migracao": { "pasta": "db/migracoes", "padrao": "^(\\d+)_", "digitos": 4 } }
+```
+
+| Campo | Padrão | Conteúdo |
+|---|---|---|
+| `pasta` | obrigatório | pasta das migrações, relativa à raiz |
+| `padrao` | `^(\d+)_` | expressão regular aplicada ao nome do arquivo; o primeiro grupo é o número. Arquivo que não casa (um `README.md` na pasta) é ignorado |
+| `digitos` | `4` | quantos dígitos o número tem no nome (`0003`) |
+| `renumerar` | — | passo próprio da ferramenta de migração, usado por `renumerar` (abaixo) |
+
+- **`reservar`.** Grava `frente.extensoes.migracao.numero` na frente da sessão (ou na de `--frente`). O número é o maior entre a última migração da base (`git.base`, lida no ramo local) e as reservas de todas as outras frentes do estado, mais um. A frente que já tem reserva acima da última da base fica com ela (`já reservada`). A conferência e a gravação ocorrem sob a trava das frentes.
+- **`liberar`.** Apaga a reserva da frente.
+- **`listar`.** A última migração da base e cada reserva, em ordem. A reserva que a base já ultrapassou (outra frente entrou com aquele número) aparece com `(a dev já passou dela: rode ah migracao renumerar depois de reintegrar)`. `--json` imprime `{"base","ultima","reservas":[{"id","frente","estado","numero"}]}`.
+- **Sessão e frente alheia.** `reservar`, `liberar` e `renumerar` exigem sessão; `listar` não. `--frente` em frente ativa de outra sessão viva recusa, como na extensão `recursos`.
+- **Ciclo.** O `close` libera a reserva (ela mora no registro da frente) e diz `Reserva de migração 0003 liberada.`. O `handoff` não libera: a frente passada continua dona do número.
+- **Quadro.** A coluna `MIGRACAO` mostra o número reservado.
+
+| Recusa | Faça |
+|---|---|
+| `Falta o subcomando.` / `Subcomando desconhecido: …` | use `ah migracao reservar\|liberar\|renumerar [--frente <nome>] \| ah migracao listar [--json]` |
+| `não sei qual é a sessão` | defina AH_SESSAO ou ligue o adaptador do agente |
+| `Esta sessão não tem frente.` | abra uma com ah open <nome>, ou diga qual com --frente <nome> |
+| `Não achei a frente <nome>.` | rode ah board para ver as frentes abertas |
+| `A frente <id> <nome> é da sessão <s>, que está viva.` | peça à sessão dona (<s>) que faça ela mesma; com a sessão morta (frente órfã) ou a frente passada, o --frente vale |
+| `não consegui ler <pasta> no ramo <base>: …` | confira se o ramo <base> existe neste repositório |
+| `Opção desconhecida: …` / `Argumento a mais: …` / `A opção --frente precisa do nome da frente.` | use o uso acima |
+
+```
+$ AH_SESSAO=ana-terminal tools/ah migracao reservar
+Frente as-1 carrinho: migração reservada: 0003 (a última da dev é a 0002).
+$ AH_SESSAO=carla-terminal tools/ah migracao reservar
+Frente as-2 cupom: migração reservada: 0004 (a última da dev é a 0002).
+$ tools/ah migracao listar
+Última da dev: 0002 (0002_cupom.sql)
+0003 as-1 carrinho
+0004 as-2 cupom
+```
+
 ## prova
 
 ```
