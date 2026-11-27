@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ErroDeUso } from '../lib/caminhos.mjs';
 import { comTrava, registrarEvento } from '../lib/estado.mjs';
-import { reagir, recusaAntesDeFechar } from '../lib/extensoes.mjs';
+import { ignoradosDasExtensoes, reagir, recusaAntesDeFechar, separarIgnorados } from '../lib/extensoes.mjs';
 import { frentesDa, gravarFrente, lerFrente, linhaDoHistorico, listarFrentesTolerante, nomeValido, removerFrente } from '../lib/frente.mjs';
 import { existeRamo, ramoAtual, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
@@ -110,6 +110,14 @@ export async function executar(args, amb) {
     }
     return { wt: frente.worktree, temWt: fs.existsSync(frente.worktree), refRamo, refRemoto, temRamo, temRamoRemoto, soNoRemoto };
   };
+  // Os ignorados de que as extensões cuidam (P5, interface.md): lidos na fase 1, para a frente, e reusados na
+  // conferência final. A extensão que falha avisa, e os itens dela seguem a conferência de sempre.
+  let declarados = [];
+  const lerDeclarados = async frente => {
+    const r = await ignoradosDasExtensoes(amb, frente, { dentroDaTrava: true, avisar: amb.avisar });
+    for (const f of r.falhas) amb.avisar(`Aviso: a extensão ${f.extensao} falhou em ignorados: ${f.motivo}; os itens ignorados dela seguem a conferência de sempre.\n`);
+    declarados = r.declarados;
+  };
   // Devolve a lista de problemas; lança recusa se alguma conferência não rodar.
   const conferir = (frente, { wt, temWt, refRamo, refRemoto, temRamo, temRamoRemoto }) => {
     const problemas = [];
@@ -133,9 +141,14 @@ export async function executar(args, amb) {
     if (temWt && !o.descartarIgnorados) {
       const ig = g(['ls-files', '-z', '-o', '-i', '--exclude-standard', '--directory'], wt);
       if (ig.codigo !== 0) throw falhou(`os arquivos ignorados do worktree ${wt}`, ig);
-      const ignorados = ig.saida.split('\0').filter(Boolean);
-      if (ignorados.length) {
-        problemas.push([`itens ignorados no worktree (${ignorados.length}; pasta inteira conta como um), que o git não guarda; saída: copie o que importa de ${wt}, ou repita com --descartar-ignorados`, listaCortada(ignorados, 'itens')]);
+      // Descartável de extensão não conta como perda (o git worktree remove o apaga); guardado aponta o comando
+      // da extensão, que leva o item para um lugar durável; o resto, como sempre.
+      const { guardados, outros } = separarIgnorados(ig.saida.split('\0').filter(Boolean), declarados);
+      for (const g of guardados) {
+        problemas.push([`itens ignorados que a extensão ${g.extensao} guarda (${g.itens.length}); saída: ${g.guardar} e repita ah close (o --descartar-ignorados apagaria junto)`, listaCortada(g.itens, 'itens')]);
+      }
+      if (outros.length) {
+        problemas.push([`itens ignorados no worktree (${outros.length}; pasta inteira conta como um), que o git não guarda; saída: copie o que importa de ${wt}, ou repita com --descartar-ignorados`, listaCortada(outros, 'itens')]);
       }
     }
     return problemas;
@@ -309,6 +322,7 @@ export async function executar(args, amb) {
     }
 
     // 2. Nada se perde.
+    if (!o.descartarIgnorados) await lerDeclarados(frente);
     const refs = lerRefs(frente);
     const primeiros = conferir(frente, refs);
     if (primeiros.length) recusarProblemas(frente, primeiros);

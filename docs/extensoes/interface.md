@@ -1,6 +1,6 @@
 # Interface de extensão (versão 1)
 
-Referência da interface pela qual uma extensão acrescenta comandos, travas, verificações, reações ao ciclo de vida, linhas no resumo e colunas no quadro, sem alterar o núcleo. O passo a passo de criação está em [como-estender.md](como-estender.md); o desenho, na seção 9 de `docs/superpowers/specs/2026-11-12-nucleo-design.md`. A implementação fica em `nucleo/lib/extensoes.mjs`, e a extensão `recursos` (`nucleo/extensoes/recursos/extensao.mjs`) serve de exemplo completo.
+Referência da interface pela qual uma extensão acrescenta comandos, travas, verificações, reações ao ciclo de vida, linhas no resumo, colunas no quadro e os itens ignorados de que cuida no `close`, sem alterar o núcleo. O passo a passo de criação está em [como-estender.md](como-estender.md); o desenho, na seção 9 de `docs/superpowers/specs/2026-11-12-nucleo-design.md`. A implementação fica em `nucleo/lib/extensoes.mjs`, e a extensão `recursos` (`nucleo/extensoes/recursos/extensao.mjs`) serve de exemplo completo.
 
 ## Localização e ligação
 
@@ -42,6 +42,7 @@ export default {
   reacoes: {},                   // opcional: {depoisDeAbrir, antesDeFechar, depoisDeFechar, aoPassar, noSweep}
   resumo(ctx) {},                // opcional: até duas linhas para o começo de sessão
   colunas: [],                   // opcional: [{titulo, valor(frente, ctx)}]
+  ignorados(ctx) {},             // opcional: [{caminho, descartavel: true} | {caminho, guardar: '<comando>'}]
 };
 ```
 
@@ -184,6 +185,26 @@ Cada reação é `async (ctx)`. Em todas, `ctx.frente` é a frente do comando.
 - Recusa de `antesDeFechar`: `Recusado: a extensão <nome> não deixa fechar a frente <id> <nome da frente>: <motivo>` e `Faça: <saida>`; o close para sem mudar nada.
 - Nas outras reações, um erro vira `Aviso: extensão <nome> falhou em <reação>: <erro>` e não desfaz o que o núcleo já fez.
 - No `ah sweep`, as linhas saem como `- <extensão>: <linha>`; no `--json`, em `extensoes: {<extensão>: [linhas]}`.
+
+## Ignorados de que a extensão cuida
+
+O `ah close` recusa worktree com item ignorado pelo git, porque o git não guarda esses arquivos e remover o worktree os apagaria. Alguns desses itens são de uma extensão, e ela sabe o que fazer com eles: o arquivo de ambiente da frente pode ser refeito a partir do estado; o diário da execução por subagentes precisa ir para o ticket antes. Para isso, a extensão declara os dela:
+
+```js
+ignorados(ctx) {
+  return [
+    { caminho: '.env.frente', descartavel: true },
+    { caminho: '.superpowers/sdd/', guardar: `tools/ah registros guardar --frente ${ctx.frente.nome}` },
+  ];
+},
+```
+
+- `ignorados(ctx)` é chamada pelo `close`, na primeira fase (sob a trava das frentes), com `ctx.frente` definida; pode ser assíncrona. Não roda com `--descartar-ignorados`.
+- `caminho` é relativo à raiz do worktree: um arquivo, ou uma pasta terminada em `/` (que cobre tudo dentro dela). Caminho absoluto, com `..` ou vazio é inválido.
+- Cada item tem um dos dois campos: `descartavel: true` (não conta como perda; sai com o `git worktree remove`) ou `guardar: '<comando>'` (recusa numa linha própria, com esse comando como próximo passo). O `close` só aponta o comando; nunca o roda.
+- Um item ignorado casa com um declarado quando é o caminho dele ou fica dentro dele. Coberto por um descartável e por um `guardar`, vale o `guardar`. Pasta-mãe de um declarado (o git lista `.superpowers/` junto com `.superpowers/sdd/`) casa só quando os itens listados dentro dela casam todos; com outro ignorado dentro (`.superpowers/x.log`), ela fica na linha de sempre.
+- A função que lança, a promessa que rejeita, a lista inválida e o item inválido viram o aviso `Aviso: a extensão <nome> falhou em ignorados: <motivo>; …`, e os itens afetados seguem a conferência de sempre (a recusa que sugere `--descartar-ignorados`).
+- Acréscimo compatível de 26/11/2026 (P5 do desenho do método): a interface continua na versão 1, e a extensão sem o campo não muda nada.
 
 ## Resumo e quadro
 
