@@ -574,6 +574,48 @@ $ AH_SESSAO=ana-terminal tools/ah close
 Frente as-1 carrinho fechada.
 ```
 
+## prova
+
+```
+ah prova <rótulo> [-- <comando>…]
+ah prova --confere <ramo> [<rótulo>]
+```
+
+Comando da extensão `prova`, que acompanha o harness, desligada por padrão. Serve para não repetir o teste ponta a ponta depois de um merge que não mudou o código: o git identifica o conteúdo de um commit pela árvore (`HEAD^{tree}`), e o `merge --no-ff` de uma frente numa base parada produz a mesma árvore da frente.
+
+**Configuração** (opcional): o comando padrão de cada rótulo, como lista de argumentos, rodada sem shell.
+
+```json
+"extensoes": { "prova": { "comandos": { "e2e": ["tools/ah", "pesado", "--", "npm", "run", "e2e"] } } }
+```
+
+- **Gravar** (`ah prova <rótulo>`, exige sessão com frente). Recusa o worktree com arquivo rastreado alterado. Roda o teste no worktree da frente: o comando depois de `--` (um argumento só vai para o shell; vários rodam direto) ou, sem ele, o de `comandos.<rótulo>`. Teste que falha: `O teste <rótulo> falhou (código N): nada gravado.`, e o `ah` sai com o código do teste. Teste que passa sem mudar a árvore: grava `{rotulo, arvore, commit, comando, em}` em `frente.extensoes.prova.provas` (uma por rótulo, a última) e acrescenta uma linha em `<estado>/extensoes/prova/provas.jsonl`, que sobrevive ao `close`. Teste pesado vai pela fila pondo `tools/ah pesado --` no comando.
+- **Conferir** (`ah prova --confere <ramo>`, não exige sessão). Procura uma prova com a mesma árvore do ramo (e o mesmo rótulo, se dado) na lista durável e nas frentes do estado. Achou: código 0, com a frente, o rótulo e o commit. Não achou: código 3 (`nenhuma prova. Rode o teste.`). Ref que não existe: recusa, código 1.
+- **Fluxo.** Na frente: reintegrar a base (`git merge dev`), rodar `ah prova e2e`. Ao integrar: `git merge --no-ff` na base e `ah prova --confere dev`; com 0, o teste não se repete; com 3 (outra frente entrou no meio), roda o teste de novo.
+- **Quadro.** A coluna `PROVA` mostra a prova mais recente da frente (`e2e 1a2b3c4`).
+
+| Recusa | Faça |
+|---|---|
+| `não sei qual é a sessão` | defina AH_SESSAO ou ligue o adaptador do agente |
+| `Esta sessão não tem frente.` | abra uma com ah open <nome> |
+| `Rótulo inválido: …` | use minúsculas, números, hífen e dois-pontos, começando por letra (ex.: e2e) |
+| `Não sei qual é o teste <rótulo>.` | diga depois de -- (ah prova <rótulo> -- npm test) ou declare em extensoes.prova.comandos.<rótulo> |
+| `o worktree tem arquivo rastreado alterado (…)` | commite (ou desfaça) e rode ah prova de novo |
+| `o teste <rótulo> passou, mas a árvore mudou durante o teste; nada gravado.` | commite o que o teste gerou (ou ponha no .gitignore) e rode ah prova de novo |
+| `<ref> não é um ramo nem um commit deste repositório.` | confira o nome com git branch -a |
+| `Faltam ou sobram argumentos.` / `Argumento a mais: …` | use o uso acima |
+
+```
+$ AH_SESSAO=ana-terminal tools/ah prova e2e
+Prova gravada: e2e na frente as-1 carrinho, árvore 1a2b3c4 (commit 9f8e7d6).
+$ git merge --no-ff feat/carrinho
+$ tools/ah prova --confere dev
+Árvore 1a2b3c4 de dev provada pela frente as-1 carrinho (e2e, commit 9f8e7d6, em 2026-11-26T15:02:11.000Z): não precisa repetir o teste.
+$ tools/ah prova --confere dev; echo $?      # depois que outra frente entrou na dev
+Árvore 5d6e7f8 de dev: nenhuma prova. Rode o teste.
+3
+```
+
 ## whoami
 
 ```
