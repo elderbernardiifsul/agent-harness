@@ -581,6 +581,7 @@ Frente as-1 carrinho fechada.
 
 ```
 ah metodo instalar [--forcar]
+ah metodo atualizar [--colecao <nome>] [--para <tag|commit>] [--simular] [--forcar]
 ```
 
 Comando da extensão `metodo`, que acompanha o harness e só existe com ela ligada em `extensoes`, com a lista dos agentes que o projeto usa: `"metodo": {"agentes": ["claude-code", "codex"]}` (valem `claude-code`, `codex` e `opencode`). Sem `agentes`, ou com agente desconhecido, a extensão não carrega: `ah metodo` sai como `comando desconhecido`, com o aviso `a extensão metodo não carregou (configuração recusada: …)`, e o `doctor` mostra a falha no item `Extensão metodo`. Não exige sessão.
@@ -624,7 +625,37 @@ Nada a mudar: as skills já estão como a trava.
 Agora rode: tools/ah doctor
 ```
 
-O `ah metodo atualizar` ainda recusa nesta versão (`ah metodo atualizar ainda não implementado.`).
+### atualizar
+
+Leva as skills já instaladas para a versão nova das coleções, com as mesmas regras do `instalar` (busca antes de gravar, mudança à mão, trava, commit).
+
+| Opção | Efeito |
+|---|---|
+| (nenhuma) | cada coleção vai para o commit de `colecoes.json`, o recomendado por esta versão do harness |
+| `--colecao <nome>` | só essa coleção; as outras ficam como na trava |
+| `--para <tag\|commit>` | leva a coleção a esse ref, mesmo à frente do recomendado; exige `--colecao`. A trava grava o commit resolvido e `versao: <ref dado>` |
+| `--simular` | mostra o que mudaria e não grava nada (nem trava nem skills) |
+| `--forcar` | descarta as mudanças à mão nas skills, como no `instalar` |
+
+Relatório, por coleção com mudança: `Atualizei N skill(s) de <coleção> (<versão>, <commit>) em <pastas>.`, seguido de `Alterados:`, `Novos arquivos:` e `Arquivos removidos:` (cada um com `<coleção>: <skill>/<arquivo>, …`), `Novas skills: …` e, no fim, `Skills removidas: …` (a skill que saiu da lista é apagada se está igual à trava; com mudança à mão, fica e há aviso). Com `--simular`, termina com `Simulação: nada foi gravado.`; sem mudança, diz `Nada a mudar: as skills já estão como a trava.`
+
+```
+$ tools/ah metodo atualizar --colecao superpowers --para v7.0.3 --simular
+Atualizei 1 skill(s) de superpowers (v7.0.3, 3fa9c21) em .claude/skills, .agents/skills.
+Alterados:
+  superpowers: brainstorming/SKILL.md
+Novas skills: revisao
+Simulação: nada foi gravado.
+```
+
+| Recusa | Faça |
+|---|---|
+| `--para precisa de --colecao (…)` | rode tools/ah metodo atualizar --colecao <nome> --para <tag\|commit>; sem --para, cada coleção vai para o commit recomendado |
+| `Falta o valor de --colecao` / `--para` | dê o valor logo depois da opção |
+| `Opção desconhecida: …` / `Argumento a mais: …` | use ah metodo atualizar [--colecao <nome>] [--para <tag\|commit>] [--simular] [--forcar] |
+| `não conheço a coleção <nome>` | use uma das coleções de colecoes.json |
+| `os agentes do método mudaram desde a última instalação` | rode tools/ah metodo instalar, que leva todas as coleções às pastas novas |
+| as recusas do `instalar` (busca, mudança à mão, trava ilegível, destino fora do projeto) | as mesmas, com `tools/ah metodo atualizar` no lugar de `instalar` |
 
 ## whoami
 

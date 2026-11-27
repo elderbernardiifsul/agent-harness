@@ -110,7 +110,7 @@ function planejar(raiz, { copias, destinos, anterior, tocadas, forcar }) {
         const links = linksDe(dir);
         const bitsIguais = process.platform === 'win32' || mesmaLista(executaveisDe(dir), executaveis);
         if (!links.length && bitsIguais && mesmosHashes(noDisco, desejado)) continue;
-        escritas.push({ colecao: nome, destino, skill, arquivos });
+        escritas.push({ colecao: nome, destino, skill, arquivos, noDisco });
         for (const [rel, h] of Object.entries(noDisco)) {
           if (h !== desejado[rel] && h !== hashAntigo(destino, skill, rel)) perdas.push(`${destino}: ${skill}/${rel}`);
         }
@@ -163,6 +163,23 @@ function novaTrava({ anterior, tocadas, copias, fontes, destinos }) {
     trava.colecoes[nome] = { origem, commit, versao, skills: Object.keys(copia.skills), arquivos };
   }
   return trava;
+}
+
+// O que muda em cada coleção, para o relatório do `atualizar`: {nome: {alterados, novos, removidos, novasSkills}}.
+// Os arquivos vêm como `skill/arquivo`, sem repetir por pasta de agente; skill nova só aparece em `novasSkills`.
+function diferencas(plano) {
+  const por = {};
+  for (const e of plano.escritas) {
+    const d = (por[e.colecao] ??= { alterados: new Set(), novos: new Set(), removidos: new Set(), novasSkills: new Set() });
+    if (!Object.keys(e.noDisco).length) { d.novasSkills.add(e.skill); continue; }
+    const desejado = Object.fromEntries(e.arquivos.map(f => [f.caminho, sha256(f.conteudo)]));
+    for (const [rel, h] of Object.entries(desejado)) {
+      if (!(rel in e.noDisco)) d.novos.add(`${e.skill}/${rel}`);
+      else if (e.noDisco[rel] !== h) d.alterados.add(`${e.skill}/${rel}`);
+    }
+    for (const rel of Object.keys(e.noDisco)) if (!(rel in desejado)) d.removidos.add(`${e.skill}/${rel}`);
+  }
+  return por;
 }
 
 // Instala ou atualiza as coleções (`colecoesPedidas`: só essas; null: todas) nos commits de `refs` ({nome: ref}) ou nos
@@ -227,14 +244,22 @@ export async function sincronizar(ctx, { colecoesPedidas = null, refs = {}, simu
 
   // Relatório (o mesmo na simulação).
   const linhas = [];
+  const dif = diferencas(plano);
   for (const nome of Object.keys(copias).sort()) {
     // Contam só as skills escritas agora; as que já estavam iguais ficam de fora.
     const escritas = new Set(plano.escritas.filter(e => e.colecao === nome).map(e => e.skill)).size;
     if (!escritas) continue;
     const f = fontes[nome];
-    linhas.push(`Instalei ${escritas} skill(s) de ${nome} (${f.versao}${f.commit ? `, ${f.commit.slice(0, 7)}` : ''}) em ${destinos.join(', ')}.`);
+    linhas.push(`${comando === 'atualizar' ? 'Atualizei' : 'Instalei'} ${escritas} skill(s) de ${nome} (${f.versao}${f.commit ? `, ${f.commit.slice(0, 7)}` : ''}) em ${destinos.join(', ')}.`);
+    if (comando !== 'atualizar') continue;
+    for (const [titulo, conjunto] of [['Alterados', 'alterados'], ['Novos arquivos', 'novos'], ['Arquivos removidos', 'removidos']]) {
+      const lista = [...dif[nome][conjunto]].sort();
+      if (lista.length) linhas.push(`${titulo}:\n  ${nome}: ${lista.join(', ')}`);
+    }
+    if (dif[nome].novasSkills.size) linhas.push(`Novas skills: ${[...dif[nome].novasSkills].sort().join(', ')}`);
   }
-  for (const r of plano.remocoes) linhas.push(`Removi a skill ${r.skill} de ${r.destino}.`);
+  if (comando === 'atualizar' && plano.remocoes.length) linhas.push(`Skills removidas: ${[...new Set(plano.remocoes.map(r => r.skill))].sort().join(', ')}`);
+  if (comando !== 'atualizar') for (const r of plano.remocoes) linhas.push(`Removi a skill ${r.skill} de ${r.destino}.`);
   for (const rel of copiar) linhas.push(`Criei ${rel}.`);
   if (mudaAgents) linhas.push(`Escrevi o trecho do método no ${ARQUIVO_AGENTS}.`);
   if (mudaTrava) linhas.push(`Gravei a trava ${ARQUIVO_TRAVA}.`);

@@ -4,7 +4,7 @@
 import { AGENTES } from './colecoes.mjs';
 import { sincronizar } from './sincronizar.mjs';
 
-const USO = 'ah metodo instalar [--forcar] | atualizar';
+const USO = 'ah metodo instalar [--forcar] | atualizar [--colecao <nome>] [--para <tag|commit>] [--simular] [--forcar]';
 
 export default {
   versaoDaInterface: 1,
@@ -33,7 +33,25 @@ export default {
           return sincronizar(ctx, { forcar: args.includes('--forcar') });
         }
         if (sub === 'atualizar') {
-          throw new ctx.ErroDeUso('ah metodo atualizar ainda não implementado.\nPróximo passo: nada foi alterado; para reinstalar as skills na versão recomendada, rode tools/ah metodo instalar');
+          // Opções com valor (--colecao, --para) e sem valor (--simular, --forcar).
+          const opcoes = { simular: false, forcar: false };
+          for (let i = 0; i < args.length; i++) {
+            const a = args[i];
+            if (a === '--simular' || a === '--forcar') opcoes[a.slice(2)] = true;
+            else if (a === '--colecao' || a === '--para') {
+              const valor = args[++i];
+              if (valor === undefined || valor.startsWith('--')) throw recusa(`Falta o valor de ${a}`);
+              opcoes[a.slice(2)] = valor;
+            } else throw recusa(`${a.startsWith('--') ? 'Opção desconhecida' : 'Argumento a mais'}: ${a.slice(0, 40)}`);
+          }
+          if (opcoes.para && !opcoes.colecao) throw recusa('--para precisa de --colecao (cada coleção tem os seus commits e tags)');
+          return sincronizar(ctx, {
+            comando: 'atualizar',
+            colecoesPedidas: opcoes.colecao ? [opcoes.colecao] : null,
+            refs: opcoes.para ? { [opcoes.colecao]: opcoes.para } : {},
+            simular: opcoes.simular,
+            forcar: opcoes.forcar,
+          });
         }
         throw recusa(sub ? `Subcomando desconhecido: ${sub.slice(0, 40)}` : 'Falta o subcomando.');
       },

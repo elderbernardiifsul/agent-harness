@@ -151,9 +151,8 @@ test('validarConfig recusa agente desconhecido, lista vazia e repetição', asyn
   assert.equal(ext.validarConfig({ agentes: ['claude-code'] }), null);
 });
 
-test('metodo atualizar ainda recusa, e subcomando faltando recusa, com próximo passo', async () => {
+test('subcomando faltando recusa, com próximo passo', async () => {
   const ext = await carregarParaTeste(path.join(DIR_METODO, 'extensao.mjs'), { agentes: ['codex'] });
   const ctx = ctxFalso({ extensao: 'metodo', config: { agentes: ['codex'] } });
-  await assert.rejects(async () => ext.comandos.metodo.executar(['atualizar'], ctx), e => /ainda não implementado[^]*Próximo passo/.test(e.saida));
   await assert.rejects(async () => ext.comandos.metodo.executar([], ctx), e => /Falta o subcomando[^]*Próximo passo/.test(e.saida));
 });
