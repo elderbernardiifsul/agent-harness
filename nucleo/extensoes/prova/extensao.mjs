@@ -1,0 +1,166 @@
+// Extensão `prova`: prova por árvore. A dor: o teste ponta a ponta é demorado, e depois do merge da frente na base
+// ele costuma ser repetido "por garantia", mesmo quando o merge não mudou nada. O git identifica o conteúdo exato de
+// um commit pela árvore (`HEAD^{tree}`): um `merge --no-ff` numa base parada produz a mesma árvore da frente.
+//
+// `ah prova <rótulo> [-- <comando>]` roda o teste no worktree da frente e, só se ele passar sem mudar a árvore,
+// grava o rótulo, a árvore, o commit, o comando e a hora (na frente e numa lista que sobrevive ao close).
+// `ah prova --confere <ramo> [<rótulo>]` sai 0 quando a árvore do ramo já foi provada e 3 quando não foi.
+// Configuração opcional: `{"comandos": {"e2e": ["npm", "run", "e2e"]}}`, o comando padrão de cada rótulo.
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+const ROTULO = /^[a-z][a-z0-9:-]{0,39}$/;
+const USO = 'ah prova <rótulo> [--frente <nome>] [-- <comando>…] | ah prova --confere <ramo> [<rótulo>]';
+const NAO_PROVADA = 3;
+
+const curto = sha => sha.slice(0, 7);
+const recusa = (ctx, motivo, saida) => new ctx.ErroDeUso(`${motivo}\nPróximo passo: ${saida}`);
+const provasDe = f => (Array.isArray(f?.extensoes?.prova?.provas) ? f.extensoes.prova.provas : []);
+const arquivoDuravel = ctx => path.join(ctx.dirEstado, 'extensoes', 'prova', 'provas.jsonl');
+
+// A lista durável: uma prova por linha, só de acréscimo. Linha ilegível é pulada (não impede as outras).
+function lerDuraveis(ctx) {
+  let texto = '';
+  try { texto = fs.readFileSync(arquivoDuravel(ctx), 'utf8'); } catch { return []; }
+  return texto.split('\n').flatMap(l => { try { return l ? [JSON.parse(l)] : []; } catch { return []; } });
+}
+
+function arvoreDe(ctx, ref, cwd) {
+  const r = ctx.git(['rev-parse', '--verify', '-q', `${ref}^{tree}`], { cwd });
+  return r.codigo === 0 ? r.saida.trim() : null;
+}
+
+// O que está no disco e não no commit: arquivo rastreado alterado e arquivo novo não rastreado (o teste o usaria,
+// e a árvore do HEAD não o tem). O que o .gitignore ignora não conta.
+function alterados(ctx, cwd) {
+  const r = ctx.git(['status', '--porcelain'], { cwd });
+  if (r.codigo !== 0) throw recusa(ctx, `não consegui ler o estado do worktree ${cwd}: ${r.erro.trim()}`, 'confira o worktree com git status');
+  return r.saida.split('\n').filter(Boolean).map(l => l.slice(3));
+}
+
+// A frente da prova: a de --frente (por nome ou id), ou a da sessão. Com --frente, a orquestradora grava a prova de
+// uma frente que não está no foco dela; a frente ativa de outra sessão viva fica com a dona, como na recursos.
+function frenteAlvo(ctx, nome) {
+  if (nome === undefined) {
+    if (!ctx.frente) throw recusa(ctx, 'Esta sessão não tem frente.', 'abra uma com ah open <nome>, ou diga qual com --frente <nome>');
+    return ctx.frente;
+  }
+  const f = ctx.frentes().find(x => x.nome === nome || x.id === nome);
+  if (!f) throw recusa(ctx, `Não achei a frente ${nome.slice(0, 49)}.`, 'rode ah board para ver as frentes abertas');
+  conferirDona(ctx, f);
+  return f;
+}
+
+// A frente ativa (ou em abertura) de outra sessão viva fica com a dona. Conferida antes do teste e de novo sob a
+// trava, na gravação: o teste pode demorar, e a frente pode ter mudado de dona no meio.
+function conferirDona(ctx, f) {
+  if (!f || !['ativa', 'abrindo'].includes(f.estado) || !f.dona || f.dona === ctx.sessaoId || !ctx.donaViva(f)) return;
+  throw recusa(ctx, `A frente ${f.id} ${f.nome} é da sessão ${f.dona}, que está viva.`,
+    `peça à sessão dona (${f.dona}) que grave a prova; com a sessão morta (frente órfã) ou a frente passada, o --frente vale`);
+}
+
+async function gravar(args, ctx) {
+  if (!ctx.sessaoId) throw recusa(ctx, 'não sei qual é a sessão', 'defina AH_SESSAO ou ligue o adaptador do agente');
+  // Antes de --: o rótulo e o --frente; depois: o comando do teste.
+  const corte = args.indexOf('--');
+  const antes = corte < 0 ? args : args.slice(0, corte);
+  const depois = corte < 0 ? null : args.slice(corte + 1);
+  const [rotulo, ...opcoes] = antes;
+  if (rotulo?.startsWith('--')) throw recusa(ctx, 'O rótulo vem primeiro.', 'ah prova <rótulo> --frente <nome> [-- <comando>…]');
+  let nome;
+  if (opcoes[0] === '--frente') {
+    nome = opcoes[1];
+    if (!nome) throw recusa(ctx, 'A opção --frente precisa do nome da frente.', `use ${USO}`);
+    opcoes.splice(0, 2);
+  }
+  if (!ROTULO.test(rotulo ?? '')) throw recusa(ctx, `Rótulo inválido: ${String(rotulo).slice(0, 40)}`, 'use minúsculas, números, hífen e dois-pontos, começando por letra (ex.: e2e)');
+  if (opcoes.length) throw recusa(ctx, `Argumento a mais: ${opcoes[0].slice(0, 40)}`, `use ${USO}`);
+  const f = frenteAlvo(ctx, nome);
+  const comando = depois ?? ctx.config.comandos?.[rotulo];
+  if (!comando?.length) {
+    throw recusa(ctx, `Não sei qual é o teste ${rotulo}.`, `diga depois de -- (ah prova ${rotulo} -- npm test) ou declare em extensoes.prova.comandos.${rotulo}`);
+  }
+  const wt = f.worktree;
+  const sujos = alterados(ctx, wt);
+  if (sujos.length) {
+    throw recusa(ctx, `o worktree tem mudança fora do commit (${sujos.slice(0, 5).join(', ')}${sujos.length > 5 ? ', …' : ''}): a árvore testada não seria a do HEAD.`,
+      'commite, ponha no .gitignore o que é gerado, ou desfaça, e rode ah prova de novo');
+  }
+  const arvoreAntes = arvoreDe(ctx, 'HEAD', wt);
+  // Depois de --, um argumento só vai para o shell (como no ah pesado); vários rodam direto. O da configuração
+  // é sempre uma lista argv, rodada sem shell.
+  const umSo = depois?.length === 1;
+  const r = spawnSync(comando[0], comando.slice(1), { cwd: wt, env: ctx.env, stdio: 'inherit', shell: umSo });
+  const codigo = r.status ?? 1;
+  if (r.error || codigo !== 0) {
+    ctx.escrever(`O teste ${rotulo} falhou (código ${codigo}${r.error ? `, ${r.error.message}` : ''}): nada gravado.\n`);
+    return codigo || 1;
+  }
+  // O teste pode ter gerado arquivo rastreado (snapshot, formatação) ou commitado: então a árvore provada não é a de antes.
+  if (alterados(ctx, wt).length || arvoreDe(ctx, 'HEAD', wt) !== arvoreAntes) {
+    throw recusa(ctx, `o teste ${rotulo} passou, mas a árvore mudou durante o teste; nada gravado.`, 'commite o que o teste gerou (ou ponha no .gitignore) e rode ah prova de novo');
+  }
+  const prova = { rotulo, arvore: arvoreAntes, commit: ctx.git(['rev-parse', 'HEAD'], { cwd: wt }).saida.trim(), comando, em: new Date().toISOString() };
+  // Uma prova por rótulo na frente: a nova substitui a anterior do mesmo rótulo.
+  const anteriores = secao => (Array.isArray(secao.provas) ? secao.provas : []).filter(p => p.rotulo !== rotulo);
+  await ctx.gravarCampos(f.nome, (secao, { frentes }) => {
+    if (nome !== undefined) conferirDona(ctx, frentes.find(x => x.nome === f.nome));
+    return { provas: [...anteriores(secao), prova] };
+  });
+  fs.mkdirSync(path.dirname(arquivoDuravel(ctx)), { recursive: true });
+  fs.appendFileSync(arquivoDuravel(ctx), `${JSON.stringify({ id: f.id, frente: f.nome, ...prova })}\n`);
+  ctx.escrever(`Prova gravada: ${rotulo} na frente ${f.id} ${f.nome}, árvore ${curto(arvoreAntes)} (commit ${curto(prova.commit)}).\n`);
+  return 0;
+}
+
+function conferir([ref, rotulo, ...resto], ctx) {
+  if (!ref || resto.length) throw recusa(ctx, 'Faltam ou sobram argumentos.', `use ${USO}`);
+  const arvore = arvoreDe(ctx, ref);
+  if (!arvore) throw recusa(ctx, `${ref.slice(0, 60)} não é um ramo nem um commit deste repositório.`, 'confira o nome com git branch -a');
+  const vivas = ctx.frentes().flatMap(f => provasDe(f).map(p => ({ id: f.id, frente: f.nome, ...p })));
+  const achada = [...lerDuraveis(ctx), ...vivas].find(p => p.arvore === arvore && (!rotulo || p.rotulo === rotulo));
+  if (!achada) {
+    ctx.escrever(`Árvore ${curto(arvore)} de ${ref}: nenhuma prova${rotulo ? ` ${rotulo}` : ''}. Rode o teste.\n`);
+    return NAO_PROVADA;
+  }
+  ctx.escrever(`Árvore ${curto(arvore)} de ${ref} provada pela frente ${achada.id} ${achada.frente} (${achada.rotulo}, commit ${curto(achada.commit)}, em ${achada.em}): não precisa repetir o teste.\n`);
+  return 0;
+}
+
+export default {
+  versaoDaInterface: 1,
+  descricao: 'prova por árvore: grava a árvore testada e confere antes de repetir o teste',
+
+  validarConfig(c) {
+    for (const k of Object.keys(c)) if (k !== 'comandos') return `campo desconhecido: ${k} (só vale comandos)`;
+    const cs = c.comandos;
+    if (cs === undefined) return null;
+    if (cs === null || typeof cs !== 'object' || Array.isArray(cs)) return 'comandos deve ser um objeto {rótulo: ["programa", "argumento", …]}';
+    for (const [r, argv] of Object.entries(cs)) {
+      if (!ROTULO.test(r)) return `rótulo inválido em comandos: ${r}`;
+      if (!Array.isArray(argv) || !argv.length || !argv.every(a => typeof a === 'string' && a !== '')) return `comandos.${r} deve ser uma lista não vazia de textos, como ["npm", "test"]`;
+    }
+    return null;
+  },
+
+  comandos: {
+    prova: {
+      descricao: 'grava a árvore testada depois que o teste passa, ou confere se a árvore de um ramo já foi provada',
+      uso: USO,
+      // --confere só lê; gravar exige sessão e frente, e recusa sem elas.
+      requisitos: { sessao: false },
+      executar(args, ctx) {
+        return args[0] === '--confere' ? conferir(args.slice(1), ctx) : gravar(args, ctx);
+      },
+    },
+  },
+
+  colunas: [{
+    titulo: 'PROVA',
+    valor: f => {
+      const p = provasDe(f).at(-1);
+      return p ? `${p.rotulo} ${curto(p.arvore)}` : '';
+    },
+  }],
+};

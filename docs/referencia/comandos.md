@@ -689,6 +689,255 @@ Uma pasta de skill com arquivo ilegível vira aviso nos itens `Skills iguais à 
 
 Limite: a conferência de plugin duplicado lê só o Claude Code; para o Codex e o OpenCode a sondagem não achou onde ficam os plugins instalados, e o `doctor` não chuta.
 
+## ambiente
+
+```
+ah ambiente [mostrar] [--json]
+ah ambiente preparar
+ah ambiente desfazer
+```
+
+Comando da extensão `ambiente`, que acompanha o harness, desligada por padrão. Resolve a disputa de porta e banco entre frentes paralelas: na abertura, cada frente recebe portas livres de uma faixa, um banco próprio e um arquivo no worktree com as chaves para o programa ler; no fechamento, o banco é apagado e as portas voltam para a faixa. Construída sobre a ideia da extensão `recursos`, mas automática.
+
+**Configuração.** Os comandos de banco são listas de argumentos rodadas sem shell, na raiz do projeto, com `{banco}` e `{frente}` trocados. A extensão não conhece banco nenhum: o projeto diz qual ferramenta usa.
+
+```json
+"extensoes": { "ambiente": {
+  "arquivo": ".env.frente",
+  "portas": { "faixa": [4100, 4199], "chaves": ["PORTA_WEB", "PORTA_API"] },
+  "banco": { "nome": "loja_{frente}", "chave": "BANCO",
+             "criar": ["createdb", "{banco}"], "apagar": ["dropdb", "--if-exists", "{banco}"],
+             "listar": ["psql", "-Atc", "select datname from pg_database"] },
+  "fixos": { "portas": [3000, 5432], "bancos": ["loja", "loja_test"] }
+} }
+```
+
+| Campo | Conteúdo |
+|---|---|
+| `arquivo` | caminho, relativo ao worktree, do arquivo de ambiente (padrão `.env.frente`) |
+| `portas.faixa`, `portas.chaves` | de onde saem as portas, e uma chave por porta da frente |
+| `banco.nome` | molde do nome; `{frente}` vira o nome da frente com `-` trocado por `_` (`loja_{frente}` → `loja_cupom_novo`) |
+| `banco.chave` | a chave do nome do banco no arquivo |
+| `banco.criar`, `banco.apagar` | os comandos que criam e apagam o banco |
+| `banco.listar` | opcional: imprime os bancos existentes, um por linha (usado pelo `sweep`) |
+| `fixos` | portas e bancos que não são de frente nenhuma (desenvolvimento, teste comum, serviços do projeto): nunca vão para uma frente e nunca são apagados |
+
+O marcador `{frente}` não vale o mesmo em todo lugar (exemplo com a frente `cupom-novo`):
+
+| Onde | `{frente}` vale | Exemplo |
+|---|---|---|
+| `banco.nome` (o molde) | o nome da frente com `-` trocado por `_` | `loja_{frente}` → `loja_cupom_novo` |
+| argv de `banco.criar` e `banco.apagar` | o nome da frente como está | `cupom-novo` |
+
+Nos argv, `{banco}` vale o nome final do banco (`loja_cupom_novo`).
+
+`portas` e `banco` são opcionais, mas um dos dois é obrigatório. O arquivo de ambiente vai no `.gitignore` do projeto (acrescente a linha `.env.frente`, ou o nome escolhido, e commite na `dev`): fora dele, o arquivo aparece como alteração não commitada, e o `close` recusa o worktree. A abertura avisa quando ele não está ignorado.
+
+- **Abertura** (`depoisDeAbrir`, também na retomada). Portas: as menores da faixa fora das portas de outras frentes (desta extensão e, com a `recursos` ligada, as do tipo `porta`), das fixas e das que estão escutando agora nesta máquina (em `127.0.0.1` ou em `::1`); a escolha e a gravação ficam sob a trava das frentes, e duas aberturas ao mesmo tempo não recebem a mesma porta. Banco: roda `criar` e grava `{nome, criado}`; se o nome da frente dá um banco fixo (a frente `test` com o molde `loja_{frente}` e o fixo `loja_test`), a frente fica sem banco, com aviso. Arquivo: escreve no worktree um cabeçalho e uma linha `CHAVE=valor` por porta e pelo banco; um arquivo que já existe sem esse cabeçalho (o `.env` do aluno) nunca é sobrescrito nem apagado. Só faz o que falta: a frente que já tem portas fica com elas, e o banco já criado não é criado de novo. Falta de porta na faixa ou banco que não foi criado não impedem a abertura: viram aviso com o próximo passo.
+- **`mostrar`** (o padrão). As portas, o banco e o arquivo da frente da sessão; `--json` imprime `{"id","frente","portas","banco","arquivo"}`.
+- **`preparar`.** Refaz o que falta (depois de aumentar a faixa, ou com o banco de volta) e reescreve o arquivo. Sai com 1 quando sobra aviso.
+- **`desfazer`.** Apaga o banco criado pela frente, remove o arquivo gerado do worktree e libera as portas; a saída diz o que de fato foi feito.
+- **Fechamento** (`depoisDeFechar`). Apaga o banco criado pela frente, salvo se for fixo; a falha vira aviso com o comando para apagar à mão. As portas saem do estado com a frente.
+- **Arquivo de ambiente e o `close`.** A extensão declara o arquivo como descartável (`ignorados`, ver `docs/extensoes/interface.md`): ele é refeito a partir do estado, e o `close` não o conta como item ignorado que se perderia. Com o arquivo no `.gitignore`, o `close` passa sem `ah ambiente desfazer`.
+- **Sweep.** O `ah sweep` lista, como `- ambiente: …`, cada porta da faixa que está escutando sem ser de frente (desta extensão ou da `recursos`) nem fixa e, com `banco.listar`, cada banco que casa com o molde sem ser de frente nem fixo, com o próximo passo. Banco fora do molde não aparece. Se `listar` falha, sai uma linha com o erro. O `--reparar` não apaga banco nem encerra processo: só acrescenta uma linha dizendo isso.
+- **Passagem.** O `handoff` não libera nada: a frente passada continua dona das portas e do banco.
+- **Windows.** Não ensaiado no Windows.
+- **Quadro.** A coluna `AMBIENTE` mostra as portas e o banco (`4100 4101 loja_carrinho`).
+
+| Recusa ou aviso | Faça |
+|---|---|
+| `Esta sessão não tem frente.` | abra uma com ah open <nome> |
+| `Subcomando desconhecido: …` | use `ah ambiente [mostrar] [--json] \| ah ambiente preparar \| ah ambiente desfazer` |
+| Aviso: `a faixa 4100-4199 não tem 2 portas livres para a frente <nome>` | aumente extensoes.ambiente.portas.faixa e rode ah ambiente preparar |
+| Aviso: `não consegui criar o banco <banco>: …` | confira o banco e o comando extensoes.ambiente.banco.criar e rode ah ambiente preparar |
+| Aviso: `o banco <banco> não é um nome válido (minúsculas, números e _)` | mude extensoes.ambiente.banco.nome |
+| Aviso: `o nome da frente <nome> dá o banco fixo <banco>` | mude extensoes.ambiente.banco.nome ou abra a frente com outro nome |
+| Aviso: `<arquivo> já existe e não foi gerado pelo ah ambiente` | use outro extensoes.ambiente.arquivo ou apague o arquivo à mão e rode ah ambiente preparar |
+| Aviso: `<arquivo> não está no .gitignore` | acrescente <arquivo> ao .gitignore e commite (senão o close recusa o worktree) |
+| Aviso: `não consegui apagar o banco <banco>: …` | apague à mão com o comando de extensoes.ambiente.banco.apagar |
+| Sweep: `porta <n> em uso sem frente` | encerre o processo ou declare a porta em extensoes.ambiente.fixos.portas |
+| Sweep: `banco <nome> sem frente` | apague com o comando de extensoes.ambiente.banco.apagar ou declare em fixos.bancos |
+| Sweep: `não consegui listar os bancos: …` | confira extensoes.ambiente.banco.listar |
+| `não consegui apagar o banco <banco>: …` (em `desfazer`) | confira o banco e rode ah ambiente desfazer de novo |
+
+```
+$ AH_SESSAO=ana-terminal tools/ah open carrinho
+…
+$ cat <worktree>/.env.frente
+# gerado por ah ambiente para esta frente; não edite: refaça com tools/ah ambiente preparar
+PORTA_WEB=4100
+PORTA_API=4101
+BANCO=loja_carrinho
+$ AH_SESSAO=carla-terminal tools/ah open cupom
+$ AH_SESSAO=carla-terminal tools/ah ambiente
+Ambiente da frente as-2 cupom: PORTA_WEB=4102, PORTA_API=4103, banco loja_cupom (arquivo .env.frente).
+$ AH_SESSAO=ana-terminal tools/ah ambiente desfazer
+Ambiente da frente as-1 carrinho desfeito: banco loja_carrinho apagado, portas liberadas, .env.frente removido.
+```
+
+## migracao
+
+```
+ah migracao reservar [--frente <nome>]
+ah migracao liberar [--frente <nome>]
+ah migracao listar [--json]
+ah migracao renumerar [--frente <nome>]
+```
+
+Comando da extensão `migracao`, que acompanha o harness, desligada por padrão. Resolve o número repetido: duas frentes abertas sobre a mesma base criam, cada uma, a "próxima" migração, com o mesmo número. A reserva diz que número cada frente terá se a base receber as frentes na ordem das reservas. O número sai do nome do arquivo; a extensão não depende de ferramenta de migração.
+
+**Configuração:**
+
+```json
+"extensoes": { "migracao": { "pasta": "db/migracoes", "padrao": "^(\\d+)_", "digitos": 4 } }
+```
+
+| Campo | Padrão | Conteúdo |
+|---|---|---|
+| `pasta` | obrigatório | pasta das migrações, relativa à raiz |
+| `padrao` | `^(\d+)_` | expressão regular aplicada ao nome do arquivo; o primeiro grupo é o número, e ele precisa ser simples (sem nome) e obrigatório (sem `?` ou `*` depois). Arquivo que não casa (um `README.md` na pasta) é ignorado |
+| `digitos` | `4` | quantos dígitos o número tem no nome (`0003`) |
+| `renumerar` | — | passo próprio da ferramenta de migração, usado por `renumerar` (abaixo) |
+
+- **`reservar`.** Grava `frente.extensoes.migracao.numero` na frente da sessão (ou na de `--frente`). O número é o maior entre a última migração da base (`git.base`, lida no ramo local) e as reservas de todas as outras frentes do estado, mais um. A frente que já tem reserva acima da última da base fica com ela (`já reservada`). A conferência e a gravação ocorrem sob a trava das frentes.
+- **`liberar`.** Apaga a reserva da frente.
+- **`listar`.** A última migração da base e cada reserva, em ordem. A reserva que a base já ultrapassou (outra frente entrou com aquele número) aparece com `(a dev já passou dela: rode ah migracao renumerar depois de reintegrar)`. `--json` imprime `{"base","ultima","reservas":[{"id","frente","estado","numero"}]}`.
+- **`renumerar`.** Na reintegração: quando outra frente entrou na base com o número reservado, rode no worktree `git merge dev --no-edit` (resolva o conflito e commite, se houver) e depois `ah migracao renumerar`. As migrações da frente (os arquivos da pasta que casam com o padrão e não existem na base) são renomeadas com `git mv` em sequência a partir do próximo número livre (depois da última da base e das reservas das outras frentes), trocando só o número (`0003_frete.sql` → `0005_frete.sql`). A reserva, conferida e gravada sob a trava antes dos renomes, passa a ser o último número da frente. A ferramenta de migração que guarda mais do que o nome do arquivo (um registro, um metadado) declara o passo dela em `renumerar`, uma lista argv rodada no worktree para cada arquivo renomeado, com `{de}`, `{para}` e `{pasta}` trocados: `"renumerar": ["node", "scripts/renomear-migracao.mjs", "{de}", "{para}"]`. No fim, tudo fica em stage, a saída lista os arquivos fora da pasta que citam o nome antigo e termina com `Falta: git commit no worktree.`. Já em dia (os números da frente vêm depois da última da base, em sequência, e nenhum foi reservado por outra frente), não mexe em nada.
+- **Mais de uma migração na frente.** A reserva é de um número. A frente que cria mais de uma roda `ah migracao renumerar` logo depois de criá-las: a reserva passa a ser a última, e as reservas seguintes de outras frentes vêm depois dela.
+- **Sessão e frente alheia.** `reservar`, `liberar` e `renumerar` exigem sessão; `listar` não. `--frente` em frente ativa de outra sessão viva recusa, como na extensão `recursos`.
+- **Ciclo.** O `close` libera a reserva (ela mora no registro da frente) e diz `Reserva de migração 0003 liberada.`. O `handoff` não libera: a frente passada continua dona do número.
+- **Windows.** Não ensaiado no Windows.
+- **Quadro.** A coluna `MIGRACAO` mostra o número reservado.
+
+| Recusa | Faça |
+|---|---|
+| `Falta o subcomando.` / `Subcomando desconhecido: …` | use `ah migracao reservar\|liberar\|renumerar [--frente <nome>] \| ah migracao listar [--json]` |
+| `não sei qual é a sessão` | defina AH_SESSAO ou ligue o adaptador do agente |
+| `Esta sessão não tem frente.` | abra uma com ah open <nome>, ou diga qual com --frente <nome> |
+| `Não achei a frente <nome>.` | rode ah board para ver as frentes abertas |
+| `A frente <id> <nome> é da sessão <s>, que está viva.` | peça à sessão dona (<s>) que faça ela mesma; com a sessão morta (frente órfã) ou a frente passada, o --frente vale |
+| `não consegui ler <pasta> no ramo <base>: …` | confira se o ramo <base> existe neste repositório |
+| `o worktree <wt> tem um merge em curso …` (em `renumerar`) | resolva os conflitos, termine o merge com git commit e rode ah migracao renumerar de novo |
+| `a dev não está mesclada no ramo <ramo>: …` | no worktree, git merge dev --no-edit (pode parar em conflito: resolva e commite), e rode ah migracao renumerar de novo |
+| `a migração <arquivo> ainda não está no git (arquivo novo, sem git add).` | git add -- <pasta>/<arquivo> e rode ah migracao renumerar de novo |
+| `<arquivo> já existe em <pasta>.` | renomeie à mão o arquivo que está no caminho e rode ah migracao renumerar de novo |
+| `o passo de renumerar da configuração falhou em <de> → <para> (…); já renomeados (em stage): …` | conserte o passo da ferramenta para esses arquivos à mão, ou desfaça com git restore --source=HEAD --staged --worktree -- <pasta> (descarta também o que não foi commitado nessa pasta) e rode de novo |
+| `Opção desconhecida: …` / `Argumento a mais: …` / `A opção --frente precisa do nome da frente.` | use o uso acima |
+
+```
+$ AH_SESSAO=ana-terminal tools/ah migracao reservar
+Frente as-1 carrinho: migração reservada: 0003 (a última da dev é a 0002).
+$ AH_SESSAO=carla-terminal tools/ah migracao reservar
+Frente as-2 cupom: migração reservada: 0004 (a última da dev é a 0002).
+$ tools/ah migracao listar
+Última da dev: 0002 (0002_cupom.sql)
+0003 as-1 carrinho
+0004 as-2 cupom
+$ git merge --no-ff feat/cupom && AH_SESSAO=carla-terminal tools/ah close     # o cupom entra primeiro
+$ cd <worktree do carrinho> && git merge dev --no-edit
+$ AH_SESSAO=ana-terminal tools/ah migracao renumerar
+A migração da frente agora vai de 0005 em diante (a última da dev é a 0004): 0003_carrinho.sql → 0005_carrinho.sql.
+Falta: git commit no worktree.
+```
+
+## prova
+
+```
+ah prova <rótulo> [--frente <nome>] [-- <comando>…]
+ah prova --confere <ramo> [<rótulo>]
+```
+
+Comando da extensão `prova`, que acompanha o harness, desligada por padrão. Serve para não repetir o teste ponta a ponta depois de um merge que não mudou o código: o git identifica o conteúdo de um commit pela árvore (`HEAD^{tree}`), e o `merge --no-ff` de uma frente numa base parada produz a mesma árvore da frente.
+
+**Configuração** (opcional): o comando padrão de cada rótulo, como lista de argumentos, rodada sem shell.
+
+```json
+"extensoes": { "prova": { "comandos": { "e2e": ["tools/ah", "pesado", "--", "npm", "run", "e2e"] } } }
+```
+
+- **Gravar** (`ah prova <rótulo>`, exige sessão com frente). Recusa o worktree com mudança fora do commit: arquivo rastreado alterado ou arquivo novo não rastreado, que o teste usaria e a árvore não tem (o que o `.gitignore` ignora não conta). Roda o teste no worktree da frente: o comando depois de `--` (um argumento só vai para o shell; vários rodam direto) ou, sem ele, o de `comandos.<rótulo>`. Teste que falha: `O teste <rótulo> falhou (código N): nada gravado.`, e o `ah` sai com o código do teste. Teste que passa sem mudar a árvore: grava `{rotulo, arvore, commit, comando, em}` em `frente.extensoes.prova.provas` (uma por rótulo, a última) e acrescenta uma linha em `<estado>/extensoes/prova/provas.jsonl`, que sobrevive ao `close`. Teste pesado vai pela fila pondo `tools/ah pesado --` no comando.
+- **`--frente <nome>`** (nome ou id). Grava a prova dessa frente, com o teste rodado no worktree dela e a árvore dela, e não a da frente em foco: é como a orquestradora, que tem várias frentes e não troca o foco entre elas, prova cada uma no fechamento. Frente passada, órfã (dona morta) ou sem dona vale; frente ativa ou em abertura de outra sessão viva recusa, como na extensão `recursos`. A dona é conferida antes do teste e de novo na gravação, sob a trava das frentes, porque o teste pode demorar.
+- **Conferir** (`ah prova --confere <ramo>`, não exige sessão). Procura uma prova com a mesma árvore do ramo (e o mesmo rótulo, se dado) na lista durável e nas frentes do estado. Achou: código 0, com a frente, o rótulo e o commit. Não achou: código 3 (`nenhuma prova. Rode o teste.`). Ref que não existe: recusa, código 1.
+- **Fluxo.** Na frente: reintegrar a base (`git merge dev`), rodar `ah prova e2e`. Ao integrar: `git merge --no-ff` na base e `ah prova --confere dev`; com 0, o teste não se repete; com 3 (outra frente entrou no meio), roda o teste de novo.
+- **Windows.** Não ensaiado no Windows.
+- **Quadro.** A coluna `PROVA` mostra a prova mais recente da frente (`e2e 1a2b3c4`).
+
+| Recusa | Faça |
+|---|---|
+| `não sei qual é a sessão` | defina AH_SESSAO ou ligue o adaptador do agente |
+| `Esta sessão não tem frente.` | abra uma com ah open <nome>, ou diga qual com --frente <nome> |
+| `Não achei a frente <nome>.` | rode ah board para ver as frentes abertas |
+| `A frente <id> <nome> é da sessão <s>, que está viva.` | peça à sessão dona (<s>) que grave a prova; com a sessão morta (frente órfã) ou a frente passada, o --frente vale |
+| `A opção --frente precisa do nome da frente.` | use o uso acima |
+| `O rótulo vem primeiro.` | ah prova <rótulo> --frente <nome> [-- <comando>…] |
+| `Rótulo inválido: …` | use minúsculas, números, hífen e dois-pontos, começando por letra (ex.: e2e) |
+| `Não sei qual é o teste <rótulo>.` | diga depois de -- (ah prova <rótulo> -- npm test) ou declare em extensoes.prova.comandos.<rótulo> |
+| `o worktree tem mudança fora do commit (…)` | commite, ponha no .gitignore o que é gerado, ou desfaça, e rode ah prova de novo |
+| `o teste <rótulo> passou, mas a árvore mudou durante o teste; nada gravado.` | commite o que o teste gerou (ou ponha no .gitignore) e rode ah prova de novo |
+| `<ref> não é um ramo nem um commit deste repositório.` | confira o nome com git branch -a |
+| `Faltam ou sobram argumentos.` / `Argumento a mais: …` | use o uso acima |
+
+```
+$ AH_SESSAO=ana-terminal tools/ah prova e2e
+Prova gravada: e2e na frente as-1 carrinho, árvore 1a2b3c4 (commit 9f8e7d6).
+$ git merge --no-ff feat/carrinho
+$ tools/ah prova --confere dev
+Árvore 1a2b3c4 de dev provada pela frente as-1 carrinho (e2e, commit 9f8e7d6, em 2026-11-26T15:02:11.000Z): não precisa repetir o teste.
+$ tools/ah prova --confere dev; echo $?      # depois que outra frente entrou na dev
+Árvore 5d6e7f8 de dev: nenhuma prova. Rode o teste.
+3
+```
+
+## orquestracao
+
+```
+ah candidatos [--json]
+ah pede-revisao <ramo> [--json]
+```
+
+Comandos da extensão `orquestracao`, que acompanha o harness, desligada por padrão. São a parte determinística do trabalho de quem orquestra (a skill `orquestrar`): a escolha a olho deixa passar ticket bloqueado, já começado por outra sessão ou à espera de uma decisão do humano.
+
+**Configuração** (opcional):
+
+```json
+"extensoes": { "orquestracao": { "pronto": "ready-for-agent", "pendencia": "A decidir", "revisao": ["src/pagamento/**"] } }
+```
+
+| Campo | Padrão | Conteúdo |
+|---|---|---|
+| `pronto` | `ready-for-agent` | o rótulo que a triagem põe no ticket pronto para um agente |
+| `pendencia` | `A decidir` | a marca de decisão pendente, procurada no começo de uma linha do corpo e de cada comentário (veja abaixo) |
+| `revisao` | `[]` | padrões de caminho cujo diff pede revisor novo (`pede-revisao`, abaixo) |
+
+- **`candidatos`.** Cruza os livres do `ah deps --json` (abertos, sem bloqueio pendente, sem frente) com os tickets abertos que têm o rótulo `pronto` (`gh issue list --label`, até 200, com o corpo e os rótulos) e tira os que têm o rótulo de reserva (`github.rotuloDeReserva`, que o `ah open` põe no ticket: o `deps` só conhece as frentes desta máquina) ou a marca `pendencia`. Os comentários são lidos um ticket por vez (`gh issue view --json comments`), só dos que passaram no resto. A saída lista os candidatos, na ordem do `deps` (o mais novo primeiro), e em `Fora:` cada outro ticket aberto com o motivo: `bloqueada`, `com frente <id>`, `com o rótulo <reserva> (frente em outra máquina?)`, `sem o rótulo <pronto>`, `"<pendencia>" no corpo` ou `"<pendencia>" num comentário de <autor>`. Quando o `deps` usou a leitura guardada (sem GitHub), a primeira linha diz a data dela; os avisos do `deps` saem como `Aviso: …`; quando o `deps` ou o `gh` bateu no limite de 200 tickets, `Aviso: lista incompleta: …`, e o ticket que pode ter ficado fora da lista dos prontos aparece como `não está entre os 200 prontos lidos (lista incompleta)`, não como `sem o rótulo`. `--json` imprime `{"pronto","pendencia","deCache","lidoEm","incompleta","avisos","candidatos":[{"numero","titulo"}],"fora":[{"numero","titulo","motivo"}]}`.
+- **A marca.** Casa no começo de uma linha, depois de espaço e da marcação de título, lista, citação ou negrito (`A decidir: …`, `## A decidir`, `- A decidir:`, `> A decidir`, `**A decidir:**`), sem diferenciar maiúsculas, e termina a palavra (`A decidirmos` não casa). No meio da frase não conta: `Tudo certo, nada a decidir.` não tira o ticket.
+- **Liberar um ticket com a marca.** Depois que o humano decide, edite o corpo ou o comentário tirando a marca do começo da linha (ou troque-a pela decisão). Não exige sessão.
+- **`pede-revisao`.** Compara o ramo com a base (`git diff --name-only <base>...<ramo>`) e diz se algum arquivo do diff casa com `revisao`: `feat/cartao pede revisão: toca src/pagamento/cartao.js (extensoes.orquestracao.revisao).` ou `… não pede revisão: …`. Nos padrões, relativos à raiz (sem `./` nem `/` no começo), `**` atravessa pastas (`src/**/x.js` casa também `src/x.js`), `*` e `?` ficam dentro de uma pasta, e a barra no fim vale "tudo abaixo" (`src/pagamento/` é `src/pagamento/**`, como no `--caminhos` do `open`). Nome com acento conta como está, e o arquivo movido conta pelos dois lados (o de onde saiu e o para onde foi). Sai sempre com 0; `--json` imprime `{"ramo","base","pede","arquivos"}`. Não exige sessão.
+- **Windows.** Não ensaiado no Windows.
+
+| Recusa | Faça |
+|---|---|
+| `Falta o ramo.` / `Argumento a mais: …` (em `pede-revisao`) | use ah pede-revisao <ramo> [--json] |
+| `<ramo> não é um ramo deste repositório.` | confira o nome com git branch |
+| `o ah deps não respondeu: …` | rode tools/ah deps para ver o motivo e conserte antes |
+| `não consegui ler os tickets com o rótulo <pronto>: …` / `não consegui ler os comentários do #<n>: …` | confira o acesso ao GitHub (gh auth status) e rode de novo |
+| `o gh demorou ou respondeu demais ao ler …` | rode de novo; se repetir, use um rótulo de pronto mais específico em extensoes.orquestracao.pronto |
+| `o gh devolveu … num formato que não li` | confira o gh (gh --version) e rode de novo |
+| `o ah deps --json devolveu uma saída que não li` | rode tools/ah deps --json e confira a saída |
+| `Argumento desconhecido: …` | use ah candidatos [--json] |
+
+```
+$ tools/ah candidatos
+Candidatos (rótulo ready-for-agent, sem "A decidir"):
+#13 Carrinho vazio
+#12 Total do carrinho
+Fora:
+#17 Página de ajuda: sem o rótulo ready-for-agent
+#16 Revisão do layout: com frente as-1
+#15 Cupom no checkout: bloqueada
+#14 Frete por região: "A decidir" num comentário de carla
+```
+
 ## modelo
 
 ```
