@@ -15,7 +15,7 @@ import { idCurto, lerSessao } from '../lib/sessao.mjs';
 import { aberturaParada, frenteOrfa, inicioDoProcesso, vidaDaDona } from '../lib/vida.mjs';
 import { existeRamo, git } from '../lib/git.mjs';
 import { gh, protecaoDoRamo, repoAtual } from '../lib/github.mjs';
-import { LINHA_DO_CLAUDE, mesclarGanchos } from './init.mjs';
+import { LINHA_DO_CLAUDE, claudeEhLinkParaAgents, mesclarGanchos } from './init.mjs';
 import { ADAPTADORES, O_QUE_SE_PERDE, agenteEmUso } from '../adaptadores/registro.mjs';
 import { dirDaFila, retratoDaFila } from '../lib/fila.mjs';
 import { arquivosDaCopia, citar, diferenca, eClone, lerManifesto, listaDoManifesto, versaoDoClone } from '../lib/copia.mjs';
@@ -318,6 +318,12 @@ export const VERIFICACOES = [
   verificacao('CLAUDE.md aponta para o AGENTS.md', amb => {
     const nome = 'CLAUDE.md aponta para o AGENTS.md';
     if (!amb.config || !usaClaude(amb)) return null;
+    let simbolico = false;
+    try { simbolico = fs.lstatSync(path.join(amb.raiz, 'CLAUDE.md')).isSymbolicLink(); } catch { /* não existe: o aviso abaixo */ }
+    if (simbolico) {
+      return claudeEhLinkParaAgents(amb.raiz) ? ok(`${nome} (link para o AGENTS.md)`)
+        : aviso(nome, 'o CLAUDE.md é um link para outro arquivo, não para o AGENTS.md; troque-o por um arquivo com a linha @AGENTS.md (rode ah init depois de apagar o link)');
+    }
     let texto;
     try { texto = fs.readFileSync(path.join(amb.raiz, 'CLAUDE.md'), 'utf8'); } catch { return aviso(nome, 'o Claude Code ignora o AGENTS.md sem a linha @AGENTS.md no CLAUDE.md; rode ah init'); }
     const linhas = texto.split(/\r?\n/).map(l => l.trim());

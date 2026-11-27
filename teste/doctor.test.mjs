@@ -541,13 +541,40 @@ test('.harness pasta comum: o item do doctor sai ok', () => {
 
 test('doctor avisa CLAUDE.md sem @AGENTS.md e CLAUDE.md com conteúdo próprio', () => {
   const p = criarProjeto();
-  const item = () => p.ah(['doctor']).saida;
-  assert.match(item(), /^ok\s+CLAUDE\.md aponta para o AGENTS\.md/m);
-  gravar(p, 'CLAUDE.md', '# Loja\n');
-  assert.match(item(), /^aviso\s+CLAUDE\.md aponta para o AGENTS\.md.*rode ah init/m);
-  gravar(p, 'CLAUDE.md', '@AGENTS.md\n\nUse pnpm.\n');
-  assert.match(item(), /^aviso\s+CLAUDE\.md aponta para o AGENTS\.md.*o Codex e o OpenCode não leem o CLAUDE\.md; mova esse conteúdo para o AGENTS\.md/m);
-  gravar(p, 'CLAUDE.md', '@AGENTS.md\n');
-  assert.match(item(), /^ok\s+CLAUDE\.md aponta para o AGENTS\.md/m);
-  p.limpar();
+  try {
+    const item = () => p.ah(['doctor']).saida;
+    assert.match(item(), /^ok\s+CLAUDE\.md aponta para o AGENTS\.md/m);
+    gravar(p, 'CLAUDE.md', '# Loja\n');
+    assert.match(item(), /^aviso\s+CLAUDE\.md aponta para o AGENTS\.md.*rode ah init/m);
+    gravar(p, 'CLAUDE.md', '@AGENTS.md\n\nUse pnpm.\n');
+    assert.match(item(), /^aviso\s+CLAUDE\.md aponta para o AGENTS\.md.*o Codex e o OpenCode não leem o CLAUDE\.md; mova esse conteúdo para o AGENTS\.md/m);
+    gravar(p, 'CLAUDE.md', '@AGENTS.md\n');
+    assert.match(item(), /^ok\s+CLAUDE\.md aponta para o AGENTS\.md/m);
+  } finally { p.limpar(); }
+});
+
+test('doctor: CLAUDE.md link para o AGENTS.md é ok; link para outro arquivo e CLAUDE.md ausente são aviso', { skip: process.platform === 'win32' }, () => {
+  const p = criarProjeto();
+  try {
+    const claude = path.join(p.raiz, 'CLAUDE.md');
+    fs.rmSync(claude);
+    assert.match(p.ah(['doctor']).saida, /^aviso\s+CLAUDE\.md aponta para o AGENTS\.md.*rode ah init/m);
+    fs.symlinkSync('AGENTS.md', claude);
+    assert.match(p.ah(['doctor']).saida, /^ok\s+CLAUDE\.md aponta para o AGENTS\.md \(link para o AGENTS\.md\)/m);
+    fs.rmSync(claude);
+    gravar(p, 'outro.md', '@AGENTS.md\n');
+    fs.symlinkSync('outro.md', claude);
+    assert.match(p.ah(['doctor']).saida, /^aviso\s+CLAUDE\.md aponta para o AGENTS\.md.*é um link para outro arquivo.*@AGENTS\.md/m);
+  } finally { p.limpar(); }
+});
+
+test('doctor: sem claude-code em agentes, o item do CLAUDE.md não aparece', () => {
+  const p = criarProjeto();
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(p.raiz, '.harness/config.json'), 'utf8'));
+    cfg.agentes = ['outro'];
+    gravar(p, '.harness/config.json', JSON.stringify(cfg));
+    fs.rmSync(path.join(p.raiz, 'CLAUDE.md'));
+    assert.doesNotMatch(p.ah(['doctor']).saida, /CLAUDE\.md aponta/);
+  } finally { p.limpar(); }
 });

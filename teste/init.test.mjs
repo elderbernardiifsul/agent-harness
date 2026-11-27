@@ -536,3 +536,37 @@ test('o commit indicado pelo init inclui o CLAUDE.md', () => {
     assert.match(r.saida, /git add -- .* CLAUDE\.md/);
   } finally { p.limpar(); }
 });
+
+test('init: CLAUDE.md que é link para o AGENTS.md não gera aviso nem muda nada', { skip: process.platform === 'win32' }, t => {
+  const p = criarRepo();
+  t.after(() => p.limpar());
+  gravar(p, 'AGENTS.md', '# Loja\n');
+  fs.symlinkSync('AGENTS.md', path.join(p.raiz, 'CLAUDE.md'));
+  const r = initLoja(p);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.doesNotMatch(r.erro, /CLAUDE\.md/);
+  assert.ok(fs.lstatSync(path.join(p.raiz, 'CLAUDE.md')).isSymbolicLink());
+  assert.doesNotMatch(ler(p, 'AGENTS.md'), /^@AGENTS\.md$/m);
+});
+
+test('init: CLAUDE.md que é pasta fica como está e vira conflito, como o AGENTS.md', t => {
+  const p = criarRepo();
+  t.after(() => p.limpar());
+  fs.mkdirSync(path.join(p.raiz, 'CLAUDE.md'));
+  const r = initLoja(p);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /Não sobrescrevi:[\s\S]*CLAUDE\.md/);
+  assert.ok(fs.statSync(path.join(p.raiz, 'CLAUDE.md')).isDirectory());
+});
+
+test('init: sem claude-code em agentes (configuração já existente), não mexe no CLAUDE.md', t => {
+  const p = criarRepo();
+  t.after(() => p.limpar());
+  assert.equal(initLoja(p).codigo, 0);
+  fs.rmSync(path.join(p.raiz, 'CLAUDE.md'));
+  const cfg = JSON.parse(ler(p, '.harness/config.json'));
+  cfg.agentes = ['outro'];
+  gravar(p, '.harness/config.json', JSON.stringify(cfg));
+  assert.equal(initLoja(p).codigo, 0);
+  assert.equal(fs.existsSync(path.join(p.raiz, 'CLAUDE.md')), false);
+});

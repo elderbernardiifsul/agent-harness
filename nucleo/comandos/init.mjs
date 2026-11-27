@@ -206,6 +206,15 @@ export function claudeComLinha(atual) {
   return { texto: `${LINHA_DO_CLAUDE}${fimDeLinha}${fimDeLinha}${atual}`, muda: true };
 }
 
+// CLAUDE.md que é link simbólico para o próprio AGENTS.md do projeto (ln -s AGENTS.md CLAUDE.md):
+// o Claude Code lê o AGENTS.md por ele, então não há nada a fazer.
+export function claudeEhLinkParaAgents(raiz) {
+  try {
+    if (!fs.lstatSync(path.join(raiz, ARQUIVO_CLAUDE_MD)).isSymbolicLink()) return false;
+    return fs.realpathSync(path.join(raiz, ARQUIVO_CLAUDE_MD)) === fs.realpathSync(path.join(raiz, ARQUIVO_AGENTS));
+  } catch { return false; }
+}
+
 function raizReal(p) {
   let atual = path.resolve(p);
   for (;;) {
@@ -350,7 +359,7 @@ export async function executar(args, amb) {
     let claudeSt = null;
     try { claudeSt = fs.lstatSync(path.join(raiz, ARQUIVO_CLAUDE_MD)); } catch { /* não existe */ }
     if (claudeSt?.isSymbolicLink()) {
-      amb.avisar(`${ARQUIVO_CLAUDE_MD} é um link simbólico; não mexi nele.\nFaça: acrescente a linha ${LINHA_DO_CLAUDE} ao arquivo de destino do link\n`);
+      if (!claudeEhLinkParaAgents(raiz)) amb.avisar(`${ARQUIVO_CLAUDE_MD} é um link simbólico; não mexi nele.\nFaça: acrescente a linha ${LINHA_DO_CLAUDE} ao arquivo de destino do link\n`);
     } else {
       const claudeAtual = claudeSt?.isFile() ? fs.readFileSync(path.join(raiz, ARQUIVO_CLAUDE_MD), 'utf8') : null;
       colocar(ARQUIVO_CLAUDE_MD, Buffer.from(claudeComLinha(claudeAtual).texto), { mescla: true });

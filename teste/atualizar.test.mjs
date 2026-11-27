@@ -396,3 +396,19 @@ test('atualizar cria o CLAUDE.md que falta e o põe no commit indicado', t => {
   assert.equal(ler(p, 'CLAUDE.md'), '@AGENTS.md\n');
   assert.match(r.saida, /git add -- .* CLAUDE\.md/);
 });
+
+test('atualizar: CLAUDE.md link para o AGENTS.md e CLAUDE.md pasta não geram relatório nem erro', { skip: process.platform === 'win32' }, t => {
+  const { p, clone } = cenario(t);
+  const claude = path.join(p.raiz, 'CLAUDE.md');
+  fs.rmSync(claude);
+  fs.symlinkSync('AGENTS.md', claude);
+  let r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.doesNotMatch(r.saida + r.erro, /CLAUDE\.md é um link|em CLAUDE\.md/);
+  assert.ok(fs.lstatSync(claude).isSymbolicLink());
+  fs.rmSync(claude);
+  fs.mkdirSync(claude);
+  r = clone.ah(p, ['atualizar', '--forcar']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.ok(fs.statSync(claude).isDirectory());
+});

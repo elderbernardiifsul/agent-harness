@@ -11,7 +11,7 @@ import {
   MANIFESTO, ancestralEstrito, arquivosDaCopia, citar, commitDoClone, compararVersoes, diferenca, eClone, lerManifesto, listaDoCommit,
   listaDoManifesto, listaInstalada, montarManifesto,
 } from '../lib/copia.mjs';
-import { LINHA_DO_CLAUDE, agentsComTrecho, claudeComLinha, mesclarGanchos, passosDoCommit } from './init.mjs';
+import { LINHA_DO_CLAUDE, agentsComTrecho, claudeComLinha, claudeEhLinkParaAgents, mesclarGanchos, passosDoCommit } from './init.mjs';
 import { VERSAO } from '../versao.mjs';
 
 export const descricao = 'troca a cópia do núcleo (.harness/nucleo) pela de um clone do agent-harness';
@@ -138,7 +138,7 @@ function claudeNovo(raiz, config) {
   const arquivo = path.join(raiz, ARQUIVO_CLAUDE_MD);
   let st = null;
   try { st = fs.lstatSync(arquivo); } catch { /* não existe */ }
-  if (st?.isSymbolicLink()) return { link: true };
+  if (st?.isSymbolicLink()) return claudeEhLinkParaAgents(raiz) ? null : { link: true };
   if (st && !st.isFile()) return null;
   const r = claudeComLinha(st ? fs.readFileSync(arquivo, 'utf8') : null);
   return r.muda ? r : null;
