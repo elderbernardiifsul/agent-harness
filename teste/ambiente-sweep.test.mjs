@@ -58,7 +58,7 @@ test('sweep lista a porta e o banco sem frente, e não os da frente, os fixos e 
   await escutar(t, de + 7);   // reservada pela extensão recursos
   const saida = ok(p.ah(['sweep'])).saida;
   assert.match(saida, new RegExp(`^- ambiente: porta ${de + 5} em uso sem frente; Faça: encerre o processo ou declare a porta em extensoes\\.ambiente\\.fixos\\.portas$`, 'm'));
-  assert.match(saida, /^- ambiente: banco loja_velho sem frente; Faça: apague com o comando de extensoes\.ambiente\.banco\.apagar ou declare em fixos\.bancos$/m);
+  assert.match(saida, /^- ambiente: banco loja_velho sem frente nesta máquina \(pode ser de uma frente de outra máquina\); Faça: confira se ninguém o usa e apague com o comando de extensoes\.ambiente\.banco\.apagar, ou declare em fixos\.bancos$/m);
   assert.doesNotMatch(saida, new RegExp(`porta ${daFrente} `));
   assert.doesNotMatch(saida, new RegExp(`porta ${de + 6} `));
   assert.doesNotMatch(saida, new RegExp(`porta ${de + 7} `));
