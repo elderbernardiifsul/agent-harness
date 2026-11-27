@@ -12,12 +12,12 @@ As regras do harness valem nos projetos que o instalam. O desenvolvimento deste 
 
 ## Situação
 
-Versão 0.2.0. As fatias 0 a 5 do desenho estão entregues, e as pendências registradas nelas foram tratadas. A `dev` tem o estado mais recente; `stage` e `main` recebem a `dev` quando o autor publica.
+Versão 0.2.0. O núcleo (projeto 1 do desenho) está fechado: as fatias 0 a 5 estão entregues, as pendências registradas nelas foram tratadas, e os itens do "pronto quando" valem, com os limites abaixo ([registro do fechamento](docs/superpowers/plans/2026-11-26-fechamento-do-nucleo.md)). A `dev` tem o estado mais recente; `stage` e `main` recebem a `dev` quando o autor publica.
 
 Limites conhecidos:
 
-- Só o Claude Code tem adaptador, ensaiado com o agente real ([`docs/referencia/ensaio-claude-code.md`](docs/referencia/ensaio-claude-code.md)). Codex, OpenCode e outros agentes escrevem o próprio adaptador pelo roteiro de [`docs/agentes/`](docs/agentes/README.md); esse roteiro não foi ensaiado com eles.
-- Windows e macOS não foram executados. A CI tem a matriz com os três sistemas (`.github/workflows/ci.yml`).
+- Só o Claude Code tem adaptador, ensaiado com o agente real ([`docs/referencia/ensaio-claude-code.md`](docs/referencia/ensaio-claude-code.md)). Codex, OpenCode e outros agentes escrevem o próprio adaptador pelo roteiro de [`docs/agentes/`](docs/agentes/README.md). O roteiro foi ensaiado com o Codex, na etapa de diagnóstico ([`ensaio-roteiro-de-adaptacao.md`](docs/referencia/ensaio-roteiro-de-adaptacao.md)); com o OpenCode, não.
+- O repositório não tem CI. A verificação é local (`npm run verifica`, seção "Desenvolvimento") e só roda no Linux: Windows e macOS não foram executados.
 - As travas leem o texto do comando: são aviso cedo para enganos do agente, não caixa de areia. A barreira de verdade é a proteção de ramo no servidor, que o `init` aplica. Detalhes na seção "Limites" de [`docs/referencia/comandos.md`](docs/referencia/comandos.md).
 - O `ah atualizar` não foi ensaiado com agente real.
 
@@ -98,6 +98,7 @@ O guia de estudo traz uma lista de experimentos para o laboratório.
 - [`docs/referencia/capacidades-por-agente.md`](docs/referencia/capacidades-por-agente.md): recursos que cada agente de código oferece ao harness.
 - [`docs/referencia/ensaio-claude-code.md`](docs/referencia/ensaio-claude-code.md): ensaios com o Claude Code.
 - [`docs/referencia/ensaio-guia-de-extensao.md`](docs/referencia/ensaio-guia-de-extensao.md): prova do guia de extensão com um agente sem contexto.
+- [`docs/referencia/ensaio-roteiro-de-adaptacao.md`](docs/referencia/ensaio-roteiro-de-adaptacao.md): prova do roteiro de adaptação com o Codex sem contexto.
 - [`docs/agentes/`](docs/agentes/README.md): roteiro para escrever o adaptador de outro agente.
 - [`docs/extensoes/`](docs/extensoes/como-estender.md): guia de criação e referência da interface de extensão.
 - [`docs/aula/`](docs/aula/): levantamento, material de apoio e apresentação da aula.
@@ -105,3 +106,9 @@ O guia de estudo traz uma lista de experimentos para o laboratório.
 ## Desenvolvimento
 
 Testes: `npm test` (ou `node --test "teste/*.test.mjs"`). Regras de trabalho neste repositório: [`AGENTS.md`](AGENTS.md). Licença MIT.
+
+O repositório não tem CI; o que ela faria roda na máquina de quem desenvolve. `npm run verifica` roda a suíte e a varredura de termos. Para conferir também o Node mínimo do `package.json` (22), passe os dois executáveis:
+
+```
+node ferramentas/verifica.mjs --node "$(mise where node@22)/bin/node" --node "$(command -v node)"
+```

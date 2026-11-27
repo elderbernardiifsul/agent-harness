@@ -4,10 +4,11 @@ O núcleo foi construído em fatias (seção 12.1 do [desenho](../superpowers/sp
 
 ## Depois da fatia 5
 
-Duas coisas mudaram depois que este texto foi escrito:
+Três coisas mudaram depois que este texto foi escrito:
 
 - As pendências registradas nas fatias 0 a 5 foram tratadas em quatro linhas de trabalho ([plano](../superpowers/plans/2026-11-13-pendencias.md); registros das linhas [A](../superpowers/plans/2026-11-13-pendencias-execucao-a.md), [B](../superpowers/plans/2026-11-13-pendencias-execucao-b.md) e [C](../superpowers/plans/2026-11-13-pendencias-execucao-c.md)). Entre elas, entrou a coluna de bloqueios no `board`, que a fatia 5b tinha deixado de fora.
 - As travas de extensão, o `ah pesado` com a T6 e o `ah recursos` foram ensaiados com o Claude Code real (linha D, em [`ensaio-claude-code.md`](../referencia/ensaio-claude-code.md)). O `ah atualizar` continua sem ensaio com agente real.
+- Em 26/11/2026 o núcleo foi fechado ([registro](../superpowers/plans/2026-11-26-fechamento-do-nucleo.md)). O autor decidiu que o repositório não tem CI (seção 16 do desenho), e a verificação passou a ser local, com o Node mínimo e o atual. Nela apareceu que a suíte e o guia de extensão não rodavam no Node 22. O roteiro de adaptação foi ensaiado com o Codex sem contexto ([`ensaio-roteiro-de-adaptacao.md`](../referencia/ensaio-roteiro-de-adaptacao.md)), e o contrato ganhou a edição de vários arquivos.
 
 ## Entregas, fatia por fatia
 
