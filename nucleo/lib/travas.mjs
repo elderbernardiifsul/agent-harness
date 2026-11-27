@@ -921,7 +921,25 @@ function ligaDotglob(texto, comandos) {
   return comandos.some(c => c.argv.some(a => OPCAO_DO_PONTO.test(semEnfeite(a))) || opcaoDoPontoIncerta(nomeDe(c.argv[0]), c.argv.slice(1)));
 }
 
+// Edição de vários arquivos de uma vez (o patch do Codex, por exemplo): `arquivos` no lugar de
+// `arquivo`. Cada arquivo passa pelas travas como uma edição sozinha, e a primeira recusa vale,
+// com o arquivo que a causou. Lista vazia ou com item que não é texto recusa: não diz o que será escrito.
+function avaliarEdicoes(acao, ctx) {
+  const { arquivos, ...resto } = acao;
+  if (!Array.isArray(arquivos) || !arquivos.length || !arquivos.every(a => typeof a === 'string' && a !== '')) {
+    return recusa('T0', 'a edição de vários arquivos não traz a lista dos caminhos', 'confira a tradução do adaptador do agente (docs/agentes/contrato.md, "Ações")');
+  }
+  let liberada;
+  for (const arquivo of arquivos) {
+    const r = avaliar({ ...resto, arquivo }, ctx);
+    if (!r.permite) return { ...r, arquivo };
+    liberada ??= r.liberada;
+  }
+  return liberada ? { permite: true, liberada } : { permite: true };
+}
+
 export function avaliar(acao, ctx) {
+  if (acao?.tipo === 'edicao' && Object.hasOwn(acao, 'arquivos')) return avaliarEdicoes(acao, ctx);
   if (acao?.tipo === 'edicao') return travaT4Edicao(acao, ctx) ?? travasDeExtensao(acao, null, ctx);
   if (acao?.tipo !== 'comando') throw new TypeError(`avaliar: tipo de ação desconhecido: ${acao?.tipo}`);
   let comandos;

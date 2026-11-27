@@ -31,7 +31,10 @@ test('o guia de extensão funciona como está escrito', t => {
   // Sem NODE_TEST_CONTEXT: o node --test de dentro fala com o terminal, não com este executor.
   const env = { ...p.env };
   delete env.NODE_TEST_CONTEXT;
-  const r = spawnSync(process.execPath, ['--test', '.harness/extensoes/'], { cwd: p.raiz, env, encoding: 'utf8' });
+  delete env.FORCE_COLOR;
+  env.NO_COLOR = '1';
+  // No terminal, o formato é o `spec` que o guia mostra; com a saída num cano, o Node 22 usaria TAP.
+  const r = spawnSync(process.execPath, ['--test', '--test-reporter=spec', '.harness/extensoes/*/*.test.mjs'], { cwd: p.raiz, env, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /^ℹ tests 3$/m);
   assert.match(r.stdout, /^ℹ pass 3$/m);

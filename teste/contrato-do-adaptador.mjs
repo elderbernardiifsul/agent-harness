@@ -10,7 +10,7 @@
 //     sinal:    [entrada, ...],                              // sinal de vida (pode ser vazio)
 //     antes:    { recusado: {entrada, comando},              // comando que as travas recusam (git push origin main)
 //                 permitido: {entrada, comando},             // comando que passa (git status)
-//                 edicao?: {entrada, arquivo} },             // edição de arquivo, se o agente a informa
+//                 edicao?: {entrada, arquivo | arquivos} },  // edição de arquivo (ou de vários, num patch), se o agente a informa
 //     fim:      { encerra, continua? },                      // fim de sessão; `continua`: fim que anuncia continuação
 //     invalidas?: [{entrada, tipo}],                         // entradas que a tradução recusa, com o tipo provável
 //   }
@@ -152,8 +152,11 @@ export function testarAdaptador(nome, a, exemplos) {
         const e = traduzir(a, ex.antes.edicao.entrada, 'antes-da-ferramenta (edição)');
         conferirSessaoECwd(a, e, 'antes-da-ferramenta (edição)', D);
         assert.equal(e.acao?.tipo, 'edicao', `o adaptador ${nome} não informa acao.tipo 'edicao' para uma edição de arquivo`);
-        assert.equal(typeof e.acao.arquivo, 'string', `o adaptador ${nome} não informa o arquivo (acao.arquivo) na edição`);
-        assert.equal(path.resolve(D, e.acao.arquivo), path.resolve(D, ex.antes.edicao.arquivo), `o adaptador ${nome} informa o arquivo errado na edição (veio ${JSON.stringify(e.acao.arquivo)})`);
+        // Um arquivo vem em acao.arquivo; uma ferramenta que escreve vários (patch), em acao.arquivos.
+        const veio = Object.hasOwn(e.acao, 'arquivos') ? e.acao.arquivos : [e.acao.arquivo];
+        assert.ok(Array.isArray(veio) && veio.length > 0 && veio.every(x => typeof x === 'string' && x !== ''), `o adaptador ${nome} não informa o arquivo (acao.arquivo, ou acao.arquivos no patch) na edição`);
+        const esperado = ex.antes.edicao.arquivos ?? [ex.antes.edicao.arquivo];
+        assert.deepEqual(veio.map(x => path.resolve(D, x)), esperado.map(x => path.resolve(D, x)), `o adaptador ${nome} informa o arquivo errado na edição (veio ${JSON.stringify(veio)})`);
       });
     }
 

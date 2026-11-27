@@ -144,6 +144,14 @@ export async function executar(args, amb) {
     const corpo = problemas.map(([t, l]) => [`- ${t}`, ...l].join('\n')).join('\n');
     throw new ErroDeUso(`Fechar a frente ${frente.id} ${frente.nome} perderia trabalho.\nPróximo passo: ${corpo}${depois}`);
   };
+  // Worktree com submódulos: o `git worktree remove` sem --force também recusa sempre. A regra é a do git: a pasta
+  // `modules` do worktree existe, ou um submódulo do índice tem repositório na pasta dele.
+  const comSubmodulos = wt => {
+    const m = g(['rev-parse', '--git-path', 'modules'], wt);
+    if (m.codigo === 0 && fs.existsSync(path.resolve(wt, m.saida.trim()))) return true;
+    const ls = g(['ls-files', '--stage', '-z'], wt);
+    return ls.codigo === 0 && ls.saida.split('\0').some(l => l.startsWith('160000 ') && fs.existsSync(path.join(wt, l.split('\t')[1] ?? '', '.git')));
+  };
   // Worktree trancado (`git worktree lock`): o remove simples recusa sempre; melhor saber antes de mexer nos tickets.
   const trancado = wt => {
     const l = g(['worktree', 'list', '--porcelain']);
@@ -308,6 +316,10 @@ export async function executar(args, amb) {
     if (tranca !== null) {
       throw recusa(`O worktree ${refs.wt} está trancado no git (${tranca.slice(0, 120)}); o git não o remove.`,
         `se ninguém mais o usa, destranque com git worktree unlock ${refs.wt} e rode ah close de novo; nada foi apagado`);
+    }
+    if (refs.temWt && comSubmodulos(refs.wt)) {
+      throw recusa(`O worktree ${refs.wt} tem submódulos, e o git não remove worktree com submódulos.`,
+        `veja os commits dos submódulos que não estão em nenhum remoto (git -C ${refs.wt} submodule foreach --recursive 'git log --oneline HEAD --branches --not --remotes') e empurre o que aparecer para o remoto do submódulo, porque a remoção forçada apaga o que só existe neles; depois, git worktree remove --force ${refs.wt} e ah close de novo; nada foi apagado`);
     }
     // As extensões conferem o que é delas (antesDeFechar) antes de qualquer mudança; a que recusa (ou falha) para
     // o close aqui. O que ela gravou na frente volta para o objeto que o close grava adiante.

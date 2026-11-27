@@ -40,13 +40,13 @@ O adaptador é escrito no **clone do agent-harness**, e não no projeto, porque 
 | [provar.md](provar.md) | Os testes de contrato (comando exato) e o ensaio com o agente real |
 | [../referencia/capacidades-por-agente.md](../referencia/capacidades-por-agente.md) | O que se sabe sobre Claude Code, Codex e OpenCode (ganchos, formatos, variáveis), com fonte e data |
 
-Ordem de leitura: este arquivo, `contrato.md`, `exemplo-claude-code.md`, `escrever-um-adaptador.md`, `provar.md`.
+Ordem de leitura: este arquivo, `contrato.md`, `exemplo-claude-code.md`, `escrever-um-adaptador.md` (que manda consultar a linha do seu agente em `capacidades-por-agente.md` no passo 1), `provar.md`.
 
 ## Critérios de conclusão
 
 O adaptador está concluído quando:
 
 1. `AH_ADAPTADOR=<agente> node --test teste/contrato-adaptadores.test.mjs` passa no clone (ver [provar.md](provar.md));
-2. a suíte inteira (`node --test teste/`) continua passando;
+2. a suíte inteira (`npm test`) continua passando;
 3. o ensaio com o agente real recusou as ações proibidas e está registrado em `docs/referencia/ensaio-<agente>.md`;
 4. os eventos que o agente não entrega estão declarados (`EVENTOS_ENTREGUES`) e anotados na tabela de capacidades.

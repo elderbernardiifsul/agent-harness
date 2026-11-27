@@ -115,6 +115,7 @@ Substitui a cópia do núcleo (`.harness/nucleo/`) pela de um clone mais recente
 - Sem mudanças: `Nada a atualizar: .harness/nucleo/ já é o do clone (<versão> (<commit>)).`, código 0, sem gravação.
 - Resíduos de uma troca interrompida: `.harness/nucleo.novo-*` é removido na chamada seguinte, e `.harness/nucleo.velho-*` também, se `.harness/nucleo/` existir; caso contrário, o `atualizar` recusa e informa o `mv` que restaura a cópia antiga.
 - Assim como o `init`, não faz commit: termina com os comandos exatos (`git add -- .harness/nucleo AGENTS.md` e `git commit -m "chore: atualiza o agent-harness"`, no ramo base).
+- **Intervalo da troca:** entre as duas renomeações há alguns milissegundos sem `.harness/nucleo/`. Não há trava entre o `atualizar` e as sessões vivas: um gancho ou um `tools/ah` que comece exatamente nesse intervalo recusa (`Recusado: não achei .harness/nucleo`, código 2), e a ação do agente não é executada. Basta repetir a ação.
 - Os worktrees das frentes contêm a cópia do ramo de onde foram criados, mas o `tools/ah` de qualquer worktree executa a cópia do checkout principal; por isso, a atualização vale para todas as frentes assim que é feita, sem commit.
 
 Recusas e ações correspondentes:
@@ -785,6 +786,7 @@ A linha `Falta: git push …` aparece apenas quando o projeto tem remoto. O `clo
 | `Não consegui conferir …` | resolva o que o git descreve; nada foi apagado |
 | `a extensão <nome> não deixa fechar a frente as-1 carrinho: <motivo>` | o `Faça:` da extensão (na `recursos`: `libere com ah recursos liberar --todos --frente carrinho e rode ah close de novo`); a reação `antesDeFechar` roda depois da primeira conferência de perda de trabalho, e nada foi apagado |
 | `O worktree <wt> está trancado no git (<motivo>); o git não o remove.` | se ninguém mais o usa, `git worktree unlock <wt>` e rode `ah close` de novo; a conferência ocorre antes de mexer nos tickets, e nada foi apagado |
+| `O worktree <wt> tem submódulos, e o git não remove worktree com submódulos.` | veja os commits dos submódulos que não estão em nenhum remoto (`git -C <wt> submodule foreach --recursive 'git log --oneline HEAD --branches --not --remotes'`) e empurre o que aparecer para o remoto do submódulo: os submódulos iniciados no worktree guardam os objetos na pasta `modules` dele, que a remoção forçada apaga, e o `git submodule status` não mostra o commit que só existe ali. Depois, `git worktree remove --force <wt>` e `ah close` de novo; a conferência ocorre antes de mexer nos tickets, e nada foi apagado |
 | `O git não removeu o worktree <wt>: … (apareceu alteração ou arquivo novo depois da conferência?)` | confira o que apareceu (`git -C <wt> status`), guarde ou apague e rode `ah close` de novo. Com tickets, a recusa informa que eles já receberam o comentário de fechamento: a frente fica como `fechamento parado` no quadro, e o `close` seguinte termina sem comentar de novo |
 
 ## pesado
@@ -995,6 +997,8 @@ As travas tratam enganos do agente; a má-fé está fora do escopo. Elas leem o 
 - No Windows, a hora de início do processo não é conferida: um pid reaproveitado conta como vivo até o sinal vencer, e a continuação não herda a frente (ver "Vida da sessão").
 - Frente sem ticket só pode ser retomada na mesma máquina, porque a passagem feita em outra máquina é localizada pelos tickets.
 - O `sweep --reparar` atribui um ID novo à frente que reconstrói para um worktree solto; o original se perdeu com o estado.
+- O `close` não remove worktree com submódulos: recusa antes de mexer nos tickets, e a remoção fica com quem usa (`git worktree remove --force`, que o `close` nunca usa). O `git submodule deinit` não basta, porque o git continua vendo a pasta `modules` do worktree.
+- Windows e macOS: o código trata os três sistemas (caminhos, hora de início do processo, árvore de processos), mas a suíte só foi executada no Linux. O repositório não tem CI; a verificação é local (`npm run verifica`, no clone).
 - A proteção efetiva é a proteção de ramo no servidor (GitHub). As travas locais evitam o erro antes que ele ocorra e indicam ao agente a ação correta, mas não substituem a proteção do servidor. O `ah init` e o `ah doctor` conferem que ela existe.
 
 ## Publicar

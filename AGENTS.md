@@ -17,6 +17,7 @@ Para ver o harness em funcionamento, instale-o num projeto descartável (README,
 - **Ramos.** O trabalho entra na `dev`. Trabalho maior vai num ramo próprio a partir da `dev`, com merge local na `dev`. `stage` e `main` recebem a `dev` quando o autor decide publicar. Push e publicação só com ordem expressa do autor.
 - **Código.** Node 22 ou mais novo, módulos ES, sem dependências externas. Código curto e direto: o repositório também é material de estudo, e cada peça precisa ser legível por um concluinte de Ciência da Computação.
 - **Testes primeiro.** Executor de testes do Node (`npm test`), sobre repositórios descartáveis e com o `gh` falso de `teste/apoio/`. Nenhum teste usa rede real. Veja o teste falhar antes do conserto.
+- **Sem CI.** O repositório não tem CI no GitHub: toda verificação roda nesta máquina. Antes de integrar na `dev`, `node ferramentas/verifica.mjs --node "$(mise where node@22)/bin/node" --node "$(command -v node)"` (suíte no Node mínimo e no atual, e a varredura) com código 0.
 - **Antes de cada commit:** `npm test` verde e `node ferramentas/varre-termos.mjs` com código 0. A lista de termos proibidos é um arquivo local do autor (`~/.config/agent-harness/termos-proibidos.txt`), fora do repositório; sem ela, a varredura sai com código 2 e o commit espera o autor.
 - **Textos.** Mensagens, documentos e comentários em português. Exemplos com nomes inventados (a loja, Ana Souza, Carla). Nenhum nome do projeto de origem.
 - **Recusas.** Toda recusa do harness diz o motivo e o que fazer no lugar (`nucleo/lib/recusa.mjs`).

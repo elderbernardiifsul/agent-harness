@@ -188,7 +188,7 @@ export const CENAS = [
       { txt: '├── docs/referencia/', dir: true, c: 'cada comando, as recusas e os limites' },
       { txt: '├── docs/agentes/', dir: true, c: 'roteiro para escrever outro adaptador' },
       { txt: '├── docs/aula/', dir: true, c: 'slides e material de apoio' },
-      { txt: '└── teste/', dir: true, c: 'node --test teste/' },
+      { txt: '└── teste/', dir: true, c: 'npm test' },
     ],
     passos: [
       { ate: 6, fala: "O núcleo é escrito em Node, sem dependências: comandos, travas, vida da sessão e reserva, mais o adaptador do Claude Code." },

@@ -1,6 +1,6 @@
 # Escrita de um adaptador
 
-Passo a passo, executado no clone do agent-harness. Requisitos: Node 22 ou mais novo e `node --test teste/` passando no clone. Leitura prévia: [contrato.md](contrato.md) e [exemplo-claude-code.md](exemplo-claude-code.md). O agente recebe um nome curto, em minúsculas (`<agente>` adiante), que aparece no nome do arquivo, no registro e em `tools/ah gancho <agente>`.
+Passo a passo, executado no clone do agent-harness. Requisitos: Node 22 ou mais novo e `npm test` passando no clone. Leitura prévia: [contrato.md](contrato.md) e [exemplo-claude-code.md](exemplo-claude-code.md). O agente recebe um nome curto, em minúsculas (`<agente>` adiante), que aparece no nome do arquivo, no registro e em `tools/ah gancho <agente>`.
 
 ## 1. Levantamento dos ganchos do agente
 
@@ -33,12 +33,19 @@ A tabela abaixo, preenchida, dá origem ao `EVENTOS` do módulo e à linha do ag
 | Evento do contrato | Evento do agente | Campo da sessão | Campo da pasta | Formato da resposta |
 |---|---|---|---|---|
 | `inicio` | | | | texto no contexto do modelo |
-| `sinal` | | | | nada |
+| `sinal` | | | | nada (no contrato; ver a nota abaixo) |
 | `antes` (comando) | | | | recusa: ? / permite: ? |
 | `antes` (edição) | | | | recusa: ? / permite: ? |
 | `fim` | | | | nada |
 
 Para cada linha sem correspondente, ver "Quando falta um evento", no fim deste arquivo.
+
+"Nada" é a resposta do núcleo (`{}`), não a do agente. O adaptador escreve na saída o que o agente exige para aceitar o gancho: se o agente espera JSON válido na saída padrão de um evento (o `Stop` do Codex, segundo a tabela de capacidades), `traduzirSaida` devolve `{}` em texto nesse evento, e não uma saída vazia.
+
+O `continuacao: true` do `fim` só se marca quando o motivo do fim diz, sem ambiguidade, que outra sessão vem em seguida no mesmo processo. Um `fim` sem essa marca encerra a sessão, e sessão encerrada não é herdada: se o agente manda o fim da conversa antiga antes do começo da nova, a frente não passa para a sessão nova e fica órfã (`ah takeover`). Se o agente não informa motivo útil (o `SessionEnd` do Codex traz `reason` sempre `other`), há duas escolhas, e a ordem real dos eventos, vista no ensaio (passo 3), decide:
+
+- o fim nunca chega antes de um começo de continuação: entregue o `fim` normalmente;
+- o fim pode chegar antes (como no `/clear` do Claude Code): não entregue o `fim` (fica fora de `EVENTOS_ENTREGUES`). A herança passa a vir só do começo de continuação no mesmo processo, e a sessão termina com o processo ou com o sinal vencido (linha `fim` de "Quando falta um evento").
 
 ## 3. Gravação de eventos reais
 
@@ -58,7 +65,7 @@ Crie `nucleo/adaptadores/<agente>.mjs` a partir de uma cópia de `nucleo/adaptad
 - os nomes dos campos (`session_id`, `cwd`, `hook_event_name`, `tool_name`, `tool_input`);
 - `traduzirSaida`, conforme o mecanismo do agente para recusar e para inserir contexto.
 
-Os elementos comuns a todos os agentes permanecem: a validação da sessão (`validarNomeSeguro`), a exigência de pasta absoluta e existente, o erro com `tipo`, o `tipoProvavel` que aceita texto bruto, o `acaoLeniente` que nunca lança exceção, e o tratamento de ferramenta desconhecida como erro (recusa), nunca como `outra`. Se o caminho do arquivo vem dentro de outro texto (como no patch do Codex), todos os caminhos devem ser extraídos; se a extração não for segura, a ação deve ser tratada como erro de entrada (recusa), ou deve-se declarar que a T4 na edição não vale para o agente.
+Os elementos comuns a todos os agentes permanecem: a validação da sessão (`validarNomeSeguro`), a exigência de pasta absoluta e existente, o erro com `tipo`, o `tipoProvavel` que aceita texto bruto, o `acaoLeniente` que nunca lança exceção, e o tratamento de ferramenta desconhecida como erro (recusa), nunca como `outra`. Se o caminho do arquivo vem dentro de outro texto (como no patch do Codex), todos os caminhos devem ser extraídos e enviados em `acao.arquivos` (ver "A ação do antes" em [contrato.md](contrato.md)); se a extração não for segura, a ação deve ser tratada como erro de entrada (recusa), ou deve-se declarar que a T4 na edição não vale para o agente.
 
 ## 5. Arquivo de gancho
 
@@ -81,7 +88,7 @@ O arquivo fica em `modelos/<agente>/` (o teste de contrato confere a existência
 AH_ADAPTADOR=<agente> node --test teste/contrato-adaptadores.test.mjs
 ```
 
-Cada falha indica o que falta, por exemplo `o adaptador <agente> não informa o diretório (campo cwd) no evento antes-da-ferramenta`. O ciclo de correção se repete até os testes passarem; depois, roda-se a suíte inteira, `node --test teste/`. Detalhes em [provar.md](provar.md).
+Cada falha indica o que falta, por exemplo `o adaptador <agente> não informa o diretório (campo cwd) no evento antes-da-ferramenta`. O ciclo de correção se repete até os testes passarem; depois, roda-se a suíte inteira, `npm test`. Detalhes em [provar.md](provar.md).
 
 ## 8. Ensaio com o agente real
 

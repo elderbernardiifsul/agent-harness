@@ -170,6 +170,20 @@ test('travas de extensão: avaliadas depois das do núcleo, com id <extensão>/<
   assert.equal(avaliar({ tipo: 'edicao', arquivo: '/r/banana.txt', cwd: '/r' }, ctx).trava, 'eco/proibido');
 });
 
+test('edição de vários arquivos (patch): cada arquivo passa pelas travas, e a primeira recusa vale', () => {
+  const ctx = ctxDasTravas([proibe('banana')]);
+  const r = avaliar({ tipo: 'edicao', arquivos: ['/r/maca.txt', '/r/banana.txt'], cwd: '/r' }, ctx);
+  assert.deepEqual([r.permite, r.trava, r.arquivo], [false, 'eco/proibido', '/r/banana.txt']);
+  assert.ok(avaliar({ tipo: 'edicao', arquivos: ['/r/maca.txt', '/r/pera.txt'], cwd: '/r' }, ctx).permite);
+  // A extensão vê um arquivo por vez, no campo `arquivo` de sempre (interface versão 1).
+  const vistas = [];
+  avaliar({ tipo: 'edicao', arquivos: ['/r/a.txt', '/r/b.txt'], cwd: '/r' }, ctxDasTravas([{ id: 'x/y', avaliar: a => { vistas.push([a.arquivo, a.arquivos]); return null; } }]));
+  assert.deepEqual(vistas, [['/r/a.txt', undefined], ['/r/b.txt', undefined]]);
+  // Lista vazia ou com item que não é texto não diz o que vai ser escrito: recusa T0.
+  for (const arquivos of [[], ['/r/a.txt', 42], 'nao-e-lista'])
+    assert.equal(avaliar({ tipo: 'edicao', arquivos, cwd: '/r' }, ctx).trava, 'T0', JSON.stringify(arquivos));
+});
+
 test('travas de extensão: a ação traz os comandos simples lidos', () => {
   let vista;
   avaliar({ tipo: 'comando', comando: 'cd /r && npm test', cwd: '/r' }, ctxDasTravas([{ id: 'x/y', avaliar: a => { vista = a; return null; } }]));

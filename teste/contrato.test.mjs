@@ -159,6 +159,15 @@ test('antes: o evento guarda o comando cortado', async () => {
 test('antes: outra ferramenta e edição permitem', async () => {
   assert.deepEqual(await tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'outra' } }, amb(p)), { decisao: 'permite' });
   assert.deepEqual(await tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'edicao', arquivo: path.join(p.raiz, 'README.md') } }, amb(p)), { decisao: 'permite' });
+  assert.deepEqual(await tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'edicao', arquivos: ['README.md', 'b.txt'] } }, amb(p)), { decisao: 'permite' });
+});
+
+test('antes: a recusa de uma edição de vários arquivos registra o caminho que a causou', async () => {
+  const r = await tratar({ tipo: 'antes', sessao: 's1', cwd: p.raiz, acao: { tipo: 'edicao', arquivos: [], ferramenta: 'apply_patch' } }, amb(p));
+  assert.equal(r.decisao, 'recusa');
+  assert.match(r.mensagem, /^Recusado \(T0\): a edição de vários arquivos não traz a lista dos caminhos/);
+  const ev = lerEventos(dirDoTeste(p)).at(-1);
+  assert.deepEqual([ev.tipo, ev.trava, ev.ferramenta, ev.caminho], ['recusa', 'T0', 'apply_patch', undefined]);
 });
 
 test('antes: gh que demora vira recusa do T5, não liberação', async () => {
@@ -254,6 +263,11 @@ test('na quebra passa a edição de .harness/config.json pelo caminho resolvido'
   }
   assert.ok(!passaNaQuebra(ed(path.join(R, '.harness', 'config.json')), { raiz: null, cwd: R }));
   assert.ok(!passaNaQuebra({ tipo: 'outra' }, ctx));
+  // Edição de vários arquivos: passa só se todos forem a configuração.
+  const cfg = path.join(R, '.harness', 'config.json');
+  assert.ok(passaNaQuebra({ tipo: 'edicao', arquivos: [cfg] }, ctx));
+  assert.ok(!passaNaQuebra({ tipo: 'edicao', arquivos: [cfg, path.join(R, 'README.md')] }, ctx));
+  assert.ok(!passaNaQuebra({ tipo: 'edicao', arquivos: [] }, ctx));
 });
 
 test('na quebra a exceção do ah vale só para o shell do Bash', async () => {

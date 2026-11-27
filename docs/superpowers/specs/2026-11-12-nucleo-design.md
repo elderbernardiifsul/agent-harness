@@ -413,3 +413,13 @@ A fatia 4 da seção 12.1 passa a entregar:
 Ficam sem efeito: os adaptadores do Codex e do OpenCode como entrega (seção 8), o ensaio com os três agentes (seção 8, "Prova de cada adaptador", item 2, para os outros dois) e o último item do "pronto quando" (seção 14) no que diz respeito a Codex e OpenCode. O ensaio com o Claude Code de verdade continua.
 
 No "pronto quando", o item passa a ser: um agente sem contexto, seguindo só o roteiro, consegue dizer o que falta para o adaptador dele e rodar os testes de contrato.
+
+## 16. Sem CI no GitHub [autor, 26/11/2026]
+
+Onde esta seção e as anteriores divergirem, vale esta.
+
+O repositório não tem CI no GitHub: toda verificação roda na máquina de quem desenvolve. O fluxo `.github/workflows/ci.yml`, que nunca chegou a rodar, sai do repositório.
+
+- A CI deste repositório (seções 3 e 10) passa a ser a verificação local `ferramentas/verifica.mjs` (`npm run verifica`): a suíte inteira em cada Node pedido, inclusive o mínimo do `package.json`, e a varredura de termos.
+- No "pronto quando" (seção 14), o item "num repositório descartável, `ah init` seguido de `ah doctor` passa nos três sistemas (CI)" passa a ser: passa no Linux, com o Node mínimo e o atual, pela verificação local. Windows e macOS ficam como limite declarado (README, seção "Limites" de `docs/referencia/comandos.md`): o código trata os três sistemas, mas só o Linux foi executado. O caminho recomendado no Windows continua sendo o WSL2 (seção 12.7), que é Linux.
+- A CI que o `init` instala nos projetos (`modelos/ci/`, seção 12.2) não muda: é do projeto que recebe o harness, não deste repositório.

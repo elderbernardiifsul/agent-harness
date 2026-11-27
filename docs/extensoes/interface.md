@@ -152,7 +152,7 @@ travas: [{
 ```
 
 - Avaliadas antes de cada ferramenta do agente, depois das travas do núcleo (T0 a T6), para comando de shell e para edição de arquivo. Se uma trava do núcleo recusa, as de extensão não são avaliadas.
-- `acao`: `{tipo: 'comando', comando, cwd, shell?, comandos}` ou `{tipo: 'edicao', arquivo, ferramenta?, cwd}`. Em `comandos`, os comandos simples lidos pelo núcleo (`[{argv, cwd, env}]`), ausente quando o texto não pôde ser lido.
+- `acao`: `{tipo: 'comando', comando, cwd, shell?, comandos}` ou `{tipo: 'edicao', arquivo, ferramenta?, cwd}`. Uma edição de vários arquivos (patch) chega à trava como várias edições, uma por arquivo, sempre com `arquivo`. Em `comandos`, os comandos simples lidos pelo núcleo (`[{argv, cwd, env}]`), ausente quando o texto não pôde ser lido.
 - `avaliar` é **síncrona** e devolve `null` (passa) ou `{motivo, saida}` (recusa). A recusa sai como `Recusado (<extensão>/<id>): <motivo>` e `Faça: <saida>`, e o evento `recusa` leva `trava: '<extensão>/<id>'` e `extensao: '<extensão>'`.
 - `AH_GUARD=off` libera a trava de extensão num comando de shell quando todo comando simples da linha, fora o `cd`, traz a variável (`AH_GUARD=off <comando>`); registra o evento `liberacao`. Na edição de arquivo não há liberação.
 - Trava que lança erro ou devolve uma promessa recusa: `a trava falhou: <erro>`, com a saída "corrija a extensão ou desligue-a em .harness/config.json".
