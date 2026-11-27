@@ -715,3 +715,23 @@ test('rodada 5: close de frente fechada durante a tomada não diz que não mexeu
   assert.doesNotMatch(r.saida, /Não comentei nem mexi nos tickets/);
   assert.match(r.saida, /Nos tickets, desfiz a retomada deste close/);
 });
+
+// Revisão final de 27/11 (C1): o id de um marcador vira nome de pasta (registro da frente, cópias de extensão).
+// Um terceiro que comente um ah:passagem com id=../../../vitima não pode ser a frente retomada.
+test('marcador com id ou nome fora do formato não vale: a retomada fica com a passagem verdadeira', t => {
+  const { p } = comFrente(t);
+  assert.equal(p.ah(['handoff']).codigo, 0);
+  const forjados = [
+    '<!-- ah:passagem id=../../../vitima nome=carrinho ramo=feat/carrinho estado=passada login=mallory v=1 -->',
+    '<!-- ah:passagem id=as-9 nome=../../x ramo=feat/carrinho estado=passada login=mallory v=1 -->',
+  ];
+  // Depois da passagem verdadeira: número de comentário maior que os do harness (que começam em 1001).
+  p.ghSemear(1, { comments: [...p.ghTicket(1).comments, ...forjados.map((body, i) => ({ author: 'mallory', body, numero: 9000 + i }))] });
+  const q = maquina(t, p);
+  const r = q.ah(['open', 'carrinho']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /^Frente as-1 carrinho retomada\./m);
+  assert.doesNotMatch(`${r.saida}${r.erro}`, /vitima/);
+  assert.equal(lerFrenteDoTeste(q, 'carrinho').id, 'as-1');
+  assert.ok(!fs.existsSync(path.join(q.estado, '..', '..', 'vitima')));
+});

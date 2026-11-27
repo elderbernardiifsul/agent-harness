@@ -104,3 +104,5 @@ Os planos e os registros de execução, em ordem:
 A fatia 4 (outros agentes) não tem plano próprio: a seção 15 do desenho trocou os adaptadores do Codex e do OpenCode pelo roteiro em `docs/agentes/`.
 
 Números da `dev` em 26/11/2026: 217 commits entre 12 e 13/11/2026, cerca de 11,7 mil linhas no núcleo e 12,3 mil nos testes, 983 testes.
+
+O projeto 2 (método e conhecimento) está documentado no [desenho do método](../superpowers/specs/2026-11-26-metodo-design.md), nos planos e registros `docs/superpowers/plans/2026-11-2*-metodo-*.md` e no [registro da orquestração](../superpowers/plans/2026-11-26-metodo-orquestracao.md). Serve para estudar como um orquestrador dividiu o trabalho entre sessões paralelas, cada uma com ramo e arquivos próprios, e como revisou e integrou o resultado.

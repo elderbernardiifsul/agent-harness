@@ -26,6 +26,9 @@ const ARQUIVO_CI = '.github/workflows/ah-ci.yml';
 const MARCA_DA_CI = '# Gerado pelo agent-harness (ah init)';
 const COMANDO_DA_CI_DESLIGADA = 'echo "defina ci.comandoDeTeste em .harness/config.json"';
 const ARQUIVO_AGENTS = 'AGENTS.md';
+const ARQUIVO_CLAUDE_MD = 'CLAUDE.md';
+// O Claude Code ignora o AGENTS.md quando existe um CLAUDE.md; a linha abaixo importa o AGENTS.md para dentro dele.
+export const LINHA_DO_CLAUDE = '@AGENTS.md';
 const MARCA_INICIO = '<!-- agent-harness: início';
 const MARCA_FIM = '<!-- agent-harness: fim -->';
 const semPonto = t => String(t).replace(/[.\s]+$/, '');
@@ -168,29 +171,51 @@ function settingsDoClaude(raiz, dirModelos) {
 
 const ocorrencias = (texto, marca) => texto.split(marca).length - 1;
 
-// AGENTS.md com o trecho do harness: {texto, aviso}. Só troca o trecho quando há exatamente um par de
-// marcas, com o fim depois do início; sem marcas, acrescenta no fim; marca faltando ou repetida não
-// reescreve nada do que existe: acrescenta o trecho novo no fim (uma vez só) e avisa. O fim de linha
-// do arquivo (CRLF ou LF) é mantido.
-export function agentsComTrecho(atual, trecho) {
+// `atual` com `trecho` entre as marcas `inicio` e `fim`: {texto, aviso}. Só troca o trecho quando há exatamente um
+// par de marcas, com o fim depois do início; sem marcas, acrescenta no fim; marca faltando ou repetida não reescreve
+// nada do que existe: acrescenta o trecho novo no fim (uma vez só) e avisa. O fim de linha do arquivo (CRLF ou LF) é
+// mantido. `inicio` é o começo da marca (o resto dela pode mudar); `arquivo`, `dono` e `comando` entram no aviso.
+export function trechoEntreMarcas(atual, trecho, { inicio, fim: marcaFim, arquivo, dono = 'do harness', comando = 'ah init' }) {
   if (atual === null) return { texto: trecho, aviso: null };
   const fimDeLinha = atual.includes('\r\n') ? '\r\n' : '\n';
   const novo = trecho.replace(/\r?\n/g, fimDeLinha);
   const acrescentado = () => `${atual}${atual === '' || atual.endsWith(fimDeLinha) ? '' : fimDeLinha}${atual === '' ? '' : fimDeLinha}${novo}`;
-  const ini = ocorrencias(atual, MARCA_INICIO);
-  const fim = ocorrencias(atual, MARCA_FIM);
+  const ini = ocorrencias(atual, inicio);
+  const fim = ocorrencias(atual, marcaFim);
   if (ini === 0 && fim === 0) return { texto: acrescentado(), aviso: null };
-  const i = atual.indexOf(MARCA_INICIO);
-  const f = atual.indexOf(MARCA_FIM);
+  const i = atual.indexOf(inicio);
+  const f = atual.indexOf(marcaFim);
   if (ini === 1 && fim === 1 && f > i) {
-    let depois = f + MARCA_FIM.length;
+    let depois = f + marcaFim.length;
     if (atual.startsWith(fimDeLinha, depois)) depois += fimDeLinha.length;
     return { texto: atual.slice(0, i) + novo + atual.slice(depois), aviso: null };
   }
   return {
     texto: atual.endsWith(novo) ? atual : acrescentado(),
-    aviso: `${ARQUIVO_AGENTS} tem as marcas do harness incompletas ou repetidas; não mexi no que existe e acrescentei o trecho novo no fim.\nFaça: apague do ${ARQUIVO_AGENTS} o trecho antigo e as marcas soltas, deixe só o trecho do fim e rode ah init de novo\n`,
+    aviso: `${arquivo} tem as marcas ${dono} incompletas ou repetidas; não mexi no que existe e acrescentei o trecho novo no fim.\nFaça: apague do ${arquivo} o trecho antigo e as marcas soltas, deixe só o trecho do fim e rode ${comando} de novo\n`,
   };
+}
+
+// AGENTS.md com o trecho do harness (as regras em trechoEntreMarcas).
+export const agentsComTrecho = (atual, trecho) => trechoEntreMarcas(atual, trecho, { inicio: MARCA_INICIO, fim: MARCA_FIM, arquivo: ARQUIVO_AGENTS });
+
+// CLAUDE.md com a linha `@AGENTS.md`: {texto, muda}. Sem arquivo, nasce só com a linha; se alguma linha
+// já é `@AGENTS.md` (em qualquer posição), nada muda; senão a linha entra no topo, seguida de uma linha
+// em branco, e o resto fica como está. O fim de linha do arquivo (CRLF ou LF) é mantido.
+export function claudeComLinha(atual) {
+  if (atual === null || atual.trim() === '') return { texto: `${LINHA_DO_CLAUDE}\n`, muda: true };
+  if (atual.split(/\r?\n/).some(l => l.trim() === LINHA_DO_CLAUDE)) return { texto: atual, muda: false };
+  const fimDeLinha = atual.includes('\r\n') ? '\r\n' : '\n';
+  return { texto: `${LINHA_DO_CLAUDE}${fimDeLinha}${fimDeLinha}${atual}`, muda: true };
+}
+
+// CLAUDE.md que é link simbólico para o próprio AGENTS.md do projeto (ln -s AGENTS.md CLAUDE.md):
+// o Claude Code lê o AGENTS.md por ele, então não há nada a fazer.
+export function claudeEhLinkParaAgents(raiz) {
+  try {
+    if (!fs.lstatSync(path.join(raiz, ARQUIVO_CLAUDE_MD)).isSymbolicLink()) return false;
+    return fs.realpathSync(path.join(raiz, ARQUIVO_CLAUDE_MD)) === fs.realpathSync(path.join(raiz, ARQUIVO_AGENTS));
+  } catch { return false; }
 }
 
 function raizReal(p) {
@@ -332,6 +357,18 @@ export async function executar(args, amb) {
     colocar(ARQUIVO_AGENTS, Buffer.from(agents.texto), { mescla: true });
   }
 
+  // CLAUDE.md: só com o Claude Code. Link simbólico não é seguido: o init diz o que fazer.
+  if (Array.isArray(agentesFinais) && agentesFinais.includes('claude-code')) {
+    let claudeSt = null;
+    try { claudeSt = fs.lstatSync(path.join(raiz, ARQUIVO_CLAUDE_MD)); } catch { /* não existe */ }
+    if (claudeSt?.isSymbolicLink()) {
+      if (!claudeEhLinkParaAgents(raiz)) amb.avisar(`${ARQUIVO_CLAUDE_MD} é um link simbólico; não mexi nele.\nFaça: acrescente a linha ${LINHA_DO_CLAUDE} ao arquivo de destino do link\n`);
+    } else {
+      const claudeAtual = claudeSt?.isFile() ? fs.readFileSync(path.join(raiz, ARQUIVO_CLAUDE_MD), 'utf8') : null;
+      colocar(ARQUIVO_CLAUDE_MD, Buffer.from(claudeComLinha(claudeAtual).texto), { mescla: true });
+    }
+  }
+
   // Ganchos do Claude Code: o conteúdo já é a mescla do arquivo atual, então pode trocá-lo.
   if (settingsClaude !== null) colocar(ARQUIVO_CLAUDE, Buffer.from(settingsClaude), { mescla: true });
 
@@ -413,7 +450,7 @@ export async function executar(args, amb) {
 }
 
 // Caminhos que o init grava e que entram no commit do harness.
-const CAMINHOS_DO_COMMIT = ['.harness', 'tools/ah', 'tools/ah.cmd', ARQUIVO_AGENTS, 'docs/agents/sessoes-paralelas.md', 'docs/agents/historico-das-frentes.md', ARQUIVO_CLAUDE, ARQUIVO_CI];
+const CAMINHOS_DO_COMMIT = ['.harness', 'tools/ah', 'tools/ah.cmd', ARQUIVO_AGENTS, ARQUIVO_CLAUDE_MD, 'docs/agents/sessoes-paralelas.md', 'docs/agents/historico-das-frentes.md', ARQUIVO_CLAUDE, ARQUIVO_CI];
 const MENSAGEM_DO_COMMIT = 'chore: instala o agent-harness';
 
 // As frentes partem do ramo base: o commit do harness tem de ir para lá, senão o worktree

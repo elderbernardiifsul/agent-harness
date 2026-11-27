@@ -254,7 +254,9 @@ test('a cópia instalada sem --de recusa e diz o clone registrado; com --de entr
   const r = instalado(p, ['atualizar']);
   assert.equal(r.codigo, 1);
   assert.match(r.erro, /Recusado: não sei de onde atualizar: este é o núcleo instalado no projeto, não o clone/);
-  assert.match(r.erro, /Faça: rode tools\/ah atualizar --de \S+agent-harness/);
+  // O clone registrado é o que rodou o init (origem.json), não o clone modificado do cenário.
+  const registrado = JSON.parse(fs.readFileSync(path.join(dirDoTeste(p), 'origem.json'), 'utf8')).clone;
+  assert.match(r.erro, new RegExp(`Faça: rode tools/ah atualizar --de ${registrado.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\n`));
 
   const errado = instalado(p, ['atualizar', '--de', p.raiz]);
   assert.equal(errado.codigo, 1);
@@ -303,7 +305,19 @@ test('tools/ah diferente do modelo novo: o atualizar não troca e diz como troca
 test('o fim do atualizar diz como levar a atualização para o ramo base', t => {
   const { p, clone } = cenario(t);
   const r = clone.ah(p, ['atualizar']);
-  assert.match(r.saida, /Falta levar a atualização para o ramo base dev \(as frentes partem dele\):\n {2}git add -- \.harness\/nucleo AGENTS\.md\n {2}git commit -m "chore: atualiza o agent-harness"\nDepois rode: tools\/ah doctor\n$/);
+  assert.match(r.saida, /Falta levar a atualização para o ramo base dev \(as frentes partem dele\):\n {2}git add -- \.harness\/nucleo AGENTS\.md CLAUDE\.md\n {2}git commit -m "chore: atualiza o agent-harness"\nDepois rode: tools\/ah doctor\n$/);
+});
+
+test('com a extensão metodo ligada, o fim do atualizar manda rodar o metodo atualizar; sem ela, não', t => {
+  const { p, clone } = cenario(t);
+  assert.doesNotMatch(clone.ah(p, ['atualizar', '--simular']).saida, /metodo atualizar/);
+  const cfg = path.join(p.raiz, '.harness', 'config.json');
+  const c = JSON.parse(fs.readFileSync(cfg, 'utf8'));
+  c.extensoes = { metodo: { agentes: ['claude-code'] } };
+  fs.writeFileSync(cfg, JSON.stringify(c, null, 2));
+  const r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Depois rode: tools\/ah doctor\nA extensão metodo está ligada: depois do commit, rode tools\/ah metodo atualizar, que traz as skills do harness da cópia nova do núcleo\.\n$/);
 });
 
 test('dois atualizar ao mesmo tempo: o segundo espera a trava "atualizar" do estado antes de mexer no núcleo', async t => {
@@ -385,4 +399,30 @@ test('--simular que termina em recusa não grava nada, nem o evento recusa-de-co
   // Sem --simular, a mesma recusa continua registrada.
   assert.equal(clone.ah(p, ['atualizar']).codigo, 1);
   assert.match(fs.readFileSync(eventos, 'utf8'), /"tipo":"recusa-de-comando","comando":"atualizar"/);
+});
+
+test('atualizar cria o CLAUDE.md que falta e o põe no commit indicado', t => {
+  const { p, clone } = cenario(t);
+  fs.rmSync(path.join(p.raiz, 'CLAUDE.md'));
+  const r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Reapliquei a linha @AGENTS\.md em CLAUDE\.md\./);
+  assert.equal(ler(p, 'CLAUDE.md'), '@AGENTS.md\n');
+  assert.match(r.saida, /git add -- .* CLAUDE\.md/);
+});
+
+test('atualizar: CLAUDE.md link para o AGENTS.md e CLAUDE.md pasta não geram relatório nem erro', { skip: process.platform === 'win32' }, t => {
+  const { p, clone } = cenario(t);
+  const claude = path.join(p.raiz, 'CLAUDE.md');
+  fs.rmSync(claude);
+  fs.symlinkSync('AGENTS.md', claude);
+  let r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.doesNotMatch(r.saida + r.erro, /CLAUDE\.md é um link|em CLAUDE\.md/);
+  assert.ok(fs.lstatSync(claude).isSymbolicLink());
+  fs.rmSync(claude);
+  fs.mkdirSync(claude);
+  r = clone.ah(p, ['atualizar', '--forcar']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.ok(fs.statSync(claude).isDirectory());
 });

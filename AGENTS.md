@@ -8,7 +8,7 @@ As regras que o harness instala nos projetos não se aplicam ao desenvolvimento 
 
 - não há `.harness/`, `tools/ah` nem ganchos de agente; não abra frentes, não rode `ah open`, `ah close` ou `ah handoff` aqui;
 - as travas T0 a T6, a reserva de tickets, o papel de executor ou orquestrador e o PR obrigatório para `stage` e `main` são comportamento a construir e testar, não regra de trabalho deste repositório;
-- `docs/referencia/comandos.md`, `docs/agentes/` e `modelos/` descrevem o projeto que recebe o harness. Leia-os como especificação, não como instrução para esta sessão.
+- `docs/referencia/comandos.md`, `docs/agentes/`, `modelos/` e os textos que o método instala (`nucleo/extensoes/metodo/skills/` e `nucleo/extensoes/metodo/modelos/`) descrevem o projeto que recebe o harness. Leia-os como especificação, não como instrução para esta sessão.
 
 Para ver o harness em funcionamento, instale-o num projeto descartável (README, seção "Laboratório").
 
@@ -28,11 +28,13 @@ Para ver o harness em funcionamento, instale-o num projeto descartável (README,
 
 | Pasta | Conteúdo |
 |---|---|
+| `README.md` | Na seção "Instalar num projeto (instruções para o agente)", o procedimento que um agente segue para instalar o harness e o método num projeto (o único lugar dele) |
 | `nucleo/` | O que o `init` copia para `.harness/nucleo/` no projeto: `bin/ah.mjs`, `comandos/`, `lib/`, `adaptadores/`, `extensoes/` |
 | `modelos/` | Arquivos que o `init` instala no projeto (configuração, ponto de entrada, ganchos, CI, trecho do `AGENTS.md`) |
 | `teste/` | Testes do harness; `teste/apoio/` monta repositórios descartáveis e o `gh` falso |
 | `ferramentas/` | Ferramentas deste repositório (varredura de termos) |
 | `docs/estudo/` | Guia de estudo: problemas, mecanismos, código, testes e limites; histórico da construção |
+| `docs/guia/` | Guia de como começar, para aprendizes e agentes |
 | `docs/referencia/` | Referência dos comandos, capacidades por agente e ensaios |
 | `docs/agentes/`, `docs/extensoes/` | Roteiro de adaptação de agentes e guia de extensão |
 | `docs/superpowers/` | Desenho (`specs/`), planos e registros de execução (`plans/`) |

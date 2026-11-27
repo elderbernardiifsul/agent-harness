@@ -1,6 +1,6 @@
 # Interface de extensão (versão 1)
 
-Referência da interface pela qual uma extensão acrescenta comandos, travas, verificações, reações ao ciclo de vida, linhas no resumo e colunas no quadro, sem alterar o núcleo. O passo a passo de criação está em [como-estender.md](como-estender.md); o desenho, na seção 9 de `docs/superpowers/specs/2026-11-12-nucleo-design.md`. A implementação fica em `nucleo/lib/extensoes.mjs`, e a extensão `recursos` (`nucleo/extensoes/recursos/extensao.mjs`) serve de exemplo completo.
+Referência da interface pela qual uma extensão acrescenta comandos, travas, verificações, reações ao ciclo de vida, linhas no resumo, colunas no quadro e os itens ignorados de que cuida no `close`, sem alterar o núcleo. O passo a passo de criação está em [como-estender.md](como-estender.md); o desenho, na seção 9 de `docs/superpowers/specs/2026-11-12-nucleo-design.md`. A implementação fica em `nucleo/lib/extensoes.mjs`, e a extensão `recursos` (`nucleo/extensoes/recursos/extensao.mjs`) serve de exemplo completo.
 
 ## Localização e ligação
 
@@ -42,6 +42,7 @@ export default {
   reacoes: {},                   // opcional: {depoisDeAbrir, antesDeFechar, depoisDeFechar, aoPassar, noSweep}
   resumo(ctx) {},                // opcional: até duas linhas para o começo de sessão
   colunas: [],                   // opcional: [{titulo, valor(frente, ctx)}]
+  ignorados(ctx) {},             // opcional: [{caminho, descartavel: true} | {caminho, guardar: '<comando>'}]
 };
 ```
 
@@ -72,6 +73,7 @@ Toda função da extensão recebe o mesmo formato de contexto:
 | `git(args, opcoes)`, `gh(args, opcoes)` | Os auxiliares do núcleo, na raiz do projeto; devolvem `{codigo, saida, erro}` e não lançam |
 | `ErroDeUso` | Classe para recusar dentro de um comando |
 | `donaViva(frente)` | `true` quando a sessão `frente.dona` está viva, pela mesma regra do `board` e do `takeover` (processo e sinal de vida); registro de sessão ilegível conta como viva; frente sem dona conta como `false` |
+| `sessao(id)` | O registro da sessão `id` (`<estado>/sessoes/<id>.json`: `agente`, `modelo`, `papel`, `frente`, `inicio`…), cópia só de leitura, ou `null` sem id, sem estado, sem arquivo ou com o arquivo ilegível; nunca lança. A coluna `MODELO` da extensão `modelo` usa `ctx.sessao(frente.dona)?.modelo`. Acréscimo compatível de 26/11/2026 (P2 do desenho do método); a interface continua na versão 1 |
 
 ### Registro da frente
 
@@ -184,6 +186,29 @@ Cada reação é `async (ctx)`. Em todas, `ctx.frente` é a frente do comando.
 - Nas outras reações, um erro vira `Aviso: extensão <nome> falhou em <reação>: <erro>` e não desfaz o que o núcleo já fez.
 - No `ah sweep`, as linhas saem como `- <extensão>: <linha>`; no `--json`, em `extensoes: {<extensão>: [linhas]}`.
 
+## Ignorados de que a extensão cuida
+
+O `ah close` recusa worktree com item ignorado pelo git, porque o git não guarda esses arquivos e remover o worktree os apagaria. Alguns desses itens são de uma extensão, e ela sabe o que fazer com eles: o arquivo de ambiente da frente pode ser refeito a partir do estado; o diário da execução por subagentes precisa ir para o ticket antes. Para isso, a extensão declara os dela:
+
+```js
+ignorados(ctx) {
+  return [
+    { caminho: '.env.frente', descartavel: true },
+    { caminho: '.superpowers/sdd/', guardar: `tools/ah registros guardar --frente ${ctx.frente.nome}` },
+  ];
+},
+```
+
+O exemplo é simplificado: a `registros` real declara só as pastas de plano e o `.gitignore` do `sdd-workspace`, para que um arquivo do aluno em `.superpowers/sdd/` continue barrando o `close`.
+
+- `ignorados(ctx)` é chamada pelo `close`, na primeira fase, com `ctx.frente` definida; pode ser assíncrona. Ela roda sob a trava das frentes, que segura as outras sessões: deve ser rápida e sem rede (ler o estado ou o disco, não o GitHub). Não roda com `--descartar-ignorados`.
+- `caminho` é relativo à raiz do worktree, com `/` como separador em qualquer sistema: um arquivo, ou uma pasta terminada em `/` (que cobre tudo dentro dela). Caminho absoluto, com `..`, com `\` ou vazio é inválido.
+- Uma pasta declarada descartável é apagada inteira com o worktree, sem perguntar, inclusive o que outra pessoa ou ferramenta pôs nela. Declare como descartável só a pasta que a extensão possui inteira; na dúvida, declare os arquivos um a um. O mesmo cuidado vale para quem roda o comando de `guardar`: ele não deve apagar o que não guardou.
+- Cada item tem um dos dois campos: `descartavel: true` (não conta como perda; sai com o `git worktree remove`) ou `guardar: '<comando>'` (recusa numa linha própria, com esse comando como próximo passo). O `close` só aponta o comando; nunca o roda.
+- Um item ignorado casa com um declarado quando é o caminho dele ou fica dentro dele. Coberto por um descartável e por um `guardar`, vale o `guardar`. Pasta-mãe de um declarado (o git lista `.superpowers/` junto com `.superpowers/sdd/`) casa só quando os itens listados dentro dela casam todos; com outro ignorado dentro (`.superpowers/x.log`), ela fica na linha de sempre. Quando o projeto ignora a pasta-mãe inteira (`.superpowers/` no `.gitignore`), o git a lista sozinha, sem nada dentro; o `close` então a lista de novo item a item (`git ls-files -o -i --exclude-standard -- <pasta>`) e separa esses itens pela mesma regra.
+- A função que lança, a promessa que rejeita, a lista inválida e o item inválido viram o aviso `Aviso: a extensão <nome> falhou em ignorados: <motivo>; …`, e os itens afetados seguem a conferência de sempre (a recusa que sugere `--descartar-ignorados`).
+- Acréscimo compatível de 26/11/2026 (P5 do desenho do método): a interface continua na versão 1, e a extensão sem o campo não muda nada.
+
 ## Resumo e quadro
 
 - `resumo(ctx)` devolve texto ou lista; valem as duas primeiras linhas, cada uma cortada em 200 caracteres, somadas antes da cauda do resumo do começo de sessão. Se o resumo passaria de 1200 caracteres, saem primeiro as outras frentes e depois as linhas das extensões, das últimas para as primeiras. `ctx.frente` é a frente da sessão. Erro: a extensão fica de fora e o resumo leva o aviso `Extensão <nome> falhou no resumo (ah doctor).`
@@ -196,7 +221,7 @@ Cada reação é `async (ctx)`. Em todas, `ctx.frente` é a frente do comando.
 | Função | Uso |
 |---|---|
 | `carregarParaTeste(arquivo, config)` | Carrega o `extensao.mjs` e confere forma e configuração como o núcleo; lança com o motivo da recusa |
-| `ctxFalso({extensao, config, frente, frentes, ...})` | Contexto sem disco, para chamar diretamente uma função da extensão (`executar` de um comando, `avaliar` de uma trava, uma reação, `conferir`, `resumo`, `valor` de coluna) |
+| `ctxFalso({extensao, config, frente, frentes, ...})` | Contexto sem disco, para chamar diretamente uma função da extensão (`executar` de um comando, `avaliar` de uma trava, uma reação, `conferir`, `resumo`, `valor` de coluna, `ignorados`) |
 | `projetoDeTeste({extensoes, pastas, config})` | Projeto git descartável com o núcleo, as pastas de extensão copiadas e ligadas, estado e gh próprios; `ah(args)`, `gancho(acao)`, `frente(nome)`, `git(args)`, `limpar()` |
 
 `ctxFalso` tem a forma do `ctx` do núcleo, com estes detalhes:
@@ -204,6 +229,7 @@ Cada reação é `async (ctx)`. Em todas, `ctx.frente` é a frente do comando.
 - `frente` (o registro de partida, montado à mão; basta trazer os campos que a função lê) e `frentes` formam o estado em memória; `ctx.frente` sai congelado, como no núcleo.
 - `saida` e `avisos` são listas com cada texto passado a `escrever` e `avisar`, na ordem (`['Frente as-1 carrinho: aberta há 2 h 13 min\n']`); `gravados` lista cada `gravarCampos` como `{frente, secao}`; `chamadas` lista cada `git`/`gh` como `{programa, args, opcoes}`, que respondem `{codigo: 0, saida: '', erro: ''}` salvo funções `git`/`gh` dadas.
 - `ErroDeUso` é a mesma classe do núcleo: `assert.rejects(() => cmd.executar([], ctx), ctx.ErroDeUso)` confere uma recusa.
+- `sessao(id)` responde pela opção `sessoes`, um objeto `{<id>: registro}`; id fora dele dá `null`: `ctxFalso({sessoes: {'sessao-b-0002': {id: 'sessao-b-0002', modelo: 'modelo-leve'}}})`.
 - `donaViva(frente)` responde pela opção `vivas`, lista dos ids de sessão dados como vivos; o padrão é `[sessaoId]`: `ctxFalso({frente, vivas: ['sessao-b-0002']})`.
 - `sessaoId` vale `sessao-teste-0001` por padrão; `env` é `{}`; `dirEstado` é `null`; outros campos (`retomada`, `reparar`, `soLocal`) entram pelo resto do objeto: `ctxFalso({frente, retomada: true})`.
 

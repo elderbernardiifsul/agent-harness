@@ -1,6 +1,6 @@
 # Comandos do harness
 
-Referência dos comandos das fatias 1 a 5, na versão 0.2.0, e das extensões (seção "Extensões", com o comando `recursos` da extensão que acompanha o harness). Os comandos são executados como `tools/ah <comando>` dentro do projeto, com exceção do `init`, executado a partir do clone do agent-harness. Os exemplos usam o projeto fictício `loja`, as pessoas `ana-souza` (sigla `as`) e `carla-dias` (sigla `cd`), os tickets `#1` a `#9` e as sessões `sessao-teste-0001`, `sessao-b-0002` e `sessao-c-0003`. As saídas foram copiadas de um projeto descartável, e `<worktrees>` designa a pasta dos worktrees das frentes.
+Referência do harness na versão 0.3.0. Primeiro vêm os comandos do núcleo (`init`, `atualizar`, `doctor`, `open`, `nota`, `board`, `deps`, `whoami`, `papel`, `handoff`, `takeover`, `sweep`, `close`, `pesado` e `gancho`) e as seções gerais do núcleo ("Vida da sessão", "Eventos", "Limites" e "Publicar"). Depois vêm as extensões que acompanham o harness: a seção "Extensões" e uma seção para cada uma, na ordem da tabela dela (`recursos`, `metodo`, `registros`, `modelo`, `wiki`, `ambiente`, `migracao`, `prova` e `orquestracao`). Os comandos são executados como `tools/ah <comando>` dentro do projeto, com exceção do `init`, executado a partir do clone do agent-harness. Os exemplos usam o projeto fictício `loja`, as pessoas `ana-souza` (sigla `as`) e `carla-dias` (sigla `cd`), os tickets `#1` a `#9` e as sessões `sessao-teste-0001`, `sessao-b-0002` e `sessao-c-0003`. As saídas foram copiadas de um projeto descartável, e `<worktrees>` designa a pasta dos worktrees das frentes.
 
 Toda recusa segue o mesmo formato: o motivo em uma linha e, na linha seguinte, o próximo passo. A recusa de um comando `ah` sai com código 1 (`Recusado: motivo` / `Faça: …`) e também é registrada nos eventos (`recusa-de-comando`); a recusa de uma trava, emitida pelo gancho do agente, sai com código 2 (`Recusado (Tn): motivo` / `Faça: …`).
 
@@ -20,8 +20,12 @@ Nas mensagens, a sessão é identificada pelo id curto, formado pelos 8 primeiro
 | `AH_PESADO_ANINHADO` | definida pelo `ah pesado` no ambiente do comando que ele executa, com o número da senha. Só tem efeito depois de conferida: se a senha está em execução na fila, com o `ah` dela vivo, um `ah pesado` interno roda diretamente e a T6 do gancho não recusa; caso contrário, é ignorada. Escrita como prefixo no texto do comando (`AH_PESADO_ANINHADO=3 npm run build`), não libera a T6 |
 | `AH_FILA_MEMORIA_LIVRE_MB`, `AH_FILA_PAUSA_MS` | para ensaio: substituem a memória livre medida e o intervalo (100 ms) com que os comandos em espera releem a fila |
 | `AH_CLOSE_ESPERA_DA_TRAVA_MS` | para ensaio: substitui a espera (30 s) do `close` pela trava das frentes na última fase |
+| `AH_CACHE` | pasta onde o `metodo instalar` guarda as coleções de skills baixadas; substitui o cache da máquina (`${XDG_CACHE_HOME:-~/.cache}/agent-harness/colecoes` no Linux, `~/Library/Caches/agent-harness/colecoes` no macOS, `%LOCALAPPDATA%\agent-harness\colecoes` no Windows) |
+| `AH_PESADO_VERBOSO` | com qualquer valor, o `ah pesado` avisa também quando o comando roda sem espera (`ah pesado: rodando (classe …)`) |
+| `AH_AGENTE` | nome do agente em uso (`claude-code`, `codex`, `opencode`), para o item do `doctor` sobre o adaptador; na falta dela, o agente é reconhecido pelas variáveis dele (`OPENCODE_SESSION_ID`, `CODEX_THREAD_ID`, `CLAUDE_CODE_SESSION_ID` e afins) |
+| `AH_METODO_COLECOES` | só para teste: caminho de um `colecoes.json` que substitui o da extensão `metodo`; caminhos relativos dentro dele valem a partir da pasta do arquivo |
 
-Do agente, o harness lê `CLAUDE_CODE_SESSION_ID` (id da sessão, na ausência de `AH_SESSAO`) e, no gancho, `CLAUDE_PROJECT_DIR` (um dos locais em que procura o projeto).
+Do agente, o harness lê `CLAUDE_CODE_SESSION_ID` (id da sessão, na ausência de `AH_SESSAO`) e, no gancho, `CLAUDE_PROJECT_DIR` (um dos locais em que procura o projeto); a extensão `metodo` lê `CLAUDE_CONFIG_DIR` (pasta de configuração do Claude Code, na falta dela `~/.claude`) para achar os plugins instalados.
 
 Ajuda: `ah --help` (ou `ah` sem argumentos) lista os comandos do núcleo e, numa seção própria, `Comandos de extensões:`, os das extensões ligadas e carregadas, cada um com o nome da extensão (`recursos   reserva, libera e lista recursos por frente (portas, bancos) (extensão recursos)`); `ah <comando> --help` (ou `-h`) mostra a descrição e o uso do comando e sai com código 0, sem executar nada e sem exigir configuração nem sessão. Depois de `--`, `--help` é tratado como argumento comum (`ah nota -- --help` grava a nota "--help"). Um comando cujos argumentos são texto livre declara `ajudaSoComoUnicoArgumento` no módulo; nele, `-h` e `--help` só pedem a ajuda como único argumento (hoje, apenas o `nota`).
 
@@ -35,7 +39,7 @@ Recusas comuns a vários comandos:
 | `comando desconhecido: <nome>` | qualquer nome fora da lista (inclusive comando de extensão desligada ou que não carregou) | rode `ah --help`; para extensão, confira `extensoes` em `.harness/config.json` e o item `Extensão <nome>` do `ah doctor` |
 | `Opção desconhecida: …` / `Argumento a mais: …` | opção ou argumento que o comando não aceita | `use <uso do comando>` |
 
-Exigem sessão: `open`, `nota`, `whoami`, `papel`, `handoff`, `takeover` e `close`. Não exigem: `board`, `deps`, `sweep`, `doctor`, `init`, `pesado` e o `gancho`, que recebe a sessão no evento. Um comando de extensão exige sessão salvo quando declara `requisitos: {sessao: false}`; o `recursos` exige sessão apenas em `reservar` e `liberar`. Uma sessão ainda sem registro (comandos executados à mão, sem gancho) é registrada com papel `executor` pelo primeiro `open`, `papel`, `whoami` ou `takeover --confirmado` que executar.
+Exigem sessão: `open`, `nota`, `whoami`, `papel`, `handoff`, `takeover` e `close`. Não exigem: `board`, `deps`, `sweep`, `doctor`, `init`, `pesado` e o `gancho`, que recebe a sessão no evento. Um comando de extensão exige sessão salvo quando declara `requisitos: {sessao: false}`; a seção de cada extensão diz quais subcomandos exigem sessão (o `recursos`, por exemplo, só em `reservar` e `liberar`). Uma sessão ainda sem registro (comandos executados à mão, sem gancho) é registrada com papel `executor` pelo primeiro `open`, `papel`, `whoami` ou `takeover --confirmado` que executar.
 
 ## init
 
@@ -43,7 +47,7 @@ Exigem sessão: `open`, `nota`, `whoami`, `papel`, `handoff`, `takeover` e `clos
 ah init [--projeto <nome>] [--sigla <sigla>] [--agentes claude-code] [--teste "<comando>"] [--sem-protecao] [--sobrescrever]
 ```
 
-Instala o harness no projeto atual a partir do clone do agent-harness. O comando copia o núcleo para `.harness/nucleo/` (incluindo o modelo dos ganchos, em `.harness/nucleo/modelos/claude-code/`), grava `.harness/config.json` e cria `tools/ah`, `tools/ah.cmd`, os documentos de `docs/agents/`, os ganchos do agente em `.claude/settings.json` (acrescentados aos existentes, sem apagar nenhum) e a CI em `.github/workflows/ah-ci.yml`. Sem `--projeto`, o nome do projeto é o da pasta; sem `--sigla`, o `init` propõe uma sigla a partir do login do `gh`. O `.harness/nucleo/MANIFEST.json` registra a versão, o commit do clone, a data e o sha256 de cada arquivo copiado; com esses dados, o `atualizar` identifica arquivo do núcleo alterado à mão. O caminho do clone fica em `<estado>/loja/origem.json`, fora do git, e o `doctor` compara o núcleo com ele.
+Instala o harness no projeto atual a partir do clone do agent-harness. O comando copia o núcleo para `.harness/nucleo/` (incluindo o modelo dos ganchos, em `.harness/nucleo/modelos/claude-code/`), grava `.harness/config.json` e cria `tools/ah`, `tools/ah.cmd`, os documentos de `docs/agents/`, os ganchos do agente em `.claude/settings.json` (acrescentados aos existentes, sem apagar nenhum) e a CI em `.github/workflows/ah-ci.yml`. Com `claude-code` em `agentes`, garante também um `CLAUDE.md` com a linha `@AGENTS.md`: o Claude Code ignora o `AGENTS.md` quando existe um `CLAUDE.md`, e a linha importa o `AGENTS.md` para dentro dele. Sem `CLAUDE.md`, o `init` o cria só com a linha; com um `CLAUDE.md` sem a linha, a acrescenta no topo, seguida de uma linha em branco, e mantém o resto e o fim de linha (CRLF ou LF); se alguma linha já é `@AGENTS.md`, não muda nada. Link simbólico não é seguido: se ele aponta para o próprio `AGENTS.md` do projeto (`ln -s AGENTS.md CLAUDE.md`), está certo e o `init` não faz nada; se aponta para outro arquivo, o `init` avisa (`CLAUDE.md é um link simbólico; não mexi nele`, com `Faça: acrescente a linha @AGENTS.md ao arquivo de destino do link`). Sem `--projeto`, o nome do projeto é o da pasta; sem `--sigla`, o `init` propõe uma sigla a partir do login do `gh`. O `.harness/nucleo/MANIFEST.json` registra a versão, o commit do clone, a data e o sha256 de cada arquivo copiado; com esses dados, o `atualizar` identifica arquivo do núcleo alterado à mão. O caminho do clone fica em `<estado>/loja/origem.json`, fora do git, e o `doctor` compara o núcleo com ele.
 
 - `--teste "<comando>"` liga a CI: o comando é gravado no arquivo entre aspas simples. A opção só tem efeito quando a configuração ainda não existe, porque o `init` nunca reescreve `.harness/config.json`. Com a configuração já existente, `--teste` com valor diferente de `ci.comandoDeTeste` é recusado antes de qualquer gravação; nesse caso, edite `ci.comandoDeTeste` em `.harness/config.json` e execute `ah init` novamente (o `init` reescreve a CI com o comando da configuração). Com o mesmo valor, a opção é aceita. Sem a opção, a CI é criada desligada.
 - `--projeto` e `--agentes` seguem a mesma regra: com a configuração já existente, um valor diferente do gravado (`projeto`, ou a lista `agentes`, sem contar ordem e espaços) é recusado antes de qualquer gravação, e o mesmo valor é aceito.
@@ -83,13 +87,15 @@ Criei:
   tools/ah.cmd
   docs/agents/sessoes-paralelas.md
   docs/agents/historico-das-frentes.md
+  AGENTS.md
+  CLAUDE.md
   .claude/settings.json
   .github/workflows/ah-ci.yml
   ramo dev (local)
   ramo stage (local)
 Falta levar o harness para o ramo base dev (as frentes partem dele; fora dele não há tools/ah nem gancho):
   git switch dev
-  git add -- .harness tools/ah tools/ah.cmd docs/agents/sessoes-paralelas.md docs/agents/historico-das-frentes.md .claude/settings.json .github/workflows/ah-ci.yml
+  git add -- .harness tools/ah tools/ah.cmd AGENTS.md CLAUDE.md docs/agents/sessoes-paralelas.md docs/agents/historico-das-frentes.md .claude/settings.json .github/workflows/ah-ci.yml
   git commit -m "chore: instala o agent-harness"
 Depois rode: tools/ah doctor
 CI criada desligada: defina ci.comandoDeTeste em .harness/config.json e rode ah init de novo
@@ -107,6 +113,7 @@ Substitui a cópia do núcleo (`.harness/nucleo/`) pela de um clone mais recente
 
 - **Conteúdo substituído:** o mesmo conjunto que o `init` copia para `.harness/nucleo/` (núcleo, `docs/agentes/`, `docs/referencia/` e os modelos dos ganchos e do trecho do `AGENTS.md`), mais o novo `MANIFEST.json`. A cópia nova é montada ao lado (`.harness/nucleo.novo-<pid>-<hora>`) e posta no lugar por renomeação; se a troca falha no meio, a cópia antiga é restaurada. Arquivos que existiam apenas na cópia antiga são removidos.
 - **`AGENTS.md`:** o trecho entre marcas é reaplicado com as mesmas garantias do `init`: o restante do arquivo é preservado, marcas incompletas ou repetidas impedem a reescrita do conteúdo existente, link simbólico não é alterado e o fim de linha é mantido.
+- **`CLAUDE.md`:** com `claude-code` em `agentes`, a linha `@AGENTS.md` é reaplicada com as mesmas regras do `init` (cria o arquivo que falta, acrescenta a linha no topo, não duplica, não segue link simbólico); o relatório diz `Reapliquei a linha @AGENTS.md em CLAUDE.md.`
 - **Conteúdo preservado:** `.harness/config.json`, `.harness/extensoes/`, o estado (frentes, sessões, fila de pesado; o comando apenas acrescenta o evento e grava o clone em `origem.json`), `tools/ah`, `tools/ah.cmd`, `docs/agents/`, `.claude/settings.json` e a CI. Se `tools/ah`, `tools/ah.cmd` ou os ganchos de `.claude/settings.json` diferem do que o `init` do clone gravaria, o `atualizar` os lista em "Fora do núcleo, diferentes do que o init deste clone grava (não mexi)" e indica a execução do `init` do clone.
 - **Arquivos alterados à mão:** a atualização é recusada quando um arquivo do núcleo difere do sha256 do manifesto, foi removido ou não consta do manifesto, porque a alteração se perderia. Com manifesto anterior à fatia 5, que não contém a lista, a lista antiga é reconstruída a partir do clone, no commit gravado no manifesto (`git ls-tree` e `git cat-file` no clone), e a comparação é a mesma. Se esse commit não está no clone (clone sem git ou sem o commit), não é possível provar que o núcleo está intacto, porque uma alteração manual já commitada não aparece no `git status`. Nesse caso, o `atualizar` recusa sem `--forcar` e lista o que o `git status` mostra como não commitado. `--forcar` descarta a alteração e informa o que descartou. Nos arquivos de texto (sem byte nulo, o mesmo critério do git), o sha256 do manifesto e da conferência é calculado com CRLF convertido em LF, de modo que um checkout com `core.autocrlf=true` não aparece como alteração à mão; nos binários, o sha256 é o exato.
 - **Versão e commit:** clone com versão menor que a instalada é recusado (`--forcar` permite voltar a ela); clone com versão menor que `harnessMinimo` da configuração é sempre recusado. Como a versão só muda em lançamento, o commit também é conferido: se o commit gravado no manifesto existe no clone e o commit atual do clone é ancestral estrito dele (`git merge-base --is-ancestor`), o clone está defasado e o `atualizar` recusa sem `--forcar`. Clone sem git, ou sem o commit instalado, fica fora dessa conferência. Mesma versão com conteúdo diferente, num commit que não é anterior, é atualizada.
@@ -114,7 +121,8 @@ Substitui a cópia do núcleo (`.harness/nucleo/`) pela de um clone mais recente
 - **Duas execuções ao mesmo tempo:** a conferência e a troca rodam sob a trava `atualizar` do estado do projeto (`<estado>/loja/travas/atualizar`); um segundo `atualizar`, inclusive com `--simular`, espera até 30 s que o primeiro termine e, depois disso, recusa com a mensagem da trava presa.
 - Sem mudanças: `Nada a atualizar: .harness/nucleo/ já é o do clone (<versão> (<commit>)).`, código 0, sem gravação.
 - Resíduos de uma troca interrompida: `.harness/nucleo.novo-*` é removido na chamada seguinte, e `.harness/nucleo.velho-*` também, se `.harness/nucleo/` existir; caso contrário, o `atualizar` recusa e informa o `mv` que restaura a cópia antiga.
-- Assim como o `init`, não faz commit: termina com os comandos exatos (`git add -- .harness/nucleo AGENTS.md` e `git commit -m "chore: atualiza o agent-harness"`, no ramo base).
+- Assim como o `init`, não faz commit: termina com os comandos exatos (`git add -- .harness/nucleo AGENTS.md CLAUDE.md` e `git commit -m "chore: atualiza o agent-harness"`, no ramo base).
+- **Extensão `metodo`:** as skills do harness no projeto são cópias da pasta `skills/` da extensão e não mudam com a troca do núcleo. Com a `metodo` ligada, a saída termina com `A extensão metodo está ligada: depois do commit, rode tools/ah metodo atualizar, que traz as skills do harness da cópia nova do núcleo.`; até lá, o item `Skills do harness em dia (metodo)` do `doctor` avisa.
 - **Intervalo da troca:** entre as duas renomeações há alguns milissegundos sem `.harness/nucleo/`. Não há trava entre o `atualizar` e as sessões vivas: um gancho ou um `tools/ah` que comece exatamente nesse intervalo recusa (`Recusado: não achei .harness/nucleo`, código 2), e a ação do agente não é executada. Basta repetir a ação.
 - Os worktrees das frentes contêm a cópia do ramo de onde foram criados, mas o `tools/ah` de qualquer worktree executa a cópia do checkout principal; por isso, a atualização vale para todas as frentes assim que é feita, sem commit.
 
@@ -150,7 +158,7 @@ Atualizei .harness/nucleo/ de 0.1.0 (b1ce02f) para 0.1.0 (6e1d2a9):
   Alterados:
     comandos/whoami.mjs
 Falta levar a atualização para o ramo base dev (as frentes partem dele):
-  git add -- .harness/nucleo AGENTS.md
+  git add -- .harness/nucleo AGENTS.md CLAUDE.md
   git commit -m "chore: atualiza o agent-harness"
 Depois rode: tools/ah doctor
 ```
@@ -171,7 +179,7 @@ Faça: leve a mudança para o clone do agent-harness (ou para .harness/extensoes
 ah doctor [--json]
 ```
 
-Confere a preparação do projeto em 24 verificações do núcleo (a última aparece apenas quando um agente se identifica), seguidas dos itens das extensões (tabela abaixo): Node 22 ou mais recente; git presente; shell POSIX; `.harness` é uma pasta do projeto (link simbólico falha: o gancho recusa tudo enquanto ele existir, salvo o `tools/ah doctor`); `.harness/config.json` válido (inclusive o `fuso`, conferido com `Intl.DateTimeFormat`); cópia do núcleo (`MANIFEST.json`); núcleo igual ao clone de origem; arquivos de estado legíveis (incluindo o esquema: registro gravado por um harness mais novo falha com "atualize o harness"); sigla sem conflito; `gh` presente e autenticado; ramo base e ramos protegidos; ganchos do Claude Code instalados; harness no ramo base (`tools/ah` e `.harness/config.json` commitados na `dev`); gancho responde (o `doctor` provoca uma recusa T5 real); hora de início do processo; gancho recusa troca de ramo (o `doctor` provoca uma recusa T1); ganchos vigiam a edição (o seletor do `PreToolUse` inclui `Edit`, `Write` e `NotebookEdit`; sem eles, a T4 não detecta a edição); comentários pendentes; frentes órfãs; proteção no servidor (uma linha por ramo protegido); CI com comando de teste; frentes com worktree (incluindo as de abertura parada); fila de pesado (configuração da máquina legível, estado em versão conhecida, senhas de processo morto); adaptador do agente em uso. Cada item recebe o estado `ok`, `aviso` (algo a melhorar, com a ação indicada) ou `FALHOU` (algo que impede o uso). O código de saída é 0 quando não há falha; avisos não alteram o código. `--json` imprime `{"itens":[{"item","estado","fazer"}],"falhas","avisos"}`.
+Confere a preparação do projeto em 25 verificações do núcleo (a última aparece apenas quando um agente se identifica), seguidas dos itens das extensões (tabela abaixo): Node 22 ou mais recente; git presente; shell POSIX; `.harness` é uma pasta do projeto (link simbólico falha: o gancho recusa tudo enquanto ele existir, salvo o `tools/ah doctor`); `.harness/config.json` válido (inclusive o `fuso`, conferido com `Intl.DateTimeFormat`); cópia do núcleo (`MANIFEST.json`); núcleo igual ao clone de origem; arquivos de estado legíveis (incluindo o esquema: registro gravado por um harness mais novo falha com "atualize o harness"); sigla sem conflito; `gh` presente e autenticado; ramo base e ramos protegidos; `CLAUDE.md` aponta para o `AGENTS.md` (só com `claude-code` em `agentes`: aviso quando falta o arquivo ou a linha `@AGENTS.md`, com `rode ah init`; `ok` quando o `CLAUDE.md` é link para o `AGENTS.md`, aviso quando é link para outro arquivo; aviso também quando o `CLAUDE.md` tem conteúdo além da linha, porque o Codex e o OpenCode não leem o `CLAUDE.md` e esse conteúdo deve ir para o `AGENTS.md`); ganchos do Claude Code instalados; harness no ramo base (`tools/ah` e `.harness/config.json` commitados na `dev`); gancho responde (o `doctor` provoca uma recusa T5 real); hora de início do processo; gancho recusa troca de ramo (o `doctor` provoca uma recusa T1); ganchos vigiam a edição (o seletor do `PreToolUse` inclui `Edit`, `Write` e `NotebookEdit`; sem eles, a T4 não detecta a edição); comentários pendentes; frentes órfãs; proteção no servidor (uma linha por ramo protegido); CI com comando de teste; frentes com worktree (incluindo as de abertura parada); fila de pesado (configuração da máquina legível, estado em versão conhecida, senhas de processo morto); adaptador do agente em uso. Cada item recebe o estado `ok`, `aviso` (algo a melhorar, com a ação indicada) ou `FALHOU` (algo que impede o uso). O código de saída é 0 quando não há falha; avisos não alteram o código. `--json` imprime `{"itens":[{"item","estado","fazer"}],"falhas","avisos"}`.
 
 ```
 $ tools/ah doctor
@@ -259,7 +267,7 @@ Frente as-1 (carrinho) aberta por @ana-souza.
 <!-- ah:frente id=as-1 nome=carrinho ramo=feat/carrinho estado=ativa login=ana-souza sessao=sessao-t tickets=1 abertaPor=ana-souza abertaEm=2026-11-12T23:19:45-03:00 sid=0bb41ce63d29136c v=1 -->
 ```
 
-O marcador ocupa sempre a última linha do comentário. Tipos: `frente` (abertura), `retomada`, `tomada`, `passagem`, `fechamento` e `desistencia`; o último marcador de uma frente nos tickets indica o estado dela (`ativa`, `passada` ou `livre`).
+O marcador ocupa sempre a última linha do comentário. Tipos: `frente` (abertura), `retomada`, `tomada`, `passagem`, `fechamento` e `desistencia`; o último marcador de uma frente nos tickets indica o estado dela (`ativa`, `passada` ou `livre`). Marcador com `id` fora do formato que o harness cria (`<sigla>-<n>`, como `as-1`) ou `nome` fora do padrão de nome de frente não vale, como o de terceiro: o id e o nome viram nomes de pasta e de arquivo nesta máquina, e um `id=../../../x` forjado num comentário apontaria para fora da pasta de estado.
 
 **Retomada na mesma máquina.** Se a frente com esse nome está `passada` nesta máquina (após um `ah handoff`, uma continuação sem vínculo ou um `sweep --reparar`), o `open` a retoma em vez de abrir uma nova. O comando recria o worktree, se ele foi removido (a partir do ramo local ou do remoto), confere que ele está no ramo da frente e sem operação em andamento, atualiza o ramo a partir do remoto por fast-forward, se outra máquina o enviou, grava a sessão como dona e comenta `retomada` nos tickets. Frente com tickets é sempre conferida antes no GitHub: se outra máquina já a retomou, o comando recusa; sem rede, também recusa (`preciso do GitHub para confirmar que ninguém retomou carrinho`). `--tickets` não é aceito na retomada, porque os tickets são os da frente passada; `--plano` e `--caminhos` substituem os da frente.
 
@@ -495,85 +503,6 @@ Bloqueia: nada
 
 **Limites.** Sem argumento, o comando faz uma chamada por página da lista e uma por issue com bloqueio; com ticket, uma por issue visitada na cascata. O quadro (`board`) não mostra bloqueios, porque isso exigiria rede ou cache a cada execução (pendência registrada no plano da fatia 5b).
 
-## Extensões
-
-Uma extensão acrescenta comandos, travas, verificações do `doctor`, reações ao ciclo de vida, linhas no resumo e colunas no quadro sem alterar o núcleo. A interface está em `docs/extensoes/interface.md`, e o passo a passo de criação, em `docs/extensoes/como-estender.md`. As do projeto ficam em `.harness/extensoes/<nome>/extensao.mjs`; as que acompanham o harness, em `.harness/nucleo/extensoes/<nome>/` (nesta versão, só a `recursos`).
-
-**Configuração.** Uma extensão só carrega quando a chave dela existe em `extensoes`, no `.harness/config.json` (padrão: `{}`, nenhuma ligada):
-
-```json
-"extensoes": { "recursos": { "tipos": ["porta", "banco"] }, "revisao": true, "antiga": false }
-```
-
-| Valor | Efeito |
-|---|---|
-| `true` | ligada, com configuração vazia (`{}`) |
-| objeto | ligada, com o objeto como configuração, conferido pela própria extensão (`validarConfig`) |
-| `false` | desligada, como a ausência da chave |
-
-O nome casa com `^[a-z][a-z0-9-]*$`; outro valor ou outro nome invalida a configuração (`Configuração inválida: extensoes (…)`). Com o mesmo nome no projeto e no harness, vale a do projeto, e o `doctor` avisa da sombra.
-
-**Carga.** A extensão que não carrega (arquivo ausente, erro de sintaxe, forma inválida, versão da interface diferente de 1, configuração recusada, comando com nome já usado) fica de fora sem derrubar os comandos do núcleo: o `doctor` mostra a falha no item `Extensão <nome>`; `open`, `close`, `handoff`, `sweep`, `board` e o despacho de comando avisam uma vez por processo, na saída de erro (`Aviso: a extensão idade não carregou (versão 2 da interface; o núcleo espera a 1); rode ah doctor.`); o gancho segue só com as travas do núcleo.
-
-**Comandos de extensão.** Viram `ah <nome>`, com a mesma ajuda (`ah <nome> --help`) e os mesmos requisitos dos comandos do núcleo. A recusa da extensão segue o formato comum (`Recusado: …` / `Faça: …`, código 1, evento `recusa-de-comando`). Um erro que não é recusa sai como `Recusado: a extensão <nome> falhou no comando <comando>: <erro>`, com `Faça: corrija a extensão ou desligue-a em .harness/config.json`.
-
-**Travas de extensão.** São avaliadas depois das travas T0 a T6 e recusam como elas, com código 2: `Recusado (<extensão>/<id>): <motivo>` / `Faça: …`. `AH_GUARD=off` libera a trava de extensão num comando de shell quando todo comando simples da linha, fora o `cd`, traz o prefixo; na edição de arquivo, não há liberação.
-
-**Fechamento.** A reação `antesDeFechar` de uma extensão pode recusar o `close` (ver "close"); as demais reações não recusam, e um erro nelas vira `Aviso: extensão <nome> falhou em <reação>: …`.
-
-## recursos
-
-```
-ah recursos reservar <tipo> <valor> [--frente <nome>]
-ah recursos liberar <tipo> <valor>|--todos [--frente <nome>]
-ah recursos listar [--json]
-```
-
-Comando da extensão `recursos`, que acompanha o harness e só existe com `"recursos"` ligada em `extensoes`. Registra recursos por frente (tipo e valor, como `porta 3001` ou `banco loja_frete`) em `frente.extensoes.recursos.itens`, para que duas frentes não usem o mesmo recurso. A configuração opcional `{"tipos": [...]}` limita os tipos aceitos; sem ela, vale qualquer tipo com minúsculas, números e hífen, começando por letra. O valor tem de 1 a 100 caracteres, sem espaço.
-
-- **`reservar`.** Grava o recurso na frente da sessão (ou na dada em `--frente`, por nome ou id). A conferência e a gravação ocorrem sob a trava das frentes; um valor já reservado por outra frente do estado (ativa, passada ou abrindo) é recusado com o nome dela. Reservar de novo o mesmo recurso na mesma frente não muda nada.
-- **`liberar`.** Retira um recurso, ou todos com `--todos`. `--frente` permite liberar os recursos de uma frente de outra sessão, por exemplo antes de fechar uma frente órfã ou passada.
-- **`--frente` em frente alheia.** Vale para frente passada, órfã (dona morta) ou sem dona. Frente ativa de outra sessão viva é recusada em `reservar` e `liberar`: só a sessão dona mexe nos recursos dela. A conferência ocorre sob a trava das frentes.
-- **`listar`.** Mostra os recursos de cada frente que tem algum, com o estado da frente quando não é `ativa`. `--json` imprime `{"recursos":[{"id","frente","estado","tipo","valor","em"}]}`, com `em` em UTC.
-- **Sessão.** `reservar` e `liberar` exigem sessão; `listar` não.
-- **Ciclo.** O `close` recusa a frente que ainda tem recursos e indica o `liberar --todos`. O `handoff` não libera: a frente passada continua dona dos recursos.
-- **Quadro e doctor.** A coluna `RECURSOS` do `board` lista os recursos de cada frente; o item `Recursos sem conflito (recursos)` do `doctor` acusa o mesmo recurso em duas frentes.
-
-| Recusa | Faça |
-|---|---|
-| `Falta o subcomando.` / `Subcomando desconhecido: …` | use `ah recursos reservar <tipo> <valor> [--frente <nome>] \| liberar <tipo> <valor>\|--todos [--frente <nome>] \| listar [--json]` |
-| `não sei qual é a sessão` (em `reservar` e `liberar`) | defina AH_SESSAO ou ligue o adaptador do agente |
-| `Esta sessão não tem frente.` | abra uma com ah open <nome>, ou diga qual com --frente <nome> |
-| `Não achei a frente <nome>.` | rode ah board para ver as frentes abertas |
-| `A frente <id> <nome> é da sessão <s>, que está viva.` | peça à sessão dona (<s>) que reserve ou libere ela mesma; com a sessão morta (frente órfã) ou a frente passada, o --frente vale |
-| `Faltam ou sobram argumentos.` / `Opção desconhecida: …` / `Argumento a mais: …` / `A opção --frente precisa do nome da frente.` | use o uso acima |
-| `Tipo inválido: …` | use minúsculas, números e hífen, começando por letra (ex.: porta) |
-| `Valor inválido: precisa ter de 1 a 100 caracteres, sem espaço.` | escreva o valor sem espaço (ex.: 3001) |
-| `Tipo fila fora de extensoes.recursos.tipos (porta, banco).` | use um desses tipos ou acrescente fila em .harness/config.json |
-| `porta 3001 já está reservado pela frente as-1 carrinho.` | escolha outro valor (ah recursos listar mostra os reservados) ou combine com a dona da frente carrinho |
-| `porta 9999 não está reservado pela frente as-1 carrinho.` | ah recursos listar mostra o que cada frente tem |
-| `Com --todos não vão tipo nem valor.` | use o uso acima |
-
-```
-$ AH_SESSAO=ana-terminal tools/ah recursos reservar porta 3001
-Reservado: porta 3001 para a frente as-1 carrinho.
-$ AH_SESSAO=carla-terminal tools/ah recursos reservar porta 3001
-Recusado: porta 3001 já está reservado pela frente as-1 carrinho.
-Faça: escolha outro valor (ah recursos listar mostra os reservados) ou combine com a dona da frente carrinho
-$ AH_SESSAO=carla-terminal tools/ah recursos reservar banco loja_cupom
-Reservado: banco loja_cupom para a frente as-2 cupom.
-$ tools/ah recursos listar
-as-1 carrinho: porta 3001
-as-2 cupom: banco loja_cupom
-$ AH_SESSAO=ana-terminal tools/ah close
-Recusado: a extensão recursos não deixa fechar a frente as-1 carrinho: a frente ainda tem recursos reservados: porta 3001
-Faça: libere com ah recursos liberar --todos --frente carrinho e rode ah close de novo
-$ AH_SESSAO=ana-terminal tools/ah recursos liberar --todos
-Liberados 1 recurso(s) da frente as-1 carrinho.
-$ AH_SESSAO=ana-terminal tools/ah close
-Frente as-1 carrinho fechada.
-```
-
 ## whoami
 
 ```
@@ -747,7 +676,7 @@ Fecha a frente em foco da sessão sem perda de trabalho. O comando confere que o
 
 - **Tickets:** cada ticket recebe o comentário `Frente as-1 (carrinho) fechada.`, com o resumo e o marcador `fechamento` (`estado=livre`). Com reserva, o comando remove o rótulo e os responsáveis atribuídos pela frente (os da reserva local e os indicados pelos marcadores do ticket, exceto os logins mantidos por outra frente ativa no ticket; o rótulo permanece se outra frente ainda o mantém). O ticket não é fechado. A operação ocorre uma única vez, mesmo que o `close` seja repetido.
 - **Fila:** as operações que falham por falta de rede (comentário ou edição) entram na fila de pendentes, em ordem, e são enviadas no próximo comando com rede (todo comando que altera ticket reenvia a fila antes); o `close` avisa `o comentário ficou na fila; sai no próximo comando com rede`. Erro permanente (ticket inexistente) retira a operação da fila e a registra em `pendentes-descartados.jsonl`. `ah doctor` e `ah sweep` mostram a fila; `ah sweep --reparar` a reenvia.
-- `--descartar-ignorados`: aceita a perda dos arquivos ignorados pelo git presentes no worktree (`node_modules/`, caches…); sem a opção, o `close` recusa e lista esses itens. O worktree é sempre removido com `git worktree remove` sem `--force` (comando que já apaga os ignorados): se surgir alteração ou arquivo novo entre a conferência e a remoção, o `close` recusa e não apaga nada.
+- `--descartar-ignorados`: aceita a perda dos arquivos ignorados pelo git presentes no worktree (`node_modules/`, caches…); sem a opção, o `close` recusa e lista esses itens. Os itens de que uma extensão ligada cuida (campo `ignorados`, em `docs/extensoes/interface.md`) têm tratamento próprio: o descartável (refeito a partir do estado, como o arquivo de ambiente da frente) não conta como perda e sai com o worktree; o guardado (como o diário do subagent-driven-development, da extensão `registros`) recusa numa linha só dele, com o comando da extensão que o leva a um lugar durável: `itens ignorados que a extensão registros guarda (4); saída: tools/ah registros guardar --frente carrinho e repita ah close (o --descartar-ignorados apagaria junto)`. Os outros seguem a linha de sempre. Se a extensão falha ao declarar, o `close` avisa (`Aviso: a extensão <nome> falhou em ignorados: …`) e os itens dela seguem a linha de sempre. O worktree é sempre removido com `git worktree remove` sem `--force` (comando que já apaga os ignorados): se surgir alteração ou arquivo novo entre a conferência e a remoção, o `close` recusa e não apaga nada.
 - `<nome>` fecha uma frente pelo nome. Se a dona não está viva (encerrada, morta ou sem registro) ou a frente está passada, esta sessão a fecha com as mesmas conferências, e a saída informa `A frente era da sessão <id>, já encerrada; esta sessão a fechou.` (ou `que não está viva (<motivo>)`, ou `A frente estava passada pela sessão sessao-t, sem dona; esta sessão a fechou.`).
 - **Frente passada com tickets:** outra máquina pode tê-la retomado. O `close` primeiro assume a frente nos tickets, pelo mesmo procedimento de disputa da retomada, e só então a fecha. Se ela está ativa em outra máquina (ou já foi fechada lá), o comando fecha apenas o registro e o worktree locais, sem comentar nem alterar os tickets e sem alterar o histórico. Sem rede, recusa.
 - **Fases:** a rede fica fora da trava do estado. Na primeira fase, sob a trava, ocorrem as recusas, as conferências de perda de trabalho e o `antesDeFechar`, e o registro da frente recebe a marca `fechando` com o processo do `close`. Na segunda, fora da trava, ocorrem a consulta ao GitHub (frente passada com tickets) e o comentário de fechamento. Na terceira, de novo sob a trava, o `close` reconfere, remove worktree e ramo, grava o histórico e retira o registro; o `push` que apaga o ramo remoto roda depois, fora da trava. Enquanto o processo do `close` vive, outro `close`, o `handoff`, o `takeover` e a retomada pelo `open` recusam a frente, e o quadro a mostra como `fechando`; com o processo morto, a marca deixa de valer e o `close` seguinte termina o fechamento. Na terceira fase (e para retirar a marca depois de uma recusa) o `close` espera a trava por até 30 s, como o `atualizar` (`AH_CLOSE_ESPERA_DA_TRAVA_MS` troca o valor, para ensaio). Limite no Windows: ali o harness não lê a hora de início de um processo, e a marca `fechando` se confere só pelo pid. O `close` tira a própria marca em toda recusa ou erro; só um `close` morto à força a deixa, e se o pid dele for reaproveitado por outro processo, a frente continua `fechando` enquanto esse processo viver. Saída: confirme que nenhum `ah close` está rodando e apague o campo `fechando` de `<estado>/frentes/<nome>.json`; o `close` seguinte termina sem comentar de novo.
@@ -780,7 +709,7 @@ A linha `Falta: git push …` aparece apenas quando o projeto tem remoto. O `clo
 | `Não fechei carrinho: um ah close anterior parou no meio do comentário de fechamento, e preciso do GitHub para saber em que tickets ele saiu (…).` | tente de novo com rede; nada foi apagado |
 | `O checkout principal não está no ramo base dev.` | rode `git switch dev` no checkout principal |
 | `O checkout principal tem alterações em docs/agents/historico-das-frentes.md.` | faça commit ou descarte essas alterações |
-| `Fechar a frente … perderia trabalho.` | lista o que se perderia (commits fora do ramo base e do remoto, arquivos soltos, itens ignorados) e o que fazer com cada um |
+| `Fechar a frente … perderia trabalho.` | lista o que se perderia (commits fora do ramo base e do remoto, arquivos soltos, itens ignorados) e o que fazer com cada um; os itens guardados por uma extensão vêm numa linha própria, com o comando dela |
 | `Não fechei carrinho: há operações desta máquina na fila para #1 que precisam sair antes.` | tente de novo com rede; nada foi apagado |
 | `Não fechei carrinho: preciso do GitHub para confirmar que ninguém retomou carrinho (…).` | tente de novo com rede; nada foi apagado |
 | `Não consegui conferir …` | resolva o que o git descreve; nada foi apagado |
@@ -844,6 +773,7 @@ exclusivo (todas as vagas; não casou com nenhum padrão: vale a classe mais res
 | `O estado da fila não se lê` | confira que nenhum `ah pesado` está rodando (`ah board`) e apague o `fila.json` |
 | `Configuração da fila inválida` / `não é JSON válido` / `versão N, mais nova` | corrija o arquivo (ou apague-o para voltar aos padrões); atualize o harness |
 | `Não consegui rodar o comando` | confira o nome do programa e o PATH |
+| `A senha <n> sumiu da fila de pesados (…); não rodei o comando.` | rode o comando de novo. A senha some quando o `fila.json` é apagado ou trocado com o comando esperando, ou quando outro processo julga a entrada morta (pid de outro namespace, numa fila compartilhada com um contêiner); antes, o `ah pesado` esperava para sempre |
 
 ## gancho
 
@@ -1004,3 +934,593 @@ As travas tratam enganos do agente; a má-fé está fora do escopo. Elas leem o 
 ## Publicar
 
 O trabalho entra no ramo base (`dev`) por merge local e `git push origin dev`. A publicação em teste e em produção é feita por um PR para `stage` e outro para `main`. O merge desses PRs é ato do executivo, e o agente não o executa por iniciativa própria. Quando a ordem é dada, o executivo (ou o agente, por ordem dele) mescla com `AH_GUARD=off gh pr merge <número>`. A T5 recusa o `gh pr merge` com base protegida, e o prefixo `AH_GUARD=off` registra explicitamente que a ordem foi dada.
+
+## Extensões
+
+Uma extensão acrescenta comandos, travas, verificações do `doctor`, reações ao ciclo de vida, linhas no resumo e colunas no quadro sem alterar o núcleo. A interface está em `docs/extensoes/interface.md`, e o passo a passo de criação, em `docs/extensoes/como-estender.md`. As do projeto ficam em `.harness/extensoes/<nome>/extensao.mjs`; as que acompanham o harness, em `.harness/nucleo/extensoes/<nome>/`:
+
+| Extensão | Para que serve | Referência |
+|---|---|---|
+| `recursos` | Registro de recursos por frente (porta, banco), para duas frentes não usarem o mesmo | "recursos" |
+| `metodo` | Instala e atualiza as skills do método com versão fixada, escreve o `AGENTS.md` de princípios e confere tudo no `doctor` | "metodo" |
+| `registros` | Leva o diário da execução por subagentes para o ticket da frente e o devolve na retomada | "registros" |
+| `modelo` | Traduz os níveis `alto`, `medio` e `leve` do plano em modelo e esforço de cada agente | "modelo" |
+| `wiki` | Confere a wiki do projeto (a invariante de evidência) e conversa com o resto do ciclo | "wiki" |
+| `ambiente` | Banco e portas por worktree, criados na abertura e apagados no fechamento | "ambiente" |
+| `migracao` | Reserva do número de migração entre frentes | "migracao" |
+| `prova` | Prova por árvore: grava a árvore testada para não repetir o teste ponta a ponta | "prova" |
+| `orquestracao` | Candidatos para a orquestração: o que está livre para começar | "orquestracao" |
+
+A preparação do projeto (README, "Instalar num projeto", passo 5) liga `metodo`, `registros` e `modelo`; as outras se ligam em `extensoes`, no `.harness/config.json`, quando o projeto precisar delas.
+
+**Configuração.** Uma extensão só carrega quando a chave dela existe em `extensoes`, no `.harness/config.json` (padrão: `{}`, nenhuma ligada):
+
+```json
+"extensoes": { "recursos": { "tipos": ["porta", "banco"] }, "revisao": true, "antiga": false }
+```
+
+| Valor | Efeito |
+|---|---|
+| `true` | ligada, com configuração vazia (`{}`) |
+| objeto | ligada, com o objeto como configuração, conferido pela própria extensão (`validarConfig`) |
+| `false` | desligada, como a ausência da chave |
+
+O nome casa com `^[a-z][a-z0-9-]*$`; outro valor ou outro nome invalida a configuração (`Configuração inválida: extensoes (…)`). Com o mesmo nome no projeto e no harness, vale a do projeto, e o `doctor` avisa da sombra.
+
+**Carga.** A extensão que não carrega (arquivo ausente, erro de sintaxe, forma inválida, versão da interface diferente de 1, configuração recusada, comando com nome já usado) fica de fora sem derrubar os comandos do núcleo: o `doctor` mostra a falha no item `Extensão <nome>`; `open`, `close`, `handoff`, `sweep`, `board` e o despacho de comando avisam uma vez por processo, na saída de erro (`Aviso: a extensão idade não carregou (versão 2 da interface; o núcleo espera a 1); rode ah doctor.`); o gancho segue só com as travas do núcleo.
+
+**Comandos de extensão.** Viram `ah <nome>`, com a mesma ajuda (`ah <nome> --help`) e os mesmos requisitos dos comandos do núcleo. A recusa da extensão segue o formato comum (`Recusado: …` / `Faça: …`, código 1, evento `recusa-de-comando`). Um erro que não é recusa sai como `Recusado: a extensão <nome> falhou no comando <comando>: <erro>`, com `Faça: corrija a extensão ou desligue-a em .harness/config.json`.
+
+**Travas de extensão.** São avaliadas depois das travas T0 a T6 e recusam como elas, com código 2: `Recusado (<extensão>/<id>): <motivo>` / `Faça: …`. `AH_GUARD=off` libera a trava de extensão num comando de shell quando todo comando simples da linha, fora o `cd`, traz o prefixo; na edição de arquivo, não há liberação.
+
+**Fechamento.** A reação `antesDeFechar` de uma extensão pode recusar o `close` (ver "close"); as demais reações não recusam, e um erro nelas vira `Aviso: extensão <nome> falhou em <reação>: …`.
+
+## recursos
+
+```
+ah recursos reservar <tipo> <valor> [--frente <nome>]
+ah recursos liberar <tipo> <valor>|--todos [--frente <nome>]
+ah recursos listar [--json]
+```
+
+Comando da extensão `recursos`, que acompanha o harness e só existe com `"recursos"` ligada em `extensoes`. Registra recursos por frente (tipo e valor, como `porta 3001` ou `banco loja_frete`) em `frente.extensoes.recursos.itens`, para que duas frentes não usem o mesmo recurso. A configuração opcional `{"tipos": [...]}` limita os tipos aceitos; sem ela, vale qualquer tipo com minúsculas, números e hífen, começando por letra. O valor tem de 1 a 100 caracteres, sem espaço.
+
+- **`reservar`.** Grava o recurso na frente da sessão (ou na dada em `--frente`, por nome ou id). A conferência e a gravação ocorrem sob a trava das frentes; um valor já reservado por outra frente do estado (ativa, passada ou abrindo) é recusado com o nome dela. Reservar de novo o mesmo recurso na mesma frente não muda nada.
+- **`liberar`.** Retira um recurso, ou todos com `--todos`. `--frente` permite liberar os recursos de uma frente de outra sessão, por exemplo antes de fechar uma frente órfã ou passada.
+- **`--frente` em frente alheia.** Vale para frente passada, órfã (dona morta) ou sem dona. Frente ativa de outra sessão viva é recusada em `reservar` e `liberar`: só a sessão dona mexe nos recursos dela. A conferência ocorre sob a trava das frentes.
+- **`listar`.** Mostra os recursos de cada frente que tem algum, com o estado da frente quando não é `ativa`. `--json` imprime `{"recursos":[{"id","frente","estado","tipo","valor","em"}]}`, com `em` em UTC.
+- **Sessão.** `reservar` e `liberar` exigem sessão; `listar` não.
+- **Ciclo.** O `close` recusa a frente que ainda tem recursos e indica o `liberar --todos`. O `handoff` não libera: a frente passada continua dona dos recursos.
+- **Quadro e doctor.** A coluna `RECURSOS` do `board` lista os recursos de cada frente; o item `Recursos sem conflito (recursos)` do `doctor` acusa o mesmo recurso em duas frentes.
+
+| Recusa | Faça |
+|---|---|
+| `Falta o subcomando.` / `Subcomando desconhecido: …` | use `ah recursos reservar <tipo> <valor> [--frente <nome>] \| liberar <tipo> <valor>\|--todos [--frente <nome>] \| listar [--json]` |
+| `não sei qual é a sessão` (em `reservar` e `liberar`) | defina AH_SESSAO ou ligue o adaptador do agente |
+| `Esta sessão não tem frente.` | abra uma com ah open <nome>, ou diga qual com --frente <nome> |
+| `Não achei a frente <nome>.` | rode ah board para ver as frentes abertas |
+| `A frente <id> <nome> é da sessão <s>, que está viva.` | peça à sessão dona (<s>) que reserve ou libere ela mesma; com a sessão morta (frente órfã) ou a frente passada, o --frente vale |
+| `Faltam ou sobram argumentos.` / `Opção desconhecida: …` / `Argumento a mais: …` / `A opção --frente precisa do nome da frente.` | use o uso acima |
+| `Tipo inválido: …` | use minúsculas, números e hífen, começando por letra (ex.: porta) |
+| `Valor inválido: precisa ter de 1 a 100 caracteres, sem espaço.` | escreva o valor sem espaço (ex.: 3001) |
+| `Tipo fila fora de extensoes.recursos.tipos (porta, banco).` | use um desses tipos ou acrescente fila em .harness/config.json |
+| `porta 3001 já está reservado pela frente as-1 carrinho.` | escolha outro valor (ah recursos listar mostra os reservados) ou combine com a dona da frente carrinho |
+| `porta 9999 não está reservado pela frente as-1 carrinho.` | ah recursos listar mostra o que cada frente tem |
+| `Com --todos não vão tipo nem valor.` | use o uso acima |
+
+```
+$ AH_SESSAO=ana-terminal tools/ah recursos reservar porta 3001
+Reservado: porta 3001 para a frente as-1 carrinho.
+$ AH_SESSAO=carla-terminal tools/ah recursos reservar porta 3001
+Recusado: porta 3001 já está reservado pela frente as-1 carrinho.
+Faça: escolha outro valor (ah recursos listar mostra os reservados) ou combine com a dona da frente carrinho
+$ AH_SESSAO=carla-terminal tools/ah recursos reservar banco loja_cupom
+Reservado: banco loja_cupom para a frente as-2 cupom.
+$ tools/ah recursos listar
+as-1 carrinho: porta 3001
+as-2 cupom: banco loja_cupom
+$ AH_SESSAO=ana-terminal tools/ah close
+Recusado: a extensão recursos não deixa fechar a frente as-1 carrinho: a frente ainda tem recursos reservados: porta 3001
+Faça: libere com ah recursos liberar --todos --frente carrinho e rode ah close de novo
+$ AH_SESSAO=ana-terminal tools/ah recursos liberar --todos
+Liberados 1 recurso(s) da frente as-1 carrinho.
+$ AH_SESSAO=ana-terminal tools/ah close
+Frente as-1 carrinho fechada.
+```
+
+## metodo
+
+```
+ah metodo instalar [--forcar]
+ah metodo atualizar [--colecao <nome>] [--para <tag|commit>] [--simular] [--forcar]
+```
+
+Comando da extensão `metodo`, que acompanha o harness e só existe com ela ligada em `extensoes`, com a lista dos agentes que o projeto usa: `"metodo": {"agentes": ["claude-code", "codex"]}` (valem `claude-code`, `codex` e `opencode`). Sem `agentes`, ou com agente desconhecido, a extensão não carrega: `ah metodo` sai como `comando desconhecido`, com o aviso `a extensão metodo não carregou (configuração recusada: …)`, e o `doctor` mostra a falha no item `Extensão metodo`. Não exige sessão.
+
+O `instalar` copia para o projeto as skills das coleções fixadas em `.harness/nucleo/extensoes/metodo/colecoes.json` (origem git, commit e lista de skills de cada uma) e as skills do próprio harness, de `.harness/nucleo/extensoes/metodo/skills/` (`preparar-projeto`, sempre; `orquestrar` com a extensão `orquestracao`, `wiki-ingerir`, `wiki-consultar`, `wiki-conferir` e `reuniao-ingerir` com a `wiki`: uma skill ligada a uma extensão só entra com ela ligada). Passos:
+
+1. **Busca.** Cada coleção é buscada no commit fixado numa pasta de cache da máquina (`AH_CACHE`), nunca no projeto; um clone raso por coleção, reaproveitado enquanto o commit não muda. O git roda sem pedir senha no terminal. Uma origem inacessível recusa antes de qualquer escrita.
+2. **Cópia.** Cada skill da lista vai para a pasta de cada agente (`claude-code` → `.claude/skills/`; `codex` e `opencode` → `.agents/skills/`), com a licença da coleção (`LICENSE`) e com o bit de execução dos scripts. A pasta da skill é recriada inteira quando difere da origem no conteúdo ou no bit de execução (um script que perdeu o bit é recopiado); skill que saiu da lista (ou de extensão desligada, ou de agente retirado) é apagada quando está igual à trava, e mantida, com aviso, quando tem mudança à mão.
+3. **Trava.** `.harness/skills.lock.json` registra por coleção a origem, o commit, a versão, as skills e o sha256 de cada arquivo copiado, e as pastas de destino. As skills do harness entram com a origem `agent-harness`, `commit: null` e a versão do harness. O campo `documentos` guarda o sha256 do `docs/agents/metodo.md` instalado (passo 6); a trava de antes desse campo continua válida e o ganha na próxima instalação.
+4. **Mudança à mão.** Um arquivo de skill que difere da trava e da versão nova (inclusive arquivo acrescentado na pasta da skill), um link simbólico dentro da pasta da skill ou a pasta da skill que é ela mesma um link não é sobrescrito: o comando recusa e lista os arquivos (`(link simbólico)` nos links); `--forcar` descarta as mudanças (o link é removido; o destino dele fica intacto). Com o disco igual à trava, um commit novo na origem é instalado sem recusa. A trava só aceita como destino `.claude/skills` e `.agents/skills`; outro valor a torna ilegível.
+5. **AGENTS.md.** O trecho do método entre as marcas `<!-- agent-harness/metodo: início … -->` e `<!-- agent-harness/metodo: fim -->`, com as mesmas regras do trecho do núcleo: só o texto entre as marcas é reescrito. Ele diz onde estão as skills e a trava, que `superpowers:<nome>` e `mattpocock-skills:<nome>` valem como a skill `<nome>` do projeto, e o que usar no lugar das skills citadas que não foram instaladas. `AGENTS.md` que é link simbólico para um arquivo dentro do projeto não é alterado (aviso `AGENTS.md é um link simbólico; não mexi nele`, com `Faça: copie para o arquivo de destino do link o trecho de .harness/nucleo/extensoes/metodo/modelos/agents-metodo.md`); link que aponta para fora do projeto recusa (`o destino sai do projeto: AGENTS.md`).
+6. **Documento do método.** O `docs/agents/metodo.md` (trilhas, quem cuida de cada etapa, nível de modelo, registros, extensões opcionais) vem de `.harness/nucleo/extensoes/metodo/modelos/metodo.md` e é tratado em toda execução, com ou sem `--colecao`. Ausente, é escrito; igual ao texto novo, fica; igual ao que a trava registrou (instalado antes e não mexido), é reescrito com o texto novo; diferente dos dois (mudado à mão, ou do projeto antes do método), entra na lista de mudanças à mão do passo 4 e o comando recusa antes de qualquer escrita, salvo com `--forcar`. O hash ignora a diferença entre CRLF e LF, para um checkout com `core.autocrlf` não parecer mudança à mão. Link simbólico (ou pasta) no lugar do arquivo não é seguido nem trocado: aviso `docs/agents/metodo.md é um link simbólico; não mexi nele.` com `Faça: apague o link e rode tools/ah metodo instalar de novo`, e a instalação segue sem ele. O relatório diz `Escrevi docs/agents/metodo.md.`
+7. **Arquivos do projeto.** `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md` e `docs/agents/domain.md` (a preparação que as skills do Matt Pocock esperam) são copiados só quando faltam; depois, são do projeto.
+8. **Rótulos.** No repositório de `github.repo` ou, com o campo nulo (o `init` não o preenche), no que o `gh` acha pelo remoto do projeto (`gh repo view`, como o núcleo faz), lista os rótulos (`gh label list`) e cria os de triagem que faltam, cada um com cor fixa e descrição; os que já existem não são recriados nem repintados. Os nomes vêm da coluna `Label in our tracker` da tabela de `docs/agents/triage-labels.md`; se a tabela não traz os cinco papéis, valem os nomes padrão `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human` e `wontfix`. A lista é consultada a cada execução. Falha do `gh` vira aviso (`não criei os rótulos de triagem no GitHub`, com `Faça:`) e o comando termina com código 0. Sem `github.repo` e sem repositório que o `gh` ache (projeto sem remoto, `gh` ausente ou sem login), o aviso é `não criei os rótulos de triagem no GitHub (não achei o repositório do projeto no GitHub)`, com `Faça: ligue o projeto ao repositório (git remote add origin <endereço>; gh repo view deve mostrá-lo) ou escreva dono/nome em github.repo em .harness/config.json, e rode tools/ah metodo instalar de novo; ou crie à mão os rótulos …`. O `ah candidatos` (extensão `orquestracao`) procura esses rótulos.
+9. **Commit.** Termina com os comandos do commit no ramo base, como o `init`. O `git add` leva também o `.harness/config.json`, onde as extensões do método foram ligadas: sem ele na `dev`, as frentes nasceriam sem o método. Sem nada a mudar, diz `Nada a mudar: as skills já estão como a trava.`
+
+| Recusa | Faça |
+|---|---|
+| `não consegui buscar a coleção <nome> (<origem>): <erro do git>` | confira a conexão com a internet e o endereço da origem e rode tools/ah metodo instalar de novo; nada foi gravado |
+| `a instalação sobrescreveria arquivos do método mudados à mão (.claude/skills: alfa/SKILL.md; docs/agents/metodo.md)` | guarde as suas mudanças em outro lugar (numa skill de outro nome; o que for do docs/agents/metodo.md, no AGENTS.md, fora das marcas) e rode tools/ah metodo instalar de novo; para descartá-las, rode tools/ah metodo instalar --forcar |
+| `a coleção <nome> não tem a pasta da skill <skill> (<pasta>)` | na coleção `agent-harness`: a cópia do harness está incompleta, rode tools/ah atualizar a partir do clone; nas outras: confira o commit em colecoes.json |
+| `a trava .harness/skills.lock.json está ilegível: …` | recupere-a do git (git checkout -- .harness/skills.lock.json), ou apague-a, e rode tools/ah metodo instalar de novo |
+| `o destino sai do projeto: <caminho>` | remova o link simbólico no caminho e rode tools/ah metodo instalar de novo |
+| `Opção desconhecida: …` / `Argumento a mais: …` / `Falta o subcomando.` / `Subcomando desconhecido: …` | use ah metodo instalar [--forcar] \| atualizar [--colecao <nome>] [--para <tag\|commit>] [--simular] [--forcar] |
+
+```
+$ tools/ah metodo instalar
+Instalei 1 skill(s) de agent-harness (0.3.0) em .claude/skills, .agents/skills.
+Instalei 7 skill(s) de mattpocock-skills (1.3.2, d1478fc) em .claude/skills, .agents/skills.
+Instalei 8 skill(s) de superpowers (7.0.2, 22f0b46) em .claude/skills, .agents/skills.
+Criei docs/agents/issue-tracker.md.
+Criei docs/agents/triage-labels.md.
+Criei docs/agents/domain.md.
+Escrevi docs/agents/metodo.md.
+Escrevi o trecho do método no AGENTS.md.
+Gravei a trava .harness/skills.lock.json.
+Falta levar o método para o ramo base dev (as frentes partem dele):
+  git add -- .harness/skills.lock.json .harness/config.json .claude/skills .agents/skills AGENTS.md docs/agents/metodo.md docs/agents/issue-tracker.md docs/agents/triage-labels.md docs/agents/domain.md
+  git commit -m "chore: instala o método do agent-harness"
+Depois rode: tools/ah doctor
+$ git add -- .harness/skills.lock.json .harness/config.json .claude/skills .agents/skills AGENTS.md docs/agents/issue-tracker.md docs/agents/triage-labels.md docs/agents/domain.md
+$ git commit -m "chore: instala o método do agent-harness"
+$ tools/ah metodo instalar
+Nada a mudar: as skills já estão como a trava.
+Agora rode: tools/ah doctor
+```
+
+### metodo atualizar
+
+Leva as skills já instaladas para a versão nova das coleções, com as mesmas regras do `instalar` (busca antes de gravar, mudança à mão, trava, rótulos, commit). As skills do harness vêm de `.harness/nucleo/extensoes/metodo/skills/`: depois de um `ah atualizar`, que troca a cópia do núcleo, rode `tools/ah metodo atualizar` para trazê-las (o `ah atualizar` lembra disso, e o item `Skills do harness em dia` do `doctor` avisa enquanto não for feito).
+
+| Opção | Efeito |
+|---|---|
+| (nenhuma) | cada coleção vai para o commit de `colecoes.json`, o recomendado por esta versão do harness |
+| `--colecao <nome>` | só essa coleção; as outras ficam como na trava |
+| `--para <tag\|commit>` | leva a coleção a esse ref, mesmo à frente do recomendado; exige `--colecao`. A trava grava o commit resolvido e `versao: <ref dado>` |
+| `--simular` | mostra o que mudaria e não grava nada (nem trava nem skills) |
+| `--forcar` | descarta as mudanças à mão nas skills, como no `instalar` |
+
+Com `--para`, a coleção fica à frente (ou atrás) do recomendado: um `atualizar` simples depois a devolve ao commit de `colecoes.json`, e o item `Coleções na versão recomendada` do `doctor` avisa enquanto ela estiver fora dele. Um ref que a origem não tem (tag errada) recusa com `não achei a referência <ref> em <origem>` e `Faça: confira a tag ou o commit (git ls-remote --tags <origem>) e rode tools/ah metodo atualizar --colecao <nome> --para <ref> de novo`, antes de qualquer escrita; falha de rede mantém a recusa de busca. Repetir `--colecao` ou `--para` recusa (`informe --para uma vez só`). Sem trava anterior, o `atualizar` age como a primeira instalação. Um script que só mudou o bit de execução aparece em `Alterados:` com `(modo)`.
+
+Relatório, por coleção com mudança: `Atualizei N skill(s) de <coleção> (<versão>, <commit>) em <pastas>.`, seguido de `Alterados:`, `Novos arquivos:` e `Arquivos removidos:` (cada um com `<coleção>: <skill>/<arquivo>, …`), `Novas skills: …` e, no fim, `Skills removidas: …` (a skill que saiu da lista é apagada se está igual à trava; com mudança à mão, fica e há aviso). Com `--simular`, termina com `Simulação: nada foi gravado.`; sem mudança, diz `Nada a mudar: as skills já estão como a trava.`
+
+```
+$ tools/ah metodo atualizar --colecao superpowers --para v7.0.3 --simular
+Atualizei 2 skill(s) de superpowers (v7.0.3, 3fa9c21) em .claude/skills, .agents/skills.
+Alterados:
+  superpowers: brainstorming/SKILL.md
+Novas skills: revisao
+Simulação: nada foi gravado.
+```
+
+| Recusa | Faça |
+|---|---|
+| `--para precisa de --colecao (…)` | rode tools/ah metodo atualizar --colecao <nome> --para <tag\|commit>; sem --para, cada coleção vai para o commit recomendado |
+| `Falta o valor de --colecao` / `--para` / `informe --colecao uma vez só` | dê o valor logo depois da opção, e uma vez só |
+| `Opção desconhecida: …` / `Argumento a mais: …` | use ah metodo atualizar [--colecao <nome>] [--para <tag\|commit>] [--simular] [--forcar] |
+| `não conheço a coleção <nome>` | use uma das coleções de colecoes.json |
+| `os agentes do método mudaram desde a última instalação` | rode tools/ah metodo instalar, que leva todas as coleções às pastas novas |
+| as recusas do `instalar` (busca, mudança à mão, trava ilegível, destino fora do projeto) | as mesmas, com `tools/ah metodo atualizar` no lugar de `instalar` |
+
+### Conferências do `doctor`
+
+Com a extensão ligada, o `ah doctor` acrescenta estes itens, depois dos do núcleo (`<item> (metodo)`). Todos são aviso, salvo a trava ilegível, que falha.
+
+| Item | Aviso ou falha | Faça |
+|---|---|---|
+| `Trava das skills (metodo)` | falha quando `.harness/skills.lock.json` existe e está ilegível; aviso quando falta | `git checkout -- .harness/skills.lock.json` ou apague-a, e `tools/ah metodo instalar`; no aviso, `tools/ah metodo instalar` |
+| `Skills iguais à trava (metodo)` | aviso com os arquivos alterados e ausentes por pasta de destino; também quando uma skill do harness presa a uma extensão está instalada com a extensão desligada, ou falta com a extensão ligada (`colecoes.json`, `agent-harness.extensoes`) | com arquivo alterado: se as mudanças foram de propósito, guarde-as numa skill de outro nome; senão, rode `tools/ah metodo instalar` (`--forcar` descarta as mudanças). Só com ausentes ou com skill de extensão: `tools/ah metodo instalar` |
+| `Skills do harness em dia (metodo)` | aviso quando os arquivos de uma skill do harness na trava diferem dos de `.harness/nucleo/extensoes/metodo/skills/` (comparação por sha256), como depois de um `ah atualizar`: `a cópia do núcleo traz outra versão de <skill>`; também quando uma skill instalada saiu do harness (`a skill <skill> não faz mais parte do harness`). Skill de extensão desligada, que não está instalada, não conta | `tools/ah metodo atualizar`; se a skill velha também tem arquivo mudado à mão, antes: `se você mudou essa skill à mão, o atualizar recusa; guarde a mudança numa skill de outro nome antes (ou use --forcar para descartá-la)` |
+| `Coleções na versão recomendada (metodo)` | aviso por coleção cujo commit na trava difere do de `colecoes.json`; as skills do harness (`commit: null`) ficam de fora; também aviso quando a coleção da trava não está mais no `colecoes.json`, ou quando o `colecoes.json` (ou `AH_METODO_COLECOES`) não se lê | `tools/ah metodo atualizar` (`--simular` mostra antes o que muda) |
+| `Coleções sem plugin duplicado (metodo)` | aviso quando `claude-code` está em `agentes` e `<CLAUDE_CONFIG_DIR ou ~/.claude>/plugins/installed_plugins.json` tem uma chave `superpowers@*` ou `mattpocock-skills@*` (ex.: `superpowers no Claude Code`); `installed_plugins.json` ilegível segue `ok`, com `não consegui ler <caminho>; a conferência de plugin duplicado foi pulada` | desinstale o plugin do agente ou tire a coleção do método |
+| `Skills sem nome repetido (metodo)` | aviso só com `opencode` em `agentes`: o mesmo nome de skill em mais de uma entre `.claude/skills/`, `.agents/skills/` e `.opencode/skills/` com conteúdo diferente; cópias idênticas (o que o `instalar` faz) não avisam | deixe cópias iguais: renomeie a skill própria ou `tools/ah metodo instalar --forcar` |
+| `Documento do método igual à trava (metodo)` | `ok` quando o `docs/agents/metodo.md` é igual ao texto desta versão do harness, mesmo com a trava registrando outro texto (nada se perde). Aviso quando não é um arquivo comum (link simbólico ou pasta; conferido antes da trava); quando falta (`não existe`, ou `ainda não foi instalado` se a trava não o registra); quando é igual à trava, mas diferente do texto novo (`o harness trouxe um texto novo do método, e docs/agents/metodo.md ainda é o anterior`, depois de um `tools/ah atualizar`); e quando difere dos dois (mudado à mão, ou do projeto antes do método: a próxima instalação recusaria sobrescrevê-lo). A comparação ignora CRLF | `tools/ah metodo instalar`; no arquivo que não é comum, apague-o antes; no mudado à mão, leve as notas para o `AGENTS.md`, fora das marcas, e `tools/ah metodo instalar --forcar` |
+| `Skills citadas no método instaladas (metodo)` | aviso com as skills que o `docs/agents/metodo.md` e o trecho do método no `AGENTS.md` citam e que não estão na trava (`<n> citada(s) e fora da trava: …`). Conta como citação o código inline de uma palavra só, em minúsculas (como `writing-plans`). Não avisam as skills da tabela "No lugar" do trecho nem as de extensão desligada | `tools/ah metodo instalar`; se o aviso continuar, o texto cita uma skill que o método não instala |
+
+Uma pasta de skill com arquivo ilegível vira aviso nos itens `Skills iguais à trava` e `Skills sem nome repetido`, com a pasta e o código do erro. Sem trava legível, os itens `Documento do método igual à trava` e `Skills citadas no método instaladas` ficam `ok`: o item `Trava das skills` já avisa.
+
+Limite: a conferência de plugin duplicado lê só o Claude Code; para o Codex e o OpenCode a sondagem não achou onde ficam os plugins instalados, e o `doctor` não chuta.
+
+## registros
+
+```
+ah registros guardar [--frente <nome>]
+ah registros devolver [--frente <nome>]
+```
+
+Comando da extensão `registros`, que acompanha o harness e só existe com `"registros"` ligada em `extensoes` (a preparação do método a liga). Leva para o ticket da frente o diário da execução por subagentes: o `progress.md` que o subagent-driven-development grava, por plano, em `.superpowers/sdd/<pasta do plano>/`, dentro do worktree e ignorado pelo git. Sem isso, o diário some com o worktree, e a própria skill o apaga quando a revisão final fica limpa.
+
+- **`guardar`.** Para cada plano achado no worktree da frente da sessão (ou da dada em `--frente`, por nome ou id): comenta o diário em cada ticket da frente, com o marcador `<!-- ah:registro id=<id> nome=<nome> pasta=<pasta> plano=<plano> commit=<commit> cortado=<0|1> em=<ISO> fase=guardado v=2 -->`; guarda uma cópia em `<estado>/registros/<id da frente>/<pasta>/` (`progress.md`, `meta.json`, com o estado de cada ticket, `comentado` ou `pendente`, e `arquivos/`, com o que o subagent-driven-development 7.0.2 grava na pasta do plano: `progress.md`, `plan-path`, `task-<N>-brief.md`, `task-<N>-report.md` e `review-<a>..<b>.diff`); e tira do worktree só o que copiou e, se nada mais sobrou, o `.gitignore` que o `sdd-workspace` cria, sem apagar o que o git versiona (o projeto pode versionar os diários, como o `sdd-workspace` prevê). O resto da pasta do plano (um arquivo do aluno, um log) fica no worktree, com aviso, e o `close` recusa por ele na linha de sempre dos ignorados. Link simbólico não é seguido e arquivo acima de 5 MB não é copiado: os dois ficam, com aviso (`não copiei … (link simbólico)`). Pasta de plano sem diário ainda (só `plan-path` e instruções) não é copiada e fica. A cópia local nasce só para o dono: 0700 nas pastas e 0600 nos arquivos, porque o diário e os relatórios podem citar dados do projeto. Todo caminho montado com o id da frente ou a pasta do plano é conferido: fora de `<estado>/registros/`, o comando não grava nem apaga nada. O que não é do subagent-driven-development (um arquivo do aluno em `.superpowers/sdd/`) fica, com um aviso, e o `close` continua recusando por ele na linha de sempre dos ignorados: a extensão declara ao `close` só as pastas de plano e o `.gitignore` do `sdd-workspace`. O mesmo diário, na mesma fase, já comentado no mesmo ticket não é comentado de novo. Plano com tarefa parada (citada no diário sem a linha `complete`) é guardado do mesmo jeito, com o aviso `o plano … tem tarefa parada (…); o diário saiu do worktree e está guardado. Para continuar o plano: tools/ah registros devolver --frente carrinho`.
+- **Quando rodar.** No fim do subagent-driven-development, antes de a skill apagar a pasta do plano, e antes do `ah close`. Quem esquece encontra a recusa do `close` com a linha `itens ignorados que a extensão registros guarda (…); saída: tools/ah registros guardar --frente carrinho e repita ah close`.
+- **Segredos.** Antes de comentar, o diário passa por um filtro que troca por `[removido]` os segredos com formato evidente: chave privada PEM, tokens do GitHub (`ghp_`, `gho_`, `github_pat_`…), chaves `sk-…`, chaves de acesso da AWS (`AKIA…`), `NOME=valor` (ou `NOME: valor`) com nome de variável de segredo em maiúsculas, com prefixo ou sem (`TOKEN`, `GITHUB_TOKEN`, `SECRET`, `*_KEY`, `PASSWORD`, `PASSWD`, `APIKEY`), os nomes de configuração em minúsculas (`password`, `passwd`, `api_key`, `apikey`), o token de `Bearer <token>` e a senha de `usuário:senha@` numa URL. O `guardar`, o handoff e o `close` avisam quantos trechos tiraram (`Aviso: tirei 1 trecho com cara de segredo do diário do plano carrinho antes de comentar ([removido]); …`). O filtro é uma rede, não garantia: um segredo em outro formato passa, e caminhos absolutos da máquina não são tirados. Não guarde segredo no diário. A cópia local guarda o texto como estava.
+- **Diário grande ou estranho.** O diário reconhecido (primeira linha `# SDD ledger — plan: …`) vai inteiro até 60 000 caracteres; acima disso, ou em outro formato (até 4 000 caracteres, como texto), vai cortado, com `cortado=1` e uma linha que diz o motivo. A cópia local guarda o diário inteiro e não é apagada no fechamento enquanto o ticket tiver só a parte cortada.
+- **Sem ticket.** Só a cópia, com o aviso `a frente as-1 não tem ticket: o diário ficou só nesta máquina (…)`.
+- **Sem rede.** A cópia vale como guarda e a pasta sai do worktree mesmo assim; o ticket fica `pendente`, com o aviso, e o `close` comenta o diário antes do resumo.
+- **`--frente` em frente alheia.** Vale para frente passada, órfã (dona morta) ou sem dona. A frente ativa de outra sessão viva é recusada: ela pode estar no meio da execução.
+- **`devolver`.** Traz de volta ao worktree o diário mais novo de cada plano da frente, inclusive o que o `guardar` tirou (fase `guardado`), pelas regras da retomada abaixo. A saída diz por que não trouxe nada: `Nada a devolver: o worktree já tem o diário mais novo de cada plano.`, `Nada a devolver: não achei diário desta frente nos tickets nem nesta máquina.`, `Nada devolvido: veja os avisos acima.` ou `A frente as-1 carrinho não tem worktree nesta máquina; nada a devolver.`
+- **Handoff.** A reação `aoPassar` comenta o diário (fase `passagem`) e guarda a cópia como o `guardar`, mas deixa a pasta no worktree, porque o trabalho continua. Sem rede, avisa que outra máquina que retomar a frente não terá o diário.
+- **Retomada.** Na retomada (`ah open` de frente passada), cada plano recebe o diário de passagem mais novo: o comentário `ah:registro` da frente com o maior `em`, juntando todos os tickets (o marcador `v=1`, sem `em` nem `fase`, conta como o mais antigo e como passagem). O diário de fase `guardado` saiu de propósito e não volta sozinho (para ele, `registros devolver`). A cópia desta máquina entra na conta quando nenhum ticket se leu, quando o ticket não tem o plano, ou quando ela é mais nova (guardada sem rede, com o ticket pendente); a cópia com ticket pendente não é trocada pelo que vem do ticket. Ele vai para `progress.md` e `plan-path`, com o `.gitignore` de `.superpowers/sdd/`, no lugar em que o subagent-driven-development o procura (`Registros: devolvi o diário de 2 planos a …/.superpowers/sdd/ (do ticket).`), e a cópia desta máquina passa a saber em que tickets ele já está (todos os que têm o mesmo texto e o mesmo `em`). O diário que já está no worktree só é trocado quando é igual à cópia desta máquina (ninguém mexeu nele aqui desde a última guarda) e o do ticket é mais novo; diferente da cópia, fica, com o aviso e o próximo passo. Diário cortado no ticket não é devolvido.
+- **Quem pode deixar diário.** Só vale o comentário cujo autor tem acesso ao repositório (o `authorAssociation` que o GitHub dá ao comentário é `OWNER`, `MEMBER` ou `COLLABORATOR`; sem o campo, num `gh` antigo, o comentário não vale) e tem marcador do harness nesta frente naquele ticket (abertura, retomada, tomada ou passagem, com o autor igual ao `login` do marcador; o `ah:frente` antigo, sem `login`, vale pelo autor; a mesma regra do núcleo); os outros são ignorados, com `Aviso: ignorei o diário que @<login> comentou em #7 (associação NONE): …`. O marcador sozinho não basta, porque um terceiro pode forjá-lo com o próprio login. O motivo: num repositório público qualquer um comenta, e o diário é lido pelo agente como instrução de trabalho. Pelo mesmo motivo, o nome da pasta e o caminho do plano vindos do marcador são conferidos (sem `..`, sem barra invertida, pasta sem ponto no começo).
+- **Fechamento.** Depois do `close`, a reação `depoisDeFechar` comenta primeiro o diário que ficou `pendente` e depois o resumo (marcador `ah:registro-resumo`): por plano, as tarefas concluídas com os commits e o veredito da revisão, as paradas com a última linha e as decisões (`Ruling:`). Com todos os comentários feitos, apaga a cópia (`Registros: resumo da execução comentado em #7.`). Fechamento só local, sem ticket ou sem rede: mostra o resumo na saída e mantém a cópia. Na primeira falha de rede, a reação para de chamar o `gh` (`Aviso: sem rede (…): parei de comentar; …`), para a rede travada não segurar a trava. Sem cópia: `Registros: nenhum diário guardado para a frente as-1.` Ela roda sob a trava das frentes do `close`; cada chamada ao `gh` tem o prazo de 15 s do núcleo.
+- **Começo de sessão.** Quando o worktree da frente tem diário sem cópia, ou diferente dela, o resumo traz `Registros: antes do ah close, rode tools/ah registros guardar.` (no meio do plano, guardar tiraria a pasta de que a execução precisa).
+- **Nunca recusa o trabalho.** A extensão não usa `antesDeFechar`; as reações que falham viram aviso.
+
+```
+$ tools/ah registros guardar
+Diário de 1 plano guardado em /home/ana/.local/state/agent-harness/loja/registros/as-1; comentado em #7.
+$ tools/ah close
+Registros: resumo da execução comentado em #7.
+Frente as-1 carrinho fechada.
+```
+
+| Recusa | Faça |
+|---|---|
+| `Falta o subcomando.` / `Subcomando desconhecido: …` / `Argumento desconhecido: …` / `A opção --frente precisa do nome da frente.` | use `ah registros guardar\|devolver [--frente <nome>]` |
+| `não sei qual é a sessão` | defina AH_SESSAO ou ligue o adaptador do agente |
+| `Esta sessão não tem frente.` | abra uma com ah open <nome>, ou diga qual com --frente <nome> |
+| `Não achei a frente <nome>.` | rode ah board para ver as frentes abertas |
+| `A frente <id> <nome> é da sessão <s>, que está viva.` | peça à sessão dona (<s>) que rode tools/ah registros guardar (ou devolver); com a sessão morta (frente órfã) ou a frente passada, o --frente vale |
+
+## modelo
+
+```
+ah modelo [alto|medio|leve] [--agente <nome>] [--json]
+```
+
+Comando da extensão `modelo`, que acompanha o harness e só existe com `"modelo"` ligada em `extensoes` (a preparação do método a liga). Traduz os três níveis neutros que o plano marca em cada tarefa (`Nível: alto|medio|leve`) para o modelo e o esforço reais de cada agente. Nunca recusa por causa de modelo: as únicas recusas são de uso do comando.
+
+- **Com nível.** Uma linha por agente (ou só o de `--agente`): `alto (claude-code): modelo opus, esforço high`, seguida de `Como usar: …`, com a opção de linha de comando ou o campo do subagente em que o par entra. Esforço `null` sai como `padrão do agente`.
+- **Sem nível.** A tabela inteira, a data dos padrões e `Critérios: docs/agents/metodo.md (nível de modelo).`
+- **`--json`.** `{"nivel"?, "padroesDe", "traducoes": [{"agente", "nivel", "modelo", "esforco", "origem", "uso"}]}`, com `origem` `padrao` ou `projeto`.
+- **Sessão.** Não exige sessão.
+- **Padrões.** Em `.harness/nucleo/extensoes/modelo/padroes.json`, com a data e as fontes (a documentação oficial de cada agente, conferida em 2026-11-27). No OpenCode, o modelo é `provedor/modelo` e o esforço é uma variante do catálogo do provedor (`--model <modelo>#<variante>`); como variante desconhecida dá erro de resolução, o padrão não fixa variante. Nomes de modelo mudam: o projeto troca os dele na configuração.
+- **Configuração.** `extensoes.modelo.agentes.<agente>.<nível>` com `modelo` (texto) e `esforco` (texto ou `null`), mesclados campo a campo sobre o padrão. Um agente que não está nos padrões pode ser acrescentado; o nível que ele não traduz sai como `sem tradução (acrescente em extensoes.modelo.agentes)`.
+
+```json
+"extensoes": { "modelo": { "agentes": { "opencode": { "leve": { "modelo": "opencode-go/claude-haiku-5-5" } } } } }
+```
+
+- **Quadro.** A coluna `MODELO` do `board` mostra o modelo que a sessão dona da frente declarou ao começar (`modelo` do registro da sessão, lido por `ctx.sessao`); hoje só o adaptador do Claude Code informa. Sem dona ou sem o dado, `—`.
+
+```
+$ tools/ah modelo
+Níveis de modelo (padrões de 2026-11-27; o projeto muda os dele em extensoes.modelo.agentes):
+  alto (claude-code): modelo opus, esforço high
+  medio (claude-code): modelo sonnet, esforço medium
+  leve (claude-code): modelo haiku, esforço low
+  alto (codex): modelo gpt-6.2-astra, esforço high
+  medio (codex): modelo gpt-6.2-sol, esforço medium
+  leve (codex): modelo gpt-6-luna, esforço low
+  alto (opencode): modelo anthropic/claude-opus-5-5, esforço padrão do agente
+  medio (opencode): modelo anthropic/claude-sonnet-5-5, esforço padrão do agente
+  leve (opencode): modelo anthropic/claude-haiku-5-5, esforço padrão do agente
+Critérios: docs/agents/metodo.md (nível de modelo).
+$ tools/ah modelo leve --agente codex
+leve (codex): modelo gpt-6-luna, esforço low
+Como usar: codex -m <modelo> -c model_reasoning_effort=<esforço>
+```
+
+| Recusa | Faça |
+|---|---|
+| `Nível desconhecido: altissimo.` | use alto, medio ou leve (tools/ah modelo mostra a tabela) |
+| `Agente desconhecido: cursor.` | use claude-code, codex ou opencode, ou acrescente o agente em extensoes.modelo.agentes |
+| `Opção desconhecida: …` / `Argumento a mais: …` / `A opção --agente precisa do nome do agente.` | use o uso acima |
+
+## wiki
+
+```
+ah wiki conferir [--json] [--pendentes] [<artigo>...]
+ah wiki fontes [--json]
+```
+
+Comandos da extensão `wiki`, que acompanha o harness e só existe com `"wiki"` ligada em `extensoes`. A wiki fica em `docs/wiki/<tema>/<artigo>.md`, com `index.md` e `log.md`, e é escrita pelo agente com as skills `wiki-ingerir`, `wiki-consultar` e `wiki-conferir` (instaladas pelo `metodo instalar` com a extensão ligada). O formato do artigo, do índice e do log está num lugar só: `.harness/nucleo/extensoes/wiki/formato.md`. Nenhum comando exige sessão; dentro do worktree de uma frente, valem a wiki e as fontes daquele worktree.
+
+**Configuração** (`extensoes.wiki`: `true` ou um objeto com qualquer destes campos). É o único lugar da lista de fontes; as skills mandam rodar `ah wiki fontes` em vez de repeti-la.
+
+| Campo | Padrão | O que é |
+|---|---|---|
+| `pasta` | `"docs/wiki"` | Pasta da wiki, relativa à raiz; nunca é fonte |
+| `fontes` | `["CONTEXT.md", "GLOSSARY.md", "docs/**"]` | Padrões do que a wiki pode citar |
+| `foraDasFontes` | `["docs/agents/**"]` | Padrões que saem das fontes mesmo casando com `fontes` |
+
+Nos padrões, relativos à raiz e com `/`, `**` casa qualquer sequência (inclusive `/`) e `*` qualquer sequência sem `/`. Campo desconhecido ou valor fora da forma recusa a configuração, e a extensão não carrega (`doctor`: `FALHOU Extensão wiki: …`).
+
+- **`conferir`.** A invariante da wiki: todo número, data, horário ou citação de um artigo existe literalmente numa fonte ligada pelo campo `Fontes` dele. Extrai de cada artigo os literais de alto sinal (números com separador ou sufixo, como `1.234,56` e `2,5%`; números de 4 ou mais dígitos; datas `2026-11-20` e `01/12/2026`; horários `0:12:40`; citações de 15 ou mais caracteres entre aspas ou em blockquote) e procura cada um, inteiro, nas fontes ligadas. O que falta é **suspeito**: valor derivado, paráfrase ou fonte que mudou depois do artigo; quem julga é a skill `wiki-conferir`. **Erros de evidência**: `artigo sem campo Fontes`, `link fora das fontes`, `link que não resolve`, `fonte que não é texto conferível` (texto conferível: `.md`, `.txt`, `.srt`, `.vtt`, `.json`, `.csv`, `.yaml`, `.yml`). **Cobertura**: por pasta de fontes (`docs/adr`) ou arquivo (`CONTEXT.md`), quantos `.md` algum artigo cita; a entrada `## [AAAA-MM-DD] ingestão | sem material: <caminho>` do log conta como citada. Páginas arquivadas (`> Arquivado:`) e blocos de status não são conferidos; nada dentro de cerca de código conta. Com artigos dados, confere só eles (a cobertura é sempre do todo); `--pendentes` lista as fontes ainda não citadas; `--json` imprime `{"suspeitos":[{"artigo","valores"}],"erros":[{"artigo","erros"}],"cobertura":[{"grupo","citados","total"}],"pendentes":[…],"artigos":n}`. O código é 0 com ou sem suspeitos: o relatório é a interface.
+- **`fontes`.** Uma fonte por linha, ordenadas, pela configuração; `--json`, `{"fontes":[…]}`.
+- **Começo de sessão.** Uma linha no resumo: `Wiki: ainda vazia; a primeira ingestão (skill wiki-ingerir) cria docs/wiki/.`; `Wiki: <n> artigo(s); nenhuma ingestão registrada no git ainda (commite docs/wiki/log.md).`; `Wiki: <n> artigo(s); nenhuma fonte nova desde a última ingestão.`; ou `Wiki: <n> artigo(s); <k> fonte(s) nova(s) desde a última ingestão (<até três caminhos>, …): skill wiki-ingerir.` A última ingestão é o último commit que acrescentou ao `docs/wiki/log.md` uma entrada de ingestão (`## [AAAA-MM-DD] ingestão | …`, inclusive a de "sem material"); commit que só registra conferência, consulta ou movimento não conta. Fonte nova é fonte (pela configuração, com extensão conferível) mudada entre esse commit e o `HEAD` do checkout principal. Nada é gravado para saber isso.
+- **Fechamento.** No `close`, antes de qualquer mudança, a mesma conta no ramo da frente: se a frente mudou fonte depois da última ingestão do ramo, sai `Wiki: a frente mudou fonte(s) sem ingestão (<caminhos>). Sugestão: ingira com a skill wiki-ingerir antes de começar outra coisa.` Nunca recusa; falha do git vira silêncio.
+- **Doctor.** O item `Evidência da wiki (wiki)` avisa quando a conferência acha suspeitos ou erros (`aviso Evidência da wiki (wiki): 1 suspeito(s) de fidelidade e 0 erro(s) de evidência; rode tools/ah wiki conferir e julgue cada um com a skill wiki-conferir`); sem wiki, `ok`.
+
+| Recusa | Faça |
+|---|---|
+| `Não achei a wiki em docs/wiki (<raiz>).` | faça a primeira ingestão com a skill wiki-ingerir, que cria docs/wiki/index.md e log.md |
+| `docs/wiki/log.md não é artigo da wiki (fica fora de docs/wiki, ou é index.md ou log.md).` | passe caminhos de artigos, relativos à raiz, como docs/wiki/<tema>/<artigo>.md |
+| `Não achei o artigo <caminho>.` | confira o caminho, relativo à raiz do projeto |
+| `Falta o subcomando.` / `Subcomando desconhecido: …` / `Opção desconhecida: …` / `Argumento a mais: …` | use o uso acima |
+
+```
+$ tools/ah wiki conferir
+# Conferência de evidência
+
+## Suspeitos de fidelidade
+
+docs/wiki/frete/gratis.md
+- 250,00
+
+## Erros de evidência
+(nenhum)
+
+## Cobertura das fontes
+
+| Fonte | Citados | Total |
+|---|---|---|
+| docs/adr | 1 | 1 |
+
+## Resumo
+1 suspeito(s) de fidelidade, 0 erro(s) de evidência, 1 de 1 arquivo(s)-fonte citados
+```
+
+## ambiente
+
+```
+ah ambiente [mostrar] [--json]
+ah ambiente preparar
+ah ambiente desfazer
+```
+
+Comando da extensão `ambiente`, que acompanha o harness, desligada por padrão. Resolve a disputa de porta e banco entre frentes paralelas: na abertura, cada frente recebe portas livres de uma faixa, um banco próprio e um arquivo no worktree com as chaves para o programa ler; no fechamento, o banco é apagado e as portas voltam para a faixa. Construída sobre a ideia da extensão `recursos`, mas automática.
+
+**Configuração.** Os comandos de banco são listas de argumentos rodadas sem shell, na raiz do projeto, com `{banco}` e `{frente}` trocados. A extensão não conhece banco nenhum: o projeto diz qual ferramenta usa.
+
+```json
+"extensoes": { "ambiente": {
+  "arquivo": ".env.frente",
+  "portas": { "faixa": [4100, 4199], "chaves": ["PORTA_WEB", "PORTA_API"] },
+  "banco": { "nome": "loja_{frente}", "chave": "BANCO",
+             "criar": ["createdb", "{banco}"], "apagar": ["dropdb", "--if-exists", "{banco}"],
+             "listar": ["psql", "-Atc", "select datname from pg_database"] },
+  "fixos": { "portas": [3000, 5432], "bancos": ["loja", "loja_test"] }
+} }
+```
+
+| Campo | Conteúdo |
+|---|---|
+| `arquivo` | caminho, relativo ao worktree, do arquivo de ambiente (padrão `.env.frente`) |
+| `portas.faixa`, `portas.chaves` | de onde saem as portas, e uma chave por porta da frente |
+| `banco.nome` | molde do nome; `{frente}` vira o nome da frente com `-` trocado por `_` (`loja_{frente}` → `loja_cupom_novo`) |
+| `banco.chave` | a chave do nome do banco no arquivo |
+| `banco.criar`, `banco.apagar` | os comandos que criam e apagam o banco |
+| `banco.listar` | opcional: imprime os bancos existentes, um por linha (usado pelo `sweep`) |
+| `fixos` | portas e bancos que não são de frente nenhuma (desenvolvimento, teste comum, serviços do projeto): nunca vão para uma frente e nunca são apagados |
+
+O marcador `{frente}` não vale o mesmo em todo lugar (exemplo com a frente `cupom-novo`):
+
+| Onde | `{frente}` vale | Exemplo |
+|---|---|---|
+| `banco.nome` (o molde) | o nome da frente com `-` trocado por `_` | `loja_{frente}` → `loja_cupom_novo` |
+| argv de `banco.criar` e `banco.apagar` | o nome da frente como está | `cupom-novo` |
+
+Nos argv, `{banco}` vale o nome final do banco (`loja_cupom_novo`).
+
+`portas` e `banco` são opcionais, mas um dos dois é obrigatório. O arquivo de ambiente vai no `.gitignore` do projeto (acrescente a linha `.env.frente`, ou o nome escolhido, e commite na `dev`): fora dele, o arquivo aparece como alteração não commitada, e o `close` recusa o worktree. A abertura avisa quando ele não está ignorado.
+
+- **Abertura** (`depoisDeAbrir`, também na retomada). Portas: as menores da faixa fora das portas de outras frentes (desta extensão e, com a `recursos` ligada, as do tipo `porta`), das fixas e das que estão escutando agora nesta máquina (em `127.0.0.1` ou em `::1`); a escolha e a gravação ficam sob a trava das frentes, e duas aberturas ao mesmo tempo não recebem a mesma porta. Banco: roda `criar` e grava `{nome, criado}` e, quando criou, a máquina (`maquina`, o nome do computador); se o nome da frente dá um banco fixo (a frente `test` com o molde `loja_{frente}` e o fixo `loja_test`), a frente fica sem banco, com aviso. Arquivo: escreve no worktree um cabeçalho e uma linha `CHAVE=valor` por porta e, só depois de o banco ser criado, pelo banco (o arquivo nunca aponta para um banco que a frente não criou), e grava na frente o caminho e o sha256 do que escreveu; um arquivo que já existe sem esse cabeçalho (o `.env` do aluno) nunca é sobrescrito nem apagado. Só faz o que falta: a frente que já tem portas fica com elas, e o banco já criado não é criado de novo. Falta de porta na faixa ou banco que não foi criado não impedem a abertura: viram aviso com o próximo passo.
+- **`mostrar`** (o padrão). As portas, o banco e o arquivo da frente da sessão; `--json` imprime `{"id","frente","portas","banco","arquivo"}`.
+- **`preparar`.** Refaz o que falta (depois de aumentar a faixa, ou com o banco de volta) e reescreve o arquivo. Sai com 1 quando sobra aviso.
+- **`desfazer`.** Apaga o banco criado pela frente, remove o arquivo gerado do worktree e libera as portas; a saída diz o que de fato foi feito.
+- **Fechamento** (`depoisDeFechar`). Apaga o banco criado pela frente, nesta máquina, salvo se for fixo; a falha vira aviso com o comando para apagar à mão. Não apaga, e avisa com o próximo passo: o banco criado em outra máquina (`o banco <banco> foi criado em outra máquina (<máquina>): não o apaguei`), nem o de uma frente que estava passada, que pode ter continuado noutra sessão ou máquina (`a frente estava passada: o banco <banco> fica para quem a continuou`). As portas saem do estado com a frente.
+- **Contêiner e CI.** A máquina é reconhecida pelo nome do computador. Num contêiner ou num executor de CI, o nome muda a cada execução: o banco criado numa rodada fica marcado como de outra máquina para a seguinte e nunca é apagado ali pelo fechamento. Nesses ambientes, apague o banco no próprio roteiro (com o comando de `banco.apagar`), ou deixe o banco de fora da configuração.
+- **Arquivo de ambiente e o `close`.** A extensão declara o arquivo como descartável (`ignorados`, ver `docs/extensoes/interface.md`) só quando foi ela que o escreveu e ele ainda está como ela o deixou (o sha256 gravado na frente): ele é refeito a partir do estado, e o `close` não o conta como item ignorado que se perderia. Com o arquivo no `.gitignore`, o `close` passa sem `ah ambiente desfazer`. Um arquivo alheio no mesmo caminho (o `.env` do aluno) ou mudado à mão cai na recusa de sempre do `close`, que o lista. `arquivo` com `/` no fim (uma pasta) não carrega.
+- **Sweep.** O `ah sweep` lista, como `- ambiente: …`, cada porta da faixa que está escutando sem ser de frente (desta extensão ou da `recursos`) nem fixa e, com `banco.listar`, cada banco que casa com o molde sem ser de frente desta máquina nem fixo, com o próximo passo (o banco pode ser de uma frente de outra máquina, quando o servidor de banco é compartilhado). Banco fora do molde não aparece. Se `listar` falha, sai uma linha com o erro. O `--reparar` não apaga banco nem encerra processo: só acrescenta uma linha dizendo isso.
+- **Passagem.** O `handoff` não libera nada: a frente passada continua dona das portas e do banco.
+- **Windows.** Não ensaiado no Windows.
+- **Quadro.** A coluna `AMBIENTE` mostra as portas e o banco (`4100 4101 loja_carrinho`).
+
+| Recusa ou aviso | Faça |
+|---|---|
+| `Esta sessão não tem frente.` | abra uma com ah open <nome> |
+| `Subcomando desconhecido: …` | use `ah ambiente [mostrar] [--json] \| ah ambiente preparar \| ah ambiente desfazer` |
+| Aviso: `a faixa 4100-4199 não tem 2 portas livres para a frente <nome>` | aumente extensoes.ambiente.portas.faixa e rode ah ambiente preparar |
+| Aviso: `não consegui criar o banco <banco>: …` | confira o banco e o comando extensoes.ambiente.banco.criar e rode ah ambiente preparar |
+| Aviso: `o banco <banco> não é um nome válido (minúsculas, números e _)` | mude extensoes.ambiente.banco.nome |
+| Aviso: `o nome da frente <nome> dá o banco fixo <banco>` | mude extensoes.ambiente.banco.nome ou abra a frente com outro nome |
+| Aviso: `<arquivo> já existe e não foi gerado pelo ah ambiente` | use outro extensoes.ambiente.arquivo ou apague o arquivo à mão e rode ah ambiente preparar |
+| Aviso: `<arquivo> não está no .gitignore` | acrescente <arquivo> ao .gitignore e commite (senão o close recusa o worktree) |
+| Aviso: `não consegui apagar o banco <banco>: …` | apague à mão com o comando de extensoes.ambiente.banco.apagar |
+| Aviso: `o banco <banco> foi criado em outra máquina (<máquina>): não o apaguei` | apague-o naquela máquina, ou à mão com o comando de extensoes.ambiente.banco.apagar, quando ninguém mais o usar |
+| Aviso: `a frente estava passada: o banco <banco> fica para quem a continuou` | se ninguém a continuou, apague-o à mão com o comando de extensoes.ambiente.banco.apagar |
+| Sweep: `porta <n> em uso sem frente` | encerre o processo ou declare a porta em extensoes.ambiente.fixos.portas |
+| Sweep: `banco <nome> sem frente nesta máquina (pode ser de uma frente de outra máquina)` | confira se ninguém o usa e apague com o comando de extensoes.ambiente.banco.apagar, ou declare em fixos.bancos |
+| Sweep: `não consegui listar os bancos: …` | confira extensoes.ambiente.banco.listar |
+| `não consegui apagar o banco <banco>: …` (em `desfazer`) | confira o banco e rode ah ambiente desfazer de novo |
+
+```
+$ AH_SESSAO=ana-terminal tools/ah open carrinho
+…
+$ cat <worktree>/.env.frente
+# gerado por ah ambiente para esta frente; não edite: refaça com tools/ah ambiente preparar
+PORTA_WEB=4100
+PORTA_API=4101
+BANCO=loja_carrinho
+$ AH_SESSAO=carla-terminal tools/ah open cupom
+$ AH_SESSAO=carla-terminal tools/ah ambiente
+Ambiente da frente as-2 cupom: PORTA_WEB=4102, PORTA_API=4103, banco loja_cupom (arquivo .env.frente).
+$ AH_SESSAO=ana-terminal tools/ah ambiente desfazer
+Ambiente da frente as-1 carrinho desfeito: banco loja_carrinho apagado, portas liberadas, .env.frente removido.
+```
+
+## migracao
+
+```
+ah migracao reservar [--frente <nome>]
+ah migracao liberar [--frente <nome>]
+ah migracao listar [--json]
+ah migracao renumerar [--frente <nome>]
+```
+
+Comando da extensão `migracao`, que acompanha o harness, desligada por padrão. Resolve o número repetido: duas frentes abertas sobre a mesma base criam, cada uma, a "próxima" migração, com o mesmo número. A reserva diz que número cada frente terá se a base receber as frentes na ordem das reservas. O número sai do nome do arquivo; a extensão não depende de ferramenta de migração.
+
+**Configuração:**
+
+```json
+"extensoes": { "migracao": { "pasta": "db/migracoes", "padrao": "^(\\d+)_", "digitos": 4 } }
+```
+
+| Campo | Padrão | Conteúdo |
+|---|---|---|
+| `pasta` | obrigatório | pasta das migrações, relativa à raiz |
+| `padrao` | `^(\d+)_` | expressão regular aplicada ao nome do arquivo; o primeiro grupo é o número, e ele precisa ser simples (sem nome) e obrigatório (sem `?` ou `*` depois). Arquivo que não casa (um `README.md` na pasta) é ignorado |
+| `digitos` | `4` | quantos dígitos o número tem no nome (`0003`) |
+| `renumerar` | — | passo próprio da ferramenta de migração, usado por `renumerar` (abaixo) |
+
+- **`reservar`.** Grava `frente.extensoes.migracao.numero` na frente da sessão (ou na de `--frente`). O número é o maior entre a última migração da base (`git.base`, lida no ramo local) e as reservas de todas as outras frentes do estado, mais um. A frente que já tem reserva acima da última da base fica com ela (`já reservada`). A conferência e a gravação ocorrem sob a trava das frentes.
+- **`liberar`.** Apaga a reserva da frente.
+- **`listar`.** A última migração da base e cada reserva, em ordem. A reserva que a base já ultrapassou (outra frente entrou com aquele número) aparece com `(a dev já passou dela: rode ah migracao renumerar depois de reintegrar)`. `--json` imprime `{"base","ultima","reservas":[{"id","frente","estado","numero"}]}`.
+- **`renumerar`.** Na reintegração: quando outra frente entrou na base com o número reservado, rode no worktree `git merge dev --no-edit` (resolva o conflito e commite, se houver) e depois `ah migracao renumerar`. As migrações da frente (os arquivos da pasta que casam com o padrão e não existem na base) são renomeadas com `git mv` em sequência a partir do próximo número livre (depois da última da base e das reservas das outras frentes), trocando só o número (`0003_frete.sql` → `0005_frete.sql`). A reserva, conferida e gravada sob a trava antes dos renomes, passa a ser o último número da frente. A ferramenta de migração que guarda mais do que o nome do arquivo (um registro, um metadado) declara o passo dela em `renumerar`, uma lista argv rodada no worktree para cada arquivo renomeado, com `{de}`, `{para}` e `{pasta}` trocados: `"renumerar": ["node", "scripts/renomear-migracao.mjs", "{de}", "{para}"]`. No fim, tudo fica em stage, a saída lista os arquivos fora da pasta que citam o nome antigo e termina com `Falta: git commit no worktree.`. Já em dia (os números da frente vêm depois da última da base, em sequência, e nenhum foi reservado por outra frente), não mexe em nada.
+- **Par up/down.** Os arquivos da frente com o mesmo número (`0003_frete.up.sql` e `0003_frete.down.sql`) são uma migração só: a renumeração dá aos dois o mesmo número novo, e a reserva conta o par como um.
+- **Mais de uma migração na frente.** A reserva é de um número. A frente que cria mais de uma roda `ah migracao renumerar` logo depois de criá-las: a reserva passa a ser a última, e as reservas seguintes de outras frentes vêm depois dela.
+- **Sessão e frente alheia.** `reservar`, `liberar` e `renumerar` exigem sessão; `listar` não. `--frente` em frente ativa de outra sessão viva recusa, como na extensão `recursos`.
+- **Ciclo.** O `close` libera a reserva (ela mora no registro da frente) e diz `Reserva de migração 0003 liberada.`. O `handoff` não libera: a frente passada continua dona do número.
+- **Windows.** Não ensaiado no Windows.
+- **Quadro.** A coluna `MIGRACAO` mostra o número reservado.
+
+| Recusa | Faça |
+|---|---|
+| `Falta o subcomando.` / `Subcomando desconhecido: …` | use `ah migracao reservar\|liberar\|renumerar [--frente <nome>] \| ah migracao listar [--json]` |
+| `não sei qual é a sessão` | defina AH_SESSAO ou ligue o adaptador do agente |
+| `Esta sessão não tem frente.` | abra uma com ah open <nome>, ou diga qual com --frente <nome> |
+| `Não achei a frente <nome>.` | rode ah board para ver as frentes abertas |
+| `A frente <id> <nome> é da sessão <s>, que está viva.` | peça à sessão dona (<s>) que faça ela mesma; com a sessão morta (frente órfã) ou a frente passada, o --frente vale |
+| `não consegui ler <pasta> no ramo <base>: …` | confira se o ramo <base> existe neste repositório |
+| `o worktree <wt> tem um merge em curso …` (em `renumerar`) | resolva os conflitos, termine o merge com git commit e rode ah migracao renumerar de novo |
+| `a dev não está mesclada no ramo <ramo>: …` | no worktree, git merge dev --no-edit (pode parar em conflito: resolva e commite), e rode ah migracao renumerar de novo |
+| `a migração <arquivo> ainda não está no git (arquivo novo, sem git add).` | git add -- <pasta>/<arquivo> e rode ah migracao renumerar de novo |
+| `<arquivo> já existe em <pasta>.` | renomeie à mão o arquivo que está no caminho e rode ah migracao renumerar de novo |
+| `o passo de renumerar da configuração falhou em <de> → <para> (…); já renomeados (em stage): …` | conserte o passo da ferramenta para esses arquivos à mão, ou desfaça com git restore --source=HEAD --staged --worktree -- <pasta> (descarta também o que não foi commitado nessa pasta) e rode de novo |
+| `Opção desconhecida: …` / `Argumento a mais: …` / `A opção --frente precisa do nome da frente.` | use o uso acima |
+
+```
+$ AH_SESSAO=ana-terminal tools/ah migracao reservar
+Frente as-1 carrinho: migração reservada: 0003 (a última da dev é a 0002).
+$ AH_SESSAO=carla-terminal tools/ah migracao reservar
+Frente as-2 cupom: migração reservada: 0004 (a última da dev é a 0002).
+$ tools/ah migracao listar
+Última da dev: 0002 (0002_cupom.sql)
+0003 as-1 carrinho
+0004 as-2 cupom
+$ git merge --no-ff feat/cupom && AH_SESSAO=carla-terminal tools/ah close     # o cupom entra primeiro
+$ cd <worktree do carrinho> && git merge dev --no-edit
+$ AH_SESSAO=ana-terminal tools/ah migracao renumerar
+A migração da frente agora vai de 0005 em diante (a última da dev é a 0004): 0003_carrinho.sql → 0005_carrinho.sql.
+Falta: git commit no worktree.
+```
+
+## prova
+
+```
+ah prova <rótulo> [--frente <nome>] [-- <comando>…]
+ah prova --confere <ramo> [<rótulo>]
+```
+
+Comando da extensão `prova`, que acompanha o harness, desligada por padrão. Serve para não repetir o teste ponta a ponta depois de um merge que não mudou o código: o git identifica o conteúdo de um commit pela árvore (`HEAD^{tree}`), e o `merge --no-ff` de uma frente numa base parada produz a mesma árvore da frente.
+
+**Configuração** (opcional): o comando padrão de cada rótulo, como lista de argumentos, rodada sem shell.
+
+```json
+"extensoes": { "prova": { "comandos": { "e2e": ["tools/ah", "pesado", "--", "npm", "run", "e2e"] } } }
+```
+
+- **Gravar** (`ah prova <rótulo>`, exige sessão com frente). Recusa o worktree com mudança fora do commit: arquivo rastreado alterado ou arquivo novo não rastreado, que o teste usaria e a árvore não tem (o que o `.gitignore` ignora não conta). Roda o teste no worktree da frente: o comando depois de `--` (um argumento só vai para o shell; vários rodam direto) ou, sem ele, o de `comandos.<rótulo>`. Teste que falha: `O teste <rótulo> falhou (código N): nada gravado.`, e o `ah` sai com o código do teste. Teste que passa sem mudar a árvore: grava `{rotulo, arvore, commit, comando, em}` em `frente.extensoes.prova.provas` (uma por rótulo, a última) e acrescenta uma linha em `<estado>/extensoes/prova/provas.jsonl`, que sobrevive ao `close`. Teste pesado vai pela fila pondo `tools/ah pesado --` no comando.
+- **`--frente <nome>`** (nome ou id). Grava a prova dessa frente, com o teste rodado no worktree dela e a árvore dela, e não a da frente em foco: é como a orquestradora, que tem várias frentes e não troca o foco entre elas, prova cada uma no fechamento. Frente passada, órfã (dona morta) ou sem dona vale; frente ativa ou em abertura de outra sessão viva recusa, como na extensão `recursos`. A dona é conferida antes do teste e de novo na gravação, sob a trava das frentes, porque o teste pode demorar.
+- **Conferir** (`ah prova --confere <ramo>`, não exige sessão). Procura uma prova com a mesma árvore do ramo (e o mesmo rótulo, se dado) na lista durável e nas frentes do estado. Achou: código 0, com a frente, o rótulo e o commit. Não achou: código 3 (`nenhuma prova. Rode o teste.`). Ref que não existe: recusa, código 1.
+- **Fluxo.** Na frente: reintegrar a base (`git merge dev`), rodar `ah prova e2e`. Ao integrar: `git merge --no-ff` na base e `ah prova --confere dev`; com 0, o teste não se repete; com 3 (outra frente entrou no meio), roda o teste de novo.
+- **Windows.** Não ensaiado no Windows.
+- **Quadro.** A coluna `PROVA` mostra a prova mais recente da frente (`e2e 1a2b3c4`).
+
+| Recusa | Faça |
+|---|---|
+| `não sei qual é a sessão` | defina AH_SESSAO ou ligue o adaptador do agente |
+| `Esta sessão não tem frente.` | abra uma com ah open <nome>, ou diga qual com --frente <nome> |
+| `Não achei a frente <nome>.` | rode ah board para ver as frentes abertas |
+| `A frente <id> <nome> é da sessão <s>, que está viva.` | peça à sessão dona (<s>) que grave a prova; com a sessão morta (frente órfã) ou a frente passada, o --frente vale |
+| `A opção --frente precisa do nome da frente.` | use o uso acima |
+| `O rótulo vem primeiro.` | ah prova <rótulo> --frente <nome> [-- <comando>…] |
+| `Rótulo inválido: …` | use minúsculas, números, hífen e dois-pontos, começando por letra (ex.: e2e) |
+| `Não sei qual é o teste <rótulo>.` | diga depois de -- (ah prova <rótulo> -- npm test) ou declare em extensoes.prova.comandos.<rótulo> |
+| `o worktree tem mudança fora do commit (…)` | commite, ponha no .gitignore o que é gerado, ou desfaça, e rode ah prova de novo |
+| `o teste <rótulo> passou, mas a árvore mudou durante o teste; nada gravado.` | commite o que o teste gerou (ou ponha no .gitignore) e rode ah prova de novo |
+| `<ref> não é um ramo nem um commit deste repositório.` | confira o nome com git branch -a |
+| `Faltam ou sobram argumentos.` / `Argumento a mais: …` | use o uso acima |
+
+```
+$ AH_SESSAO=ana-terminal tools/ah prova e2e
+Prova gravada: e2e na frente as-1 carrinho, árvore 1a2b3c4 (commit 9f8e7d6).
+$ git merge --no-ff feat/carrinho
+$ tools/ah prova --confere dev
+Árvore 1a2b3c4 de dev provada pela frente as-1 carrinho (e2e, commit 9f8e7d6, em 2026-11-26T15:02:11.000Z): não precisa repetir o teste.
+$ tools/ah prova --confere dev; echo $?      # depois que outra frente entrou na dev
+Árvore 5d6e7f8 de dev: nenhuma prova. Rode o teste.
+3
+```
+
+## orquestracao
+
+```
+ah candidatos [--json]
+ah pede-revisao <ramo> [--json]
+```
+
+Comandos da extensão `orquestracao`, que acompanha o harness, desligada por padrão. São a parte determinística do trabalho de quem orquestra (a skill `orquestrar`): a escolha a olho deixa passar ticket bloqueado, já começado por outra sessão ou à espera de uma decisão do humano.
+
+**Configuração** (opcional):
+
+```json
+"extensoes": { "orquestracao": { "pronto": "ready-for-agent", "pendencia": "A decidir", "revisao": ["src/pagamento/**"] } }
+```
+
+| Campo | Padrão | Conteúdo |
+|---|---|---|
+| `pronto` | `ready-for-agent` | o rótulo que a triagem põe no ticket pronto para um agente |
+| `pendencia` | `A decidir` | a marca de decisão pendente, procurada no começo de uma linha do corpo e de cada comentário (veja abaixo) |
+| `revisao` | `[]` | padrões de caminho cujo diff pede revisor novo (`pede-revisao`, abaixo) |
+
+- **`candidatos`.** Cruza os livres do `ah deps --json` (abertos, sem bloqueio pendente, sem frente) com os tickets abertos que têm o rótulo `pronto` (`gh issue list --label`, até 200, com o corpo e os rótulos) e tira os que têm o rótulo de reserva (`github.rotuloDeReserva`, que o `ah open` põe no ticket: o `deps` só conhece as frentes desta máquina) ou a marca `pendencia`. Os comentários são lidos um ticket por vez (`gh issue view --json comments`), só dos que passaram no resto. A saída lista os candidatos, na ordem do `deps` (o mais novo primeiro), e em `Fora:` cada outro ticket aberto com o motivo: `bloqueada`, `com frente <id>`, `com o rótulo <reserva> (frente em outra máquina?)`, `sem o rótulo <pronto>`, `"<pendencia>" no corpo` ou `"<pendencia>" num comentário de <autor>`. Quando o `deps` usou a leitura guardada (sem GitHub), a primeira linha diz a data dela; os avisos do `deps` saem como `Aviso: …`; quando o `deps` ou o `gh` bateu no limite de 200 tickets, `Aviso: lista incompleta: …`, e o ticket que pode ter ficado fora da lista dos prontos aparece como `não está entre os 200 prontos lidos (lista incompleta)`, não como `sem o rótulo`. `--json` imprime `{"pronto","pendencia","deCache","lidoEm","incompleta","avisos","candidatos":[{"numero","titulo"}],"fora":[{"numero","titulo","motivo"}]}`.
+- **A marca.** Casa no começo de uma linha, depois de espaço e da marcação de título, lista, citação ou negrito (`A decidir: …`, `## A decidir`, `- A decidir:`, `> A decidir`, `**A decidir:**`), sem diferenciar maiúsculas, e termina a palavra (`A decidirmos` não casa). No meio da frase não conta: `Tudo certo, nada a decidir.` não tira o ticket.
+- **Liberar um ticket com a marca.** Depois que o humano decide, edite o corpo ou o comentário tirando a marca do começo da linha (ou troque-a pela decisão). Não exige sessão.
+- **`pede-revisao`.** Compara o ramo com a base (`git diff --name-only <base>...<ramo>`) e diz se algum arquivo do diff casa com `revisao`: `feat/cartao pede revisão: toca src/pagamento/cartao.js (extensoes.orquestracao.revisao).` ou `… não pede revisão: …`. Nos padrões, relativos à raiz (sem `./` nem `/` no começo), `**` atravessa pastas (`src/**/x.js` casa também `src/x.js`), `*` e `?` ficam dentro de uma pasta, e a barra no fim vale "tudo abaixo" (`src/pagamento/` é `src/pagamento/**`, como no `--caminhos` do `open`). Nome com acento conta como está, e o arquivo movido conta pelos dois lados (o de onde saiu e o para onde foi). Sai sempre com 0; `--json` imprime `{"ramo","base","pede","arquivos"}`. Não exige sessão.
+- **Windows.** Não ensaiado no Windows.
+
+| Recusa | Faça |
+|---|---|
+| `Falta o ramo.` / `Argumento a mais: …` (em `pede-revisao`) | use ah pede-revisao <ramo> [--json] |
+| `<ramo> não é um ramo deste repositório.` | confira o nome com git branch |
+| `o ah deps não respondeu: …` | rode tools/ah deps para ver o motivo e conserte antes |
+| `não consegui ler os tickets com o rótulo <pronto>: …` / `não consegui ler os comentários do #<n>: …` | confira o acesso ao GitHub (gh auth status) e rode de novo |
+| `o gh demorou ou respondeu demais ao ler …` | rode de novo; se repetir, use um rótulo de pronto mais específico em extensoes.orquestracao.pronto |
+| `o gh devolveu … num formato que não li` | confira o gh (gh --version) e rode de novo |
+| `o ah deps --json devolveu uma saída que não li` | rode tools/ah deps --json e confira a saída |
+| `Argumento desconhecido: …` | use ah candidatos [--json] |
+
+```
+$ tools/ah candidatos
+Candidatos (rótulo ready-for-agent, sem "A decidir"):
+#13 Carrinho vazio
+#12 Total do carrinho
+Fora:
+#17 Página de ajuda: sem o rótulo ready-for-agent
+#16 Revisão do layout: com frente as-1
+#15 Cupom no checkout: bloqueada
+#14 Frete por região: "A decidir" num comentário de carla
+```

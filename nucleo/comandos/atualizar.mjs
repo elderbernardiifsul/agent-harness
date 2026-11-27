@@ -1,5 +1,5 @@
 // `ah atualizar`: troca a cópia do núcleo (.harness/nucleo/) pela de um clone do agent-harness.
-// Não toca na configuração, nas extensões nem no estado; reaplica o trecho do AGENTS.md como o init.
+// Não toca na configuração, nas extensões nem no estado; reaplica o trecho do AGENTS.md e a linha @AGENTS.md do CLAUDE.md como o init.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -11,7 +11,7 @@ import {
   MANIFESTO, ancestralEstrito, arquivosDaCopia, citar, commitDoClone, compararVersoes, diferenca, eClone, lerManifesto, listaDoCommit,
   listaDoManifesto, listaInstalada, montarManifesto,
 } from '../lib/copia.mjs';
-import { agentsComTrecho, mesclarGanchos, passosDoCommit } from './init.mjs';
+import { LINHA_DO_CLAUDE, agentsComTrecho, claudeComLinha, claudeEhLinkParaAgents, mesclarGanchos, passosDoCommit } from './init.mjs';
 import { VERSAO } from '../versao.mjs';
 
 export const descricao = 'troca a cópia do núcleo (.harness/nucleo) pela de um clone do agent-harness';
@@ -20,6 +20,7 @@ export const requisitos = { config: true, sessao: false };
 
 const RAIZ_DO_HARNESS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ARQUIVO_AGENTS = 'AGENTS.md';
+const ARQUIVO_CLAUDE_MD = 'CLAUDE.md';
 const MENSAGEM_DO_COMMIT = 'chore: atualiza o agent-harness';
 // A troca leva bem menos que isso; o segundo atualizar espera o primeiro terminar.
 const ESPERA_DA_TRAVA_MS = 30000;
@@ -131,6 +132,18 @@ function agentsNovo(raiz) {
   return r.texto === atual ? null : r;
 }
 
+// O CLAUDE.md com a linha @AGENTS.md: {texto, link} ou null se nada muda (ou se o Claude Code não está ligado).
+function claudeNovo(raiz, config) {
+  if (!config?.agentes?.includes('claude-code')) return null;
+  const arquivo = path.join(raiz, ARQUIVO_CLAUDE_MD);
+  let st = null;
+  try { st = fs.lstatSync(arquivo); } catch { /* não existe */ }
+  if (st?.isSymbolicLink()) return claudeEhLinkParaAgents(raiz) ? null : { link: true };
+  if (st && !st.isFile()) return null;
+  const r = claudeComLinha(st ? fs.readFileSync(arquivo, 'utf8') : null);
+  return r.muda ? r : null;
+}
+
 // Monta a cópia nova ao lado e troca as pastas; se a segunda renomeação falha, a velha volta.
 function trocar(dirHarness, dirNucleo, arquivos, manifesto) {
   const sufixo = `${process.pid}-${Date.now()}`;
@@ -238,6 +251,7 @@ function atualizarNoProjeto(o, amb, { aqui, raiz, dirHarness, dirNucleo }) {
   const conferencia = alteradosAMao(amb, anterior, instalado, aqui);
   const aMao = conferencia.itens;
   const agents = agentsNovo(raiz);
+  const claude = claudeNovo(raiz, amb.config);
   const fora = foraDoNucleo(amb);
   const nucleoMuda = mudancas.novos.length + mudancas.alterados.length + mudancas.removidos.length + instalado.links.length > 0
     || versaoAntes !== VERSAO || (anterior?.commit ?? null) !== commit || !listaDoManifesto(anterior);
@@ -256,6 +270,11 @@ function atualizarNoProjeto(o, amb, { aqui, raiz, dirHarness, dirNucleo }) {
     amb.avisar(`${ARQUIVO_AGENTS} é um link simbólico; não mexi nele.\nFaça: copie para o arquivo de destino do link o trecho de .harness/nucleo/modelos/agents-trecho.md\n`);
   } else if (agents) {
     relatorio += `${o.simular ? 'Reaplicaria' : 'Reapliquei'} o trecho do harness em ${ARQUIVO_AGENTS}.\n`;
+  }
+  if (claude?.link) {
+    amb.avisar(`${ARQUIVO_CLAUDE_MD} é um link simbólico; não mexi nele.\nFaça: acrescente a linha ${LINHA_DO_CLAUDE} ao arquivo de destino do link\n`);
+  } else if (claude) {
+    relatorio += `${o.simular ? 'Reaplicaria' : 'Reapliquei'} a linha ${LINHA_DO_CLAUDE} em ${ARQUIVO_CLAUDE_MD}.\n`;
   }
 
   if (conferencia.semProva && !o.forcar) {
@@ -284,6 +303,7 @@ function atualizarNoProjeto(o, amb, { aqui, raiz, dirHarness, dirNucleo }) {
     if (agents.aviso) amb.avisar(agents.aviso);
     fs.writeFileSync(path.join(raiz, ARQUIVO_AGENTS), agents.texto);
   }
+  if (claude && !claude.link) fs.writeFileSync(path.join(raiz, ARQUIVO_CLAUDE_MD), claude.texto);
   try { gravarJson(path.join(amb.dirEstado, 'origem.json'), { clone: aqui }); } catch { /* o doctor só não confere a origem */ }
   try {
     registrarEvento(amb.dirEstado, {
@@ -297,9 +317,14 @@ function atualizarNoProjeto(o, amb, { aqui, raiz, dirHarness, dirNucleo }) {
   else if (conferencia.semProva) amb.escrever('Sem como conferir o núcleo antigo (--forcar): o que houvesse de mudança à mão foi descartado.\n');
   if (fora.length) amb.escrever(foraTexto(fora));
   amb.escrever(passosDoCommit(raiz, amb.config.git.base, amb.env, {
-    caminhos: ['.harness/nucleo', ARQUIVO_AGENTS], mensagem: MENSAGEM_DO_COMMIT,
+    caminhos: ['.harness/nucleo', ARQUIVO_AGENTS, ARQUIVO_CLAUDE_MD], mensagem: MENSAGEM_DO_COMMIT,
     falta: `Falta levar a atualização para o ramo base ${amb.config.git.base} (as frentes partem dele)`,
   }));
+  // As skills do harness no projeto são cópias da pasta skills/ da extensão metodo: a cópia nova do núcleo não as troca.
+  const metodo = amb.config.extensoes?.metodo;
+  if (metodo === true || (metodo !== null && typeof metodo === 'object' && !Array.isArray(metodo))) {
+    amb.escrever('A extensão metodo está ligada: depois do commit, rode tools/ah metodo atualizar, que traz as skills do harness da cópia nova do núcleo.\n');
+  }
   return 0;
 }
 

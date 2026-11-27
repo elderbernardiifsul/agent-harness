@@ -186,11 +186,14 @@ test('cd X || cmd: o lado direito roda no cwd de antes (R11)', () => {
   assert.equal(comandosSimples('cd sub || exit 1; git log', '/r').at(-1).cwd, path.resolve('/r', 'sub'));
   assert.equal(comandosSimples('cd a && git x', '/r').at(-1).cwd, path.resolve('/r', 'a'));
 });
+// O orçamento vigia crescimento exponencial (uma cadeia de eval que levaria minutos). O limite de 10 s é
+// folgado de propósito: medido no relógio, o teste falhava com 2 s quando várias suítes rodavam juntas na
+// mesma máquina (carga média 28), sem defeito nenhum no código.
 test('cadeia de eval tem orçamento global', () => {
   for (const t of ['eval '.repeat(95) + 'a '.repeat(50000), 'eval '.repeat(95) + 'a '.repeat(250000), 'eval '.repeat(300) + 'a '.repeat(1000)]) {
     const inicio = Date.now();
     try { comandosSimples(t, '/r'); } catch (e) { assert.ok(erro(e), String(e)); }
-    assert.ok(Date.now() - inicio < 2000, `lento: ${t.length}`);
+    assert.ok(Date.now() - inicio < 10000, `lento: ${Date.now() - inicio} ms para ${t.length} caracteres`);
   }
 });
 test('env - é o -i do POSIX', () => assert.deepEqual(comandosSimples('env - git push origin main', '/r')[0].argv, ['git', 'push', 'origin', 'main']));
