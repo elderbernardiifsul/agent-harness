@@ -580,6 +580,7 @@ Frente as-1 carrinho fechada.
 ah migracao reservar [--frente <nome>]
 ah migracao liberar [--frente <nome>]
 ah migracao listar [--json]
+ah migracao renumerar [--frente <nome>]
 ```
 
 Comando da extensão `migracao`, que acompanha o harness, desligada por padrão. Resolve o número repetido: duas frentes abertas sobre a mesma base criam, cada uma, a "próxima" migração, com o mesmo número. A reserva diz que número cada frente terá se a base receber as frentes na ordem das reservas. O número sai do nome do arquivo; a extensão não depende de ferramenta de migração.
@@ -600,6 +601,7 @@ Comando da extensão `migracao`, que acompanha o harness, desligada por padrão.
 - **`reservar`.** Grava `frente.extensoes.migracao.numero` na frente da sessão (ou na de `--frente`). O número é o maior entre a última migração da base (`git.base`, lida no ramo local) e as reservas de todas as outras frentes do estado, mais um. A frente que já tem reserva acima da última da base fica com ela (`já reservada`). A conferência e a gravação ocorrem sob a trava das frentes.
 - **`liberar`.** Apaga a reserva da frente.
 - **`listar`.** A última migração da base e cada reserva, em ordem. A reserva que a base já ultrapassou (outra frente entrou com aquele número) aparece com `(a dev já passou dela: rode ah migracao renumerar depois de reintegrar)`. `--json` imprime `{"base","ultima","reservas":[{"id","frente","estado","numero"}]}`.
+- **`renumerar`.** Na reintegração: quando outra frente entrou na base com o número reservado, rode no worktree `git merge dev --no-edit` (resolva o conflito e commite, se houver) e depois `ah migracao renumerar`. As migrações da frente (os arquivos da pasta que casam com o padrão e não existem na base) são renomeadas com `git mv` para os números seguintes à última da base, trocando só o número (`0003_frete.sql` → `0005_frete.sql`); a reserva passa a ser o primeiro número novo. A ferramenta de migração que guarda mais do que o nome do arquivo (um registro, um metadado) declara o passo dela em `renumerar`, uma lista argv rodada no worktree para cada arquivo renomeado, com `{de}`, `{para}` e `{pasta}` trocados: `"renumerar": ["node", "scripts/renomear-migracao.mjs", "{de}", "{para}"]`. No fim, tudo fica em stage, a saída lista os arquivos fora da pasta que citam o nome antigo e termina com `Falta: git commit no worktree.`. Já em dia (a primeira da frente é a seguinte à última da base e as outras seguem em sequência), não mexe em nada.
 - **Sessão e frente alheia.** `reservar`, `liberar` e `renumerar` exigem sessão; `listar` não. `--frente` em frente ativa de outra sessão viva recusa, como na extensão `recursos`.
 - **Ciclo.** O `close` libera a reserva (ela mora no registro da frente) e diz `Reserva de migração 0003 liberada.`. O `handoff` não libera: a frente passada continua dona do número.
 - **Quadro.** A coluna `MIGRACAO` mostra o número reservado.
@@ -612,6 +614,10 @@ Comando da extensão `migracao`, que acompanha o harness, desligada por padrão.
 | `Não achei a frente <nome>.` | rode ah board para ver as frentes abertas |
 | `A frente <id> <nome> é da sessão <s>, que está viva.` | peça à sessão dona (<s>) que faça ela mesma; com a sessão morta (frente órfã) ou a frente passada, o --frente vale |
 | `não consegui ler <pasta> no ramo <base>: …` | confira se o ramo <base> existe neste repositório |
+| `o worktree <wt> tem um merge em curso …` (em `renumerar`) | resolva os conflitos, termine o merge com git commit e rode ah migracao renumerar de novo |
+| `a dev não está mesclada no ramo <ramo>: …` | no worktree, git merge dev --no-edit (pode parar em conflito: resolva e commite), e rode ah migracao renumerar de novo |
+| `<arquivo> já existe em <pasta>.` | renomeie à mão o arquivo que está no caminho e rode ah migracao renumerar de novo |
+| `o passo de renumerar da configuração falhou em <de> → <para> (…); já renomeados (em stage): …` | conserte o passo da ferramenta para esses arquivos à mão, ou desfaça com git restore --staged --worktree e rode de novo |
 | `Opção desconhecida: …` / `Argumento a mais: …` / `A opção --frente precisa do nome da frente.` | use o uso acima |
 
 ```
@@ -623,6 +629,11 @@ $ tools/ah migracao listar
 Última da dev: 0002 (0002_cupom.sql)
 0003 as-1 carrinho
 0004 as-2 cupom
+$ git merge --no-ff feat/cupom && AH_SESSAO=carla-terminal tools/ah close     # o cupom entra primeiro
+$ cd <worktree do carrinho> && git merge dev --no-edit
+$ AH_SESSAO=ana-terminal tools/ah migracao renumerar
+A migração da frente agora segue a 0004 da dev: 0003_carrinho.sql → 0005_carrinho.sql.
+Falta: git commit no worktree.
 ```
 
 ## prova

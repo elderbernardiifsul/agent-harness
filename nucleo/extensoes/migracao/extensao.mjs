@@ -5,7 +5,10 @@
 // `ah migracao reservar|liberar|listar|renumerar`. O número reservado é o maior entre a última migração da base e
 // as reservas das frentes do estado, mais um; o close libera (a reserva mora no registro da frente).
 // Configuração: `{"pasta": "db/migracoes", "padrao": "^(\\d+)_", "digitos": 4, "renumerar": [argv…]}`.
-import { migracoesDaBase, proximoNumero, formatar } from './numeros.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { migracoesDaBase, numeroDoArquivo, planoDeRenumeracao, proximoNumero, formatar } from './numeros.mjs';
 
 const USO = 'ah migracao reservar|liberar|renumerar [--frente <nome>] | ah migracao listar [--json]';
 const CAMPOS = ['pasta', 'padrao', 'digitos', 'renumerar'];
@@ -106,7 +109,75 @@ function listar(args, ctx) {
   return 0;
 }
 
-const SUBCOMANDOS = { reservar, liberar, listar };
+// Depois de reintegrar a base no worktree da frente, põe as migrações dela logo depois da última da base.
+// Renomeia com git mv (fica em stage) e roda o passo da ferramenta, se a configuração tiver um; não commita.
+async function renumerar(args, ctx) {
+  const o = { ...opcoes(ctx), ...lerArgs(args, ctx) };
+  const f = frenteAlvo(ctx, o.frente);
+  conferirDona(ctx, f);
+  const wt = f.worktree;
+  const g = a => ctx.git(a, { cwd: wt });
+  const emConflito = g(['diff', '--name-only', '--diff-filter=U']).saida.trim();
+  if (g(['rev-parse', '-q', '--verify', 'MERGE_HEAD']).codigo === 0 || emConflito) {
+    throw recusa(ctx, `o worktree ${wt} tem um merge em curso${emConflito ? ` (em conflito: ${emConflito.split('\n').slice(0, 5).join(', ')})` : ''}.`,
+      'resolva os conflitos, termine o merge com git commit e rode ah migracao renumerar de novo');
+  }
+  const mesclada = g(['merge-base', '--is-ancestor', `refs/heads/${o.base}`, 'HEAD']);
+  if (mesclada.codigo !== 0) {
+    throw recusa(ctx, `a ${o.base} não está mesclada no ramo ${f.ramo}: renumerar agora daria números que a ${o.base} ainda pode ocupar.`,
+      `no worktree, git merge ${o.base} --no-edit (pode parar em conflito: resolva e commite), e rode ah migracao renumerar de novo`);
+  }
+  const daBase = doRepositorio(ctx, o);
+  const ultima = daBase.at(-1)?.numero ?? 0;
+  const nomesDaBase = new Set(daBase.map(m => m.arquivo));
+  const pasta = path.join(wt, o.pasta);
+  const daFrente = (fs.existsSync(pasta) ? fs.readdirSync(pasta) : [])
+    .filter(a => numeroDoArquivo(a, o.padrao) !== null && !nomesDaBase.has(a))
+    .sort((a, b) => numeroDoArquivo(a, o.padrao) - numeroDoArquivo(b, o.padrao) || a.localeCompare(b));
+  if (!daFrente.length) {
+    ctx.escrever(`A frente ${f.id} ${f.nome} não tem migração fora da ${o.base} (a última da ${o.base} é a ${formatar(ultima, o.digitos)}): nada a renumerar.\n`);
+    return 0;
+  }
+  const plano = planoDeRenumeracao(daFrente, ultima, o.padrao, o.digitos);
+  const reservar = numero => ctx.gravarCampos(f.nome, (secao, { frentes }) => {
+    conferirDona(ctx, frentes.find(x => x.nome === f.nome));
+    return { numero, em: new Date().toISOString() };
+  });
+  if (!plano.length) {
+    await reservar(ultima + 1);
+    ctx.escrever(`A migração da frente (${daFrente.join(', ')}) já está em dia: segue a ${formatar(ultima, o.digitos)} da ${o.base}.\n`);
+    return 0;
+  }
+  const ocupado = plano.find(({ para }) => fs.existsSync(path.join(pasta, para)) && !daFrente.includes(para));
+  if (ocupado) throw recusa(ctx, `${ocupado.para} já existe em ${o.pasta}.`, 'renomeie à mão o arquivo que está no caminho e rode ah migracao renumerar de novo');
+  // Subindo os números, renomeia do último para o primeiro, para um não cair no nome do outro.
+  const ordem = numeroDoArquivo(plano[0].para, o.padrao) > numeroDoArquivo(plano[0].de, o.padrao) ? [...plano].reverse() : plano;
+  const feitos = [];
+  const seta = ({ de, para }) => `${de} → ${para}`;
+  for (const par of ordem) {
+    const mv = g(['mv', '--', path.posix.join(o.pasta, par.de), path.posix.join(o.pasta, par.para)]);
+    if (mv.codigo !== 0) throw recusa(ctx, `git mv ${par.de} falhou: ${mv.erro.trim()}${feitos.length ? `; já renomeados (em stage): ${feitos.map(seta).join(', ')}` : ''}`, 'confira o worktree com git status');
+    feitos.push(par);
+    if (ctx.config.renumerar) {
+      const troca = a => a.replaceAll('{de}', par.de).replaceAll('{para}', par.para).replaceAll('{pasta}', o.pasta);
+      const [prog, ...resto] = ctx.config.renumerar.map(troca);
+      const r = spawnSync(prog, resto, { cwd: wt, env: ctx.env, encoding: 'utf8' });
+      if (r.error || r.status !== 0) {
+        throw recusa(ctx, `o passo de renumerar da configuração falhou em ${seta(par)} (${r.error?.message ?? `código ${r.status}`}): ${(r.stderr || r.stdout || '').trim().slice(-400)}; já renomeados (em stage): ${feitos.map(seta).join(', ')}`,
+          'conserte o passo da ferramenta para esses arquivos à mão, ou desfaça com git restore --staged --worktree e rode de novo');
+      }
+    }
+  }
+  await reservar(ultima + 1);
+  ctx.escrever(`A migração da frente agora segue a ${formatar(ultima, o.digitos)} da ${o.base}: ${plano.map(seta).join(', ')}.\n`);
+  const antigos = plano.flatMap(({ de }) => ['-e', de]);
+  const citam = g(['grep', '-l', '-F', ...antigos, '--', '.', `:!${o.pasta}`]).saida.split('\n').filter(Boolean);
+  if (citam.length) ctx.escrever(`Citam o nome antigo: ${citam.join(', ')}.\n`);
+  ctx.escrever('Falta: git commit no worktree.\n');
+  return 0;
+}
+
+const SUBCOMANDOS = { reservar, liberar, listar, renumerar };
 
 export default {
   versaoDaInterface: 1,
