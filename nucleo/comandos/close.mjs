@@ -144,7 +144,8 @@ export async function executar(args, amb) {
       // Descartável de extensão não conta como perda (o git worktree remove o apaga); guardado aponta o comando
       // da extensão, que leva o item para um lugar durável; o resto, como sempre.
       const listarDentro = pasta => {
-        const r = g(['ls-files', '-z', '-o', '-i', '--exclude-standard', '--', pasta], wt);
+        // --literal-pathspecs: o nome da pasta é caminho, não padrão (`:` no começo, `[`, `*` e `?` viram texto).
+        const r = g(['--literal-pathspecs', 'ls-files', '-z', '-o', '-i', '--exclude-standard', '--', pasta], wt);
         if (r.codigo !== 0) throw falhou(`os arquivos ignorados de ${pasta} no worktree ${wt}`, r);
         return r.saida.split('\0').filter(Boolean);
       };

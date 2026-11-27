@@ -728,6 +728,9 @@ const CACHE_LOCAL = `export default {
       // Dentro de pastas que o .gitignore do worktree ignora inteiras (.local/ e .tmp/).
       { caminho: '.local/guardado/', guardar: 'tools/ah cache-local salvar-local --frente ' + ctx.frente.nome },
       { caminho: '.tmp/env/', descartavel: true },
+      // Nome com caractere de padrão do git: a pasta vai ao git como caminho literal.
+      { caminho: 'a[1]/guardado/', guardar: 'tools/ah cache-local salvar-a1 --frente ' + ctx.frente.nome },
+      { caminho: ':dados/guardado/', guardar: 'tools/ah cache-local salvar-dados --frente ' + ctx.frente.nome },
     ];
   },
 };
@@ -743,7 +746,7 @@ function comCacheLocal({ ligar = true, config = true } = {}) {
     fs.writeFileSync(arquivo, JSON.stringify(c, null, 2));
     for (const args of [['add', '--', '.harness'], ['commit', '-q', '-m', 'liga cache-local']]) assert.equal(p.git(args).codigo, 0);
   }
-  fs.writeFileSync(path.join(wt, '.gitignore'), '.cache-local/\n.env.frente\n.env\n.local/\n.tmp/\n');
+  fs.writeFileSync(path.join(wt, '.gitignore'), '.cache-local/\n.env.frente\n.env\n.local/\n.tmp/\na\\[1\\]/\na1/\n:dados/\n');
   p.git(['add', '.gitignore'], { cwd: wt });
   p.git(['commit', '-m', 'chore: ignora o que é local'], { cwd: wt });
   mescla(p);
@@ -836,4 +839,26 @@ test('pasta-mãe ignorada inteira só com descartáveis dentro: o close fecha', 
   const r = p.ah(['close']);
   assert.equal(r.codigo, 0, r.erro);
   assert.ok(!fs.existsSync(wt));
+});
+
+test('pasta-mãe com [ ] ou : no começo do nome vai ao git como caminho literal', t => {
+  const { p, wt } = comCacheLocal();
+  t.after(() => p.limpar());
+  // `a[1]` como padrão casaria com `a1`; a pasta `a1/` ao lado não pode entrar na conta de `a[1]/`.
+  fs.mkdirSync(path.join(wt, 'a[1]', 'guardado'), { recursive: true });
+  fs.writeFileSync(path.join(wt, 'a[1]', 'guardado', 'x.txt'), 'x');
+  fs.mkdirSync(path.join(wt, 'a1'));
+  fs.writeFileSync(path.join(wt, 'a1', 'y.txt'), 'y');
+  const r = p.ah(['close']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /itens ignorados que a extensão cache-local guarda \(1\); saída: tools\/ah cache-local salvar-a1 --frente carrinho/);
+  assert.match(r.erro, /^ {4}a\[1\]\/guardado\/x\.txt$/m);
+  assert.match(r.erro, /itens ignorados no worktree \(1;/);
+  assert.match(r.erro, /^ {4}a1\/$/m);
+  // Com `:` no começo, o git lê o nome como pathspec mágico e, sem --literal-pathspecs, não lista nada dentro.
+  fs.mkdirSync(path.join(wt, ':dados', 'guardado'), { recursive: true });
+  fs.writeFileSync(path.join(wt, ':dados', 'guardado', 'z.txt'), 'z');
+  const r2 = p.ah(['close']);
+  assert.match(r2.erro, /extensão cache-local guarda \(1\); saída: tools\/ah cache-local salvar-dados --frente carrinho/);
+  assert.match(r2.erro, /^ {4}:dados\/guardado\/z\.txt$/m);
 });

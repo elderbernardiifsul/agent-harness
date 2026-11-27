@@ -495,8 +495,8 @@ export function expandirPastasMaes(itens, declarados, listarDentro) {
   const saida = [];
   for (const item of itens) {
     const ePai = item.endsWith('/') && declarados.some(d => d.caminho !== item && d.caminho.startsWith(item));
-    const temFilhos = itens.some(x => x !== item && x.startsWith(item));
-    const dentro = ePai && !temFilhos ? listarDentro(item) : [];
+    const semFilhos = ePai && !itens.some(x => x !== item && x.startsWith(item));
+    const dentro = semFilhos ? listarDentro(item) : [];
     saida.push(...(dentro.length ? dentro : [item]));
   }
   return saida;
