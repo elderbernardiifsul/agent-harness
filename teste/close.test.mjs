@@ -725,6 +725,9 @@ const CACHE_LOCAL = `export default {
     return [
       { caminho: '.cache-local/', guardar: 'tools/ah cache-local salvar --frente ' + ctx.frente.nome },
       { caminho: '.env.frente', descartavel: true },
+      // Dentro de pastas que o .gitignore do worktree ignora inteiras (.local/ e .tmp/).
+      { caminho: '.local/guardado/', guardar: 'tools/ah cache-local salvar-local --frente ' + ctx.frente.nome },
+      { caminho: '.tmp/env/', descartavel: true },
     ];
   },
 };
@@ -740,7 +743,7 @@ function comCacheLocal({ ligar = true, config = true } = {}) {
     fs.writeFileSync(arquivo, JSON.stringify(c, null, 2));
     for (const args of [['add', '--', '.harness'], ['commit', '-q', '-m', 'liga cache-local']]) assert.equal(p.git(args).codigo, 0);
   }
-  fs.writeFileSync(path.join(wt, '.gitignore'), '.cache-local/\n.env.frente\n.env\n');
+  fs.writeFileSync(path.join(wt, '.gitignore'), '.cache-local/\n.env.frente\n.env\n.local/\n.tmp/\n');
   p.git(['add', '.gitignore'], { cwd: wt });
   p.git(['commit', '-m', 'chore: ignora o que é local'], { cwd: wt });
   mescla(p);
@@ -804,4 +807,33 @@ test('sem a extensão ligada, os mesmos itens dão a recusa de sempre', t => {
   assert.equal(r.codigo, 1);
   assert.match(r.erro, /itens ignorados no worktree \(2;/);
   assert.doesNotMatch(r.erro, /extensão cache-local/);
+});
+
+test('pasta-mãe ignorada inteira pelo projeto: o close olha dentro dela e aponta o comando da extensão', t => {
+  const { p, wt } = comCacheLocal();
+  t.after(() => p.limpar());
+  // O git lista só `.local/` (o .gitignore ignora a pasta toda); o declarado está dentro dela.
+  fs.mkdirSync(path.join(wt, '.local', 'guardado'), { recursive: true });
+  fs.writeFileSync(path.join(wt, '.local', 'guardado', 'x.txt'), 'x');
+  const r = p.ah(['close']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /itens ignorados que a extensão cache-local guarda \(1\); saída: tools\/ah cache-local salvar-local --frente carrinho/);
+  assert.match(r.erro, /^ {4}\.local\/guardado\/x\.txt$/m);
+  assert.doesNotMatch(r.erro, /--descartar-ignorados(?!\s*apagaria)/);
+  // Outro arquivo na pasta-mãe: ele fica na linha de sempre.
+  fs.writeFileSync(path.join(wt, '.local', 'notas.txt'), 'minhas notas');
+  const r2 = p.ah(['close']);
+  assert.match(r2.erro, /extensão cache-local guarda \(1\)/);
+  assert.match(r2.erro, /itens ignorados no worktree \(1;/);
+  assert.match(r2.erro, /^ {4}\.local\/notas\.txt$/m);
+});
+
+test('pasta-mãe ignorada inteira só com descartáveis dentro: o close fecha', t => {
+  const { p, wt } = comCacheLocal();
+  t.after(() => p.limpar());
+  fs.mkdirSync(path.join(wt, '.tmp', 'env'), { recursive: true });
+  fs.writeFileSync(path.join(wt, '.tmp', 'env', 'portas'), '3001');
+  const r = p.ah(['close']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.ok(!fs.existsSync(wt));
 });

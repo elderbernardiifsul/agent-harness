@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ErroDeUso } from '../lib/caminhos.mjs';
 import { comTrava, registrarEvento } from '../lib/estado.mjs';
-import { ignoradosDasExtensoes, reagir, recusaAntesDeFechar, separarIgnorados } from '../lib/extensoes.mjs';
+import { expandirPastasMaes, ignoradosDasExtensoes, reagir, recusaAntesDeFechar, separarIgnorados } from '../lib/extensoes.mjs';
 import { frentesDa, gravarFrente, lerFrente, linhaDoHistorico, listarFrentesTolerante, nomeValido, removerFrente } from '../lib/frente.mjs';
 import { existeRamo, ramoAtual, git } from '../lib/git.mjs';
 import { loginAtual } from '../lib/github.mjs';
@@ -143,7 +143,13 @@ export async function executar(args, amb) {
       if (ig.codigo !== 0) throw falhou(`os arquivos ignorados do worktree ${wt}`, ig);
       // Descartável de extensão não conta como perda (o git worktree remove o apaga); guardado aponta o comando
       // da extensão, que leva o item para um lugar durável; o resto, como sempre.
-      const { guardados, outros } = separarIgnorados(ig.saida.split('\0').filter(Boolean), declarados);
+      const listarDentro = pasta => {
+        const r = g(['ls-files', '-z', '-o', '-i', '--exclude-standard', '--', pasta], wt);
+        if (r.codigo !== 0) throw falhou(`os arquivos ignorados de ${pasta} no worktree ${wt}`, r);
+        return r.saida.split('\0').filter(Boolean);
+      };
+      const itens = expandirPastasMaes(ig.saida.split('\0').filter(Boolean), declarados, listarDentro);
+      const { guardados, outros } = separarIgnorados(itens, declarados);
       for (const g of guardados) {
         problemas.push([`itens ignorados que a extensão ${g.extensao} guarda (${g.itens.length}); saída: ${g.guardar} e repita ah close (o --descartar-ignorados apagaria junto)`, listaCortada(g.itens, 'itens')]);
       }

@@ -199,10 +199,11 @@ ignorados(ctx) {
 },
 ```
 
-- `ignorados(ctx)` é chamada pelo `close`, na primeira fase (sob a trava das frentes), com `ctx.frente` definida; pode ser assíncrona. Não roda com `--descartar-ignorados`.
-- `caminho` é relativo à raiz do worktree: um arquivo, ou uma pasta terminada em `/` (que cobre tudo dentro dela). Caminho absoluto, com `..` ou vazio é inválido.
+- `ignorados(ctx)` é chamada pelo `close`, na primeira fase, com `ctx.frente` definida; pode ser assíncrona. Ela roda sob a trava das frentes, que segura as outras sessões: deve ser rápida e sem rede (ler o estado ou o disco, não o GitHub). Não roda com `--descartar-ignorados`.
+- `caminho` é relativo à raiz do worktree, com `/` como separador em qualquer sistema: um arquivo, ou uma pasta terminada em `/` (que cobre tudo dentro dela). Caminho absoluto, com `..`, com `\` ou vazio é inválido.
+- Uma pasta declarada descartável é apagada inteira com o worktree, sem perguntar, inclusive o que outra pessoa ou ferramenta pôs nela. Declare como descartável só a pasta que a extensão possui inteira; na dúvida, declare os arquivos um a um. O mesmo cuidado vale para quem roda o comando de `guardar`: ele não deve apagar o que não guardou.
 - Cada item tem um dos dois campos: `descartavel: true` (não conta como perda; sai com o `git worktree remove`) ou `guardar: '<comando>'` (recusa numa linha própria, com esse comando como próximo passo). O `close` só aponta o comando; nunca o roda.
-- Um item ignorado casa com um declarado quando é o caminho dele ou fica dentro dele. Coberto por um descartável e por um `guardar`, vale o `guardar`. Pasta-mãe de um declarado (o git lista `.superpowers/` junto com `.superpowers/sdd/`) casa só quando os itens listados dentro dela casam todos; com outro ignorado dentro (`.superpowers/x.log`), ela fica na linha de sempre.
+- Um item ignorado casa com um declarado quando é o caminho dele ou fica dentro dele. Coberto por um descartável e por um `guardar`, vale o `guardar`. Pasta-mãe de um declarado (o git lista `.superpowers/` junto com `.superpowers/sdd/`) casa só quando os itens listados dentro dela casam todos; com outro ignorado dentro (`.superpowers/x.log`), ela fica na linha de sempre. Quando o projeto ignora a pasta-mãe inteira (`.superpowers/` no `.gitignore`), o git a lista sozinha, sem nada dentro; o `close` então a lista de novo item a item (`git ls-files -o -i --exclude-standard -- <pasta>`) e separa esses itens pela mesma regra.
 - A função que lança, a promessa que rejeita, a lista inválida e o item inválido viram o aviso `Aviso: a extensão <nome> falhou em ignorados: <motivo>; …`, e os itens afetados seguem a conferência de sempre (a recusa que sugere `--descartar-ignorados`).
 - Acréscimo compatível de 26/11/2026 (P5 do desenho do método): a interface continua na versão 1, e a extensão sem o campo não muda nada.
 
@@ -218,7 +219,7 @@ ignorados(ctx) {
 | Função | Uso |
 |---|---|
 | `carregarParaTeste(arquivo, config)` | Carrega o `extensao.mjs` e confere forma e configuração como o núcleo; lança com o motivo da recusa |
-| `ctxFalso({extensao, config, frente, frentes, ...})` | Contexto sem disco, para chamar diretamente uma função da extensão (`executar` de um comando, `avaliar` de uma trava, uma reação, `conferir`, `resumo`, `valor` de coluna) |
+| `ctxFalso({extensao, config, frente, frentes, ...})` | Contexto sem disco, para chamar diretamente uma função da extensão (`executar` de um comando, `avaliar` de uma trava, uma reação, `conferir`, `resumo`, `valor` de coluna, `ignorados`) |
 | `projetoDeTeste({extensoes, pastas, config})` | Projeto git descartável com o núcleo, as pastas de extensão copiadas e ligadas, estado e gh próprios; `ah(args)`, `gancho(acao)`, `frente(nome)`, `git(args)`, `limpar()` |
 
 `ctxFalso` tem a forma do `ctx` do núcleo, com estes detalhes:

@@ -487,6 +487,21 @@ export async function ignoradosDasExtensoes(amb, frente, { dentroDaTrava = false
   return { declarados, falhas };
 }
 
+// Pasta-mãe estrita de um declarado que o git listou sem nada dentro: o projeto ignora a pasta inteira (o
+// `.gitignore` dele tem `.superpowers/`), e o `--directory` resume tudo nela. Para saber o que é da extensão, a pasta é
+// listada de novo item a item (`listarDentro(pasta)`, o `git ls-files` sem `--directory`), e esses itens tomam o
+// lugar dela. Listagem vazia mantém a pasta, que fica com os outros. Ensaio de 27/11, git 2.56.
+export function expandirPastasMaes(itens, declarados, listarDentro) {
+  const saida = [];
+  for (const item of itens) {
+    const ePai = item.endsWith('/') && declarados.some(d => d.caminho !== item && d.caminho.startsWith(item));
+    const temFilhos = itens.some(x => x !== item && x.startsWith(item));
+    const dentro = ePai && !temFilhos ? listarDentro(item) : [];
+    saida.push(...(dentro.length ? dentro : [item]));
+  }
+  return saida;
+}
+
 // Separa os itens ignorados que o git lista (relativos ao worktree, pasta com / no fim) em descartáveis,
 // guardados (por extensão e comando) e outros. Um item casa com um declarado quando é o caminho dele ou fica
 // dentro dele (pasta declarada). Coberto por um descartável e por um guardar, vale o guardar: na dúvida, guardar.

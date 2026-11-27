@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { criarProjeto, dirDoTeste, ganchoPre, amb as ambDoTeste, apagarPastaDeTeste } from './apoio/repo.mjs';
 import {
-  VERSAO_DA_INTERFACE, carregarExtensoes, descobrir, esquecerExtensoes, ignoradosDasExtensoes, montarCtx, separarIgnorados,
+  VERSAO_DA_INTERFACE, carregarExtensoes, descobrir, esquecerExtensoes, expandirPastasMaes, ignoradosDasExtensoes, montarCtx, separarIgnorados,
 } from '../nucleo/lib/extensoes.mjs';
 import { aplicarPadroes, validarConfig } from '../nucleo/lib/config.mjs';
 import { avaliar } from '../nucleo/lib/travas.mjs';
@@ -185,7 +185,7 @@ test('ignorados: a forma exige uma função', async t => {
 test('ignoradosDasExtensoes valida cada item, recebe a frente e transforma erro em falha', async t => {
   const pp = pastas(t, {
     boa: fonte(`ignorados: ctx => [{ caminho: '.cache/', guardar: 'tools/ah boa salvar --frente ' + ctx.frente.nome }, { caminho: './.env.frente', descartavel: true }]`),
-    ruim: fonte(`ignorados: () => [{ caminho: '/abs', descartavel: true }, { caminho: 'a/../b', descartavel: true }, { caminho: 'x' }, { caminho: 'y', descartavel: true, guardar: 'g' }, { caminho: '', guardar: 'g' }, { caminho: 'ok.txt', guardar: 'g' }]`),
+    ruim: fonte(`ignorados: () => [{ caminho: '/abs', descartavel: true }, { caminho: 'a/../b', descartavel: true }, { caminho: 'x' }, { caminho: 'y', descartavel: true, guardar: 'g' }, { caminho: '', guardar: 'g' }, { caminho: 'a\\\\b', descartavel: true }, { caminho: 'ok.txt', guardar: 'g' }]`),
     lanca: fonte(`ignorados() { throw new Error('quebrou'); }`),
     promessa: fonte(`async ignorados() { throw new Error('rejeitou'); }`),
     forma: fonte(`ignorados: () => 'texto'`),
@@ -202,8 +202,24 @@ test('ignoradosDasExtensoes valida cada item, recebe a frente e transforma erro 
   assert.match(falhas.lanca, /quebrou/);
   assert.match(falhas.promessa, /rejeitou/);
   assert.match(falhas.forma, /deve devolver uma lista/);
-  assert.equal(r.falhas.filter(f => f.extensao === 'ruim').length, 5);
+  assert.equal(r.falhas.filter(f => f.extensao === 'ruim').length, 6);
   assert.match(r.falhas.find(f => f.extensao === 'ruim').motivo, /ignorados\[0\]\.caminho deve ser relativo ao worktree/);
+});
+
+test('expandirPastasMaes: pasta-mãe listada sem filhos é listada de novo, item a item', () => {
+  const sdd = { extensao: 'registros', caminho: '.superpowers/sdd/', descartavel: false, guardar: 'g' };
+  const pedidas = [];
+  const dentro = pasta => { pedidas.push(pasta); return ['.superpowers/sdd/.gitignore', '.superpowers/sdd/p/progress.md', '.superpowers/x.log']; };
+  // O projeto ignora `.superpowers/` no próprio .gitignore: o git com --directory dá só a pasta-mãe (ensaio de 27/11).
+  assert.deepEqual(expandirPastasMaes(['.superpowers/', '.env'], [sdd], dentro), ['.superpowers/sdd/.gitignore', '.superpowers/sdd/p/progress.md', '.superpowers/x.log', '.env']);
+  assert.deepEqual(pedidas, ['.superpowers/']);
+  // Com filhos já listados, ou sem declarado dentro, ou o próprio declarado: nada muda e o git não é chamado de novo.
+  const ja = ['.superpowers/', '.superpowers/sdd/'];
+  assert.deepEqual(expandirPastasMaes(ja, [sdd], () => assert.fail('não devia listar')), ja);
+  assert.deepEqual(expandirPastasMaes(['outra/'], [sdd], () => assert.fail('não devia listar')), ['outra/']);
+  assert.deepEqual(expandirPastasMaes(['.superpowers/sdd/'], [sdd], () => assert.fail('não devia listar')), ['.superpowers/sdd/']);
+  // A listagem vazia mantém a pasta (fica com os outros, e a recusa de sempre a protege).
+  assert.deepEqual(expandirPastasMaes(['.superpowers/'], [sdd], () => []), ['.superpowers/']);
 });
 
 test('separarIgnorados: caminho declarado, pasta-mãe só com itens cobertos, descartável e o resto', () => {
