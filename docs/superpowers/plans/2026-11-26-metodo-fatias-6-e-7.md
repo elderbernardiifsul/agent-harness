@@ -39,7 +39,7 @@
 | Campo | Padrão | O que é |
 |---|---|---|
 | `pasta` | `"docs/wiki"` | Pasta da wiki, relativa à raiz; nunca é fonte |
-| `fontes` | `["CONTEXT.md", "docs/**"]` | Padrões do que a wiki pode citar |
+| `fontes` | `["CONTEXT.md", "GLOSSARY.md", "docs/**"]` | Padrões do que a wiki pode citar |
 | `foraDasFontes` | `["docs/agents/**"]` | Padrões que saem das fontes mesmo casando com `fontes` |
 
 Padrões relativos à raiz, com `/`: `**` casa qualquer sequência (inclusive `/`), `*` casa qualquer sequência sem `/`, o resto é literal. Campo desconhecido, ou valor fora da forma (texto não vazio; lista não vazia de textos), recusa a configuração com o motivo. Arquivos conferíveis (texto): `.md`, `.txt`, `.srt`, `.vtt`, `.json`, `.csv`, `.yaml`, `.yml`. A cobertura conta só `.md`.
@@ -141,7 +141,7 @@ git commit -m "feat(wiki): leitura do artigo e extração dos literais de alto s
 
 **Interfaces:**
 - Produces:
-  - `PADRAO = {pasta: 'docs/wiki', fontes: ['CONTEXT.md', 'docs/**'], foraDasFontes: ['docs/agents/**']}` (congelado).
+  - `PADRAO = {pasta: 'docs/wiki', fontes: ['CONTEXT.md', 'GLOSSARY.md', 'docs/**'], foraDasFontes: ['docs/agents/**']}` (congelado).
   - `configDaWiki(config: object) -> {pasta, fontes, foraDasFontes}`: `PADRAO` com os campos dados por cima.
   - `validarConfig(config: object) -> string|null`: a mensagem da recusa, ou `null`.
   - `casa(rel: string, padrao: string) -> boolean`.
