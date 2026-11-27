@@ -379,8 +379,10 @@ test('reação ao fechamento: o close recusa a frente com revisão pedida e não
 Execução, na raiz do projeto:
 
 ```sh
-node --test .harness/extensoes/
+node --test ".harness/extensoes/*/*.test.mjs"
 ```
+
+O padrão entre aspas é expandido pelo próprio Node (no Node 22, `node --test` não aceita uma pasta como argumento).
 
 Linhas da saída que importam (as durações variam; o `node --test` imprime também `ℹ suites`, `ℹ cancelled`, `ℹ skipped`, `ℹ todo` e `ℹ duration_ms`, omitidas aqui):
 

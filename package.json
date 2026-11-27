@@ -5,5 +5,8 @@
   "type": "module",
   "license": "MIT",
   "engines": { "node": ">=22" },
-  "scripts": { "test": "node --test teste/" }
+  "scripts": {
+    "test": "node --test \"teste/*.test.mjs\"",
+    "verifica": "node ferramentas/verifica.mjs"
+  }
 }

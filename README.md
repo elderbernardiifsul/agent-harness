@@ -104,4 +104,4 @@ O guia de estudo traz uma lista de experimentos para o laboratório.
 
 ## Desenvolvimento
 
-Testes: `npm test` (ou `node --test teste/`). Regras de trabalho neste repositório: [`AGENTS.md`](AGENTS.md). Licença MIT.
+Testes: `npm test` (ou `node --test "teste/*.test.mjs"`). Regras de trabalho neste repositório: [`AGENTS.md`](AGENTS.md). Licença MIT.
