@@ -28,7 +28,7 @@ Abra uma sessão nova no projeto. Nela, o agente deve:
 - rodar `tools/ah doctor`;
 - a cada pedido, escolher a trilha pelo `docs/agents/metodo.md` e dizê-la em uma linha antes de começar;
 - abrir a frente (`tools/ah open`) antes de mudar código;
-- num pedido sem ticket, grande demais para um ticket ou que ainda precisa de investigação, dizer que skill você deve chamar e por quê. Três skills só você chama: `triage` (triar o pedido), `to-tickets` (quebrar em tickets) e `wayfinder` (mapa de uma investigação). No Claude Code, `/triage`, `/to-tickets` e `/wayfinder`; no Codex, `$triage`, `$to-tickets` e `$wayfinder` no pedido.
+- num pedido sem ticket, grande demais para um ticket ou que ainda precisa de investigação, dizer que skill você deve chamar e por quê. Três skills só você chama: `triage` (triar o pedido), `to-tickets` (quebrar em tickets) e `wayfinder` (mapa de uma investigação). No Claude Code, `/triage`, `/to-tickets` e `/wayfinder`; no Codex, `$triage`, `$to-tickets` e `$wayfinder` no pedido (ou a lista de `/skills`).
 
 Para testar se ele entendeu, sem deixar que mude nada:
 

@@ -75,7 +75,7 @@ Uma etapa, uma skill. As coleções trazem outras skills de TDD (teste antes do 
 
 - Worktree e encerramento de ramo são do harness (`tools/ah`): quando uma skill manda criar worktree ou encerrar o ramo, vale a tabela das skills citadas, no trecho do método do `AGENTS.md`.
 - Um TDD só (`test-driven-development`) e um revisor só (`requesting-code-review`).
-- O `prototype` pede um ramo descartável, fora da base: o protótipo vai numa frente própria que nunca entra na base. Empurre o ramo dela (`git push -u origin <ramo>`), cite o commit no ticket e, com a resposta registrada, feche com `tools/ah close`; o ramo fica no remoto, fora da base.
+- O `prototype` pede um ramo descartável, fora da base: o protótipo vai numa frente própria que nunca entra na base. Empurre o ramo dela (`git push -u origin <ramo>`; empurrar o ramo da frente não é publicar, porque os ramos protegidos são stage e main), cite o commit no ticket e, com a resposta registrada, feche com `tools/ah close`; o ramo fica no remoto, fora da base. Sem remoto, a frente do protótipo não fecha: deixe-a passada com `tools/ah handoff`, com uma `tools/ah nota` dizendo que é protótipo encerrado, e cite o commit no ticket ou no plano.
 - "Pronto" exige comando e saída: no ticket ou no PR vão o comando executado e a saída (cortada no que for longo). Sem isso, a tarefa não está pronta, mesmo com o código escrito.
 - Nomes com prefixo de coleção: ver o trecho do método no `AGENTS.md`.
 
