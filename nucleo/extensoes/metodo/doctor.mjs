@@ -14,10 +14,8 @@ const curto = h => String(h).slice(0, 7);
 
 const avisoSemTrava = { estado: 'aviso', detalhe: `falta a trava ${ARQUIVO_TRAVA}`, conserto: 'rode tools/ah metodo instalar' };
 
-function colecoesRecomendadas(env) {
-  const arquivo = env.AH_METODO_COLECOES ? path.resolve(env.AH_METODO_COLECOES) : path.join(DIR, 'colecoes.json');
-  return lerColecoes(arquivo).colecoes;
-}
+const arquivoDasColecoes = env => (env.AH_METODO_COLECOES ? path.resolve(env.AH_METODO_COLECOES) : path.join(DIR, 'colecoes.json'));
+const colecoesRecomendadas = env => lerColecoes(arquivoDasColecoes(env)).colecoes;
 
 // Resultado de lerTrava, ou o resultado final da conferência quando não há trava para conferir.
 function travaOuResultado(ctx) {
@@ -88,8 +86,39 @@ export const verificacoes = [
       return {
         estado: 'aviso',
         detalhe: partes.join('; '),
-        conserto: 'se as mudanças foram de propósito, guarde-as numa skill de outro nome; senão, rode tools/ah metodo instalar (--forcar descarta as mudanças)',
+        // Só há o que guardar quando algum arquivo mudou à mão.
+        conserto: alterados.length
+          ? 'se as mudanças foram de propósito, guarde-as numa skill de outro nome; senão, rode tools/ah metodo instalar (--forcar descarta as mudanças)'
+          : 'rode tools/ah metodo instalar',
       };
+    },
+  },
+  {
+    // Depois de um `ah atualizar`, a cópia do núcleo pode trazer outra versão das skills do harness; o disco e a
+    // trava continuam iguais entre si, então só a comparação da trava com a pasta skills/ do núcleo mostra o atraso.
+    item: 'Skills do harness em dia',
+    conferir(ctx) {
+      const { trava } = travaOuResultado(ctx);
+      const instalada = trava?.colecoes[DO_HARNESS];
+      if (!instalada) return { estado: 'ok' };
+      let doHarness;
+      try { doHarness = colecoesRecomendadas(ctx.env)[DO_HARNESS]; } catch { return { estado: 'ok', detalhe: 'sem colecoes.json legível para conferir (veja o item Coleções na versão recomendada)' }; }
+      if (!doHarness) return { estado: 'ok' };
+      const dirFonte = path.resolve(path.dirname(arquivoDasColecoes(ctx.env)), doHarness.local);
+      const velhas = [];
+      const saiu = [];
+      for (const skill of instalada.skills) {
+        if (!Object.hasOwn(doHarness.skills, skill)) { saiu.push(skill); continue; }
+        let fonte = {};
+        try { fonte = hashesDe(path.join(dirFonte, ...doHarness.skills[skill].split('/'))); } catch { /* ilegível: conta como diferente */ }
+        const daTrava = Object.entries(instalada.arquivos).filter(([k]) => k.startsWith(`${skill}/`));
+        if (daTrava.length !== Object.keys(fonte).length || daTrava.some(([k, h]) => fonte[k.slice(skill.length + 1)] !== h)) velhas.push(skill);
+      }
+      const partes = [];
+      if (velhas.length) partes.push(`a cópia do núcleo traz outra versão de ${velhas.join(', ')}`);
+      for (const skill of saiu) partes.push(`a skill ${skill} não faz mais parte do harness`);
+      if (!partes.length) return { estado: 'ok' };
+      return { estado: 'aviso', detalhe: partes.join('; '), conserto: 'rode tools/ah metodo atualizar (as skills do harness vêm de .harness/nucleo/extensoes/metodo/skills/)' };
     },
   },
   {

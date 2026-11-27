@@ -9,7 +9,7 @@ import { passosDoCommit } from '../../comandos/init.mjs';
 import { VERSAO } from '../../versao.mjs';
 import { destinosDe, lerColecoes } from './colecoes.mjs';
 import { buscar, dirDoCache } from './origem.mjs';
-import { ARQUIVO_ROTULOS, criarRotulos } from './rotulos.mjs';
+import { ARQUIVO_ROTULOS, criarRotulos, repoDoProjeto } from './rotulos.mjs';
 import { ARQUIVO_TRAVA, executaveisDe, hashesDe, lerTrava, linksDe, listarArquivos, sha256, textoDaTrava, gravarTrava } from './trava.mjs';
 import { comTrecho } from './trecho.mjs';
 
@@ -297,9 +297,8 @@ export async function sincronizar(ctx, { colecoesPedidas = null, refs = {}, simu
   ctx.escrever(relatorio);
   for (const a of avisos) ctx.avisar(a);
 
-  // 7. Rótulos, quando o projeto tem repositório no GitHub e o rastreador do método.
-  const repo = ctx.configDoProjeto?.github?.repo;
-  if (typeof repo === 'string' && repo && Object.hasOwn(doProjeto, ARQUIVO_ROTULOS)) criarRotulos(ctx, repo, comando);
+  // 7. Rótulos, quando o método traz o rastreador: no repositório de github.repo ou no que o gh acha pelo remoto.
+  if (Object.hasOwn(doProjeto, ARQUIVO_ROTULOS)) criarRotulos(ctx, repoDoProjeto(ctx), comando);
 
   // 8. O commit.
   const base = ctx.configDoProjeto?.git?.base ?? 'dev';

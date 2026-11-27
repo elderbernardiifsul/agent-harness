@@ -38,7 +38,7 @@ function cenario(t, { agentes = ['claude-code'], extensoesDoHarness = {} } = {})
   assert.equal(p.git(['add', '--', '.harness/config.json']).codigo, 0);
   assert.equal(p.git(['commit', '-q', '-m', 'configura']).codigo, 0);
   ok(p.ah(['metodo', 'instalar']));
-  return { p, c, casa, colecoes, gravarColecoes };
+  return { p, c, casa, pasta, colecoes, gravarColecoes };
 }
 
 const itemDe = (p, nome) => {
@@ -85,6 +85,9 @@ test('Skills iguais à trava: skill de extensão desligada instalada, e de exten
   const sobra = itemDe(p, 'Skills iguais à trava');
   assert.equal(sobra.estado, 'aviso');
   assert.match(sobra.fazer, /preparar-projeto.*extensão recursos desligada/);
+  // Sem mudança à mão, o conserto não fala em guardar mudanças.
+  assert.doesNotMatch(sobra.fazer, /guarde|de propósito/);
+  assert.match(sobra.fazer, /rode tools\/ah metodo instalar/);
   // Agora a extensão está ligada, mas a trava não tem a skill.
   const cfg = caminho(p, '.harness/config.json');
   const conf = JSON.parse(fs.readFileSync(cfg, 'utf8'));
@@ -98,6 +101,39 @@ test('Skills iguais à trava: skill de extensão desligada instalada, e de exten
   const falta = itemDe(p, 'Skills iguais à trava');
   assert.equal(falta.estado, 'aviso');
   assert.match(falta.fazer, /preparar-projeto.*extensão recursos ligada/);
+  assert.doesNotMatch(falta.fazer, /guarde|de propósito/);
+});
+
+test('Skills do harness em dia: aviso quando a cópia do núcleo traz outra versão da skill; metodo atualizar resolve', t => {
+  const { p, pasta } = cenario(t);
+  assert.equal(itemDe(p, 'Skills do harness em dia').estado, 'ok');
+  // Como depois de um ah atualizar: a pasta skills/ do núcleo muda; o disco e a trava continuam iguais entre si.
+  fs.writeFileSync(path.join(pasta, 'skills', 'preparar-projeto', 'SKILL.md'), 'preparar-projeto v2\n');
+  fs.writeFileSync(path.join(pasta, 'skills', 'preparar-projeto', 'novo.md'), 'novo\n');
+  assert.equal(itemDe(p, 'Skills iguais à trava').estado, 'ok');
+  const i = itemDe(p, 'Skills do harness em dia');
+  assert.equal(i.estado, 'aviso');
+  assert.match(i.fazer, /preparar-projeto/);
+  assert.match(i.fazer, /rode tools\/ah metodo atualizar/);
+  ok(p.ah(['metodo', 'atualizar']));
+  assert.equal(itemDe(p, 'Skills do harness em dia').estado, 'ok');
+});
+
+test('Skills do harness em dia: skill que saiu do harness é dita; skill de extensão desligada não conta', t => {
+  const { p, pasta, colecoes, gravarColecoes } = cenario(t);
+  // Uma skill nova do harness, presa a uma extensão desligada: não está instalada e não é atraso.
+  fs.mkdirSync(path.join(pasta, 'skills', 'so-com-recursos'), { recursive: true });
+  fs.writeFileSync(path.join(pasta, 'skills', 'so-com-recursos', 'SKILL.md'), 'so-com-recursos\n');
+  colecoes.colecoes['agent-harness'].skills['so-com-recursos'] = 'so-com-recursos';
+  colecoes.colecoes['agent-harness'].extensoes = { 'so-com-recursos': 'recursos' };
+  gravarColecoes();
+  assert.equal(itemDe(p, 'Skills do harness em dia').estado, 'ok');
+  delete colecoes.colecoes['agent-harness'].skills['preparar-projeto'];
+  gravarColecoes();
+  const i = itemDe(p, 'Skills do harness em dia');
+  assert.equal(i.estado, 'aviso');
+  assert.match(i.fazer, /preparar-projeto.*não faz mais parte do harness/);
+  assert.match(i.fazer, /rode tools\/ah metodo atualizar/);
 });
 
 test('Coleções na versão recomendada: ok, e aviso por coleção com commit diferente (agent-harness fica de fora)', t => {

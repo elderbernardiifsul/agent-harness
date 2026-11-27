@@ -183,10 +183,26 @@ test('os rótulos vêm do triage-labels.md do projeto e só os que faltam são c
   assert.deepEqual(doGh().slice(antes).map(c => c.split(' ').slice(0, 2).join(' ')), ['label list']);
 });
 
-test('instalar sem github.repo não chama o gh', t => {
+test('instalar sem github.repo acha o repositório pelo gh e cria os rótulos nele', t => {
   const { p, instalar } = cenario(t);
   ok(instalar());
+  const chamadas = p.ghChamadas();
+  assert.ok(chamadas.some(c => c.argv[0] === 'repo' && c.argv[1] === 'view'), chamadas.map(c => c.argv.join(' ')).join('\n'));
+  const criados = chamadas.filter(c => c.argv[0] === 'label' && c.argv[1] === 'create');
+  assert.deepEqual(criados.map(c => c.argv[2]), ROTULOS);
+  for (const c of criados) assert.equal(c.argv[c.argv.indexOf('--repo') + 1], 'exemplo/loja');
+});
+
+test('instalar sem github.repo e sem repositório no GitHub avisa com o próximo passo e não cria rótulo', t => {
+  const { p, instalar } = cenario(t);
+  const respostas = path.join(path.dirname(p.env.GH_FALSO_TICKETS), 'respostas.json');
+  fs.writeFileSync(respostas, JSON.stringify([{ prefixo: ['repo', 'view'], codigo: 1, erro: 'no git remotes found\n' }]));
+  const r = instalar([], { env: { GH_FALSO_RESPOSTAS: respostas } });
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.erro, /não criei os rótulos de triagem no GitHub \(não achei o repositório do projeto no GitHub\)/);
+  assert.match(r.erro, /Faça: .*github\.repo em \.harness\/config\.json.*tools\/ah metodo instalar de novo/);
   assert.deepEqual(p.ghChamadas().filter(c => c.argv[0] === 'label'), []);
+  assert.ok(existe(p, '.harness/skills.lock.json'));
 });
 
 test('instalar sem rede não grava nada', t => {

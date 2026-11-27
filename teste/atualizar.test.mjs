@@ -308,6 +308,18 @@ test('o fim do atualizar diz como levar a atualização para o ramo base', t => 
   assert.match(r.saida, /Falta levar a atualização para o ramo base dev \(as frentes partem dele\):\n {2}git add -- \.harness\/nucleo AGENTS\.md CLAUDE\.md\n {2}git commit -m "chore: atualiza o agent-harness"\nDepois rode: tools\/ah doctor\n$/);
 });
 
+test('com a extensão metodo ligada, o fim do atualizar manda rodar o metodo atualizar; sem ela, não', t => {
+  const { p, clone } = cenario(t);
+  assert.doesNotMatch(clone.ah(p, ['atualizar', '--simular']).saida, /metodo atualizar/);
+  const cfg = path.join(p.raiz, '.harness', 'config.json');
+  const c = JSON.parse(fs.readFileSync(cfg, 'utf8'));
+  c.extensoes = { metodo: { agentes: ['claude-code'] } };
+  fs.writeFileSync(cfg, JSON.stringify(c, null, 2));
+  const r = clone.ah(p, ['atualizar']);
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.saida, /Depois rode: tools\/ah doctor\nA extensão metodo está ligada: depois do commit, rode tools\/ah metodo atualizar, que traz as skills do harness da cópia nova do núcleo\.\n$/);
+});
+
 test('dois atualizar ao mesmo tempo: o segundo espera a trava "atualizar" do estado antes de mexer no núcleo', async t => {
   const { p, clone } = cenario(t);
   const { comTrava } = await import('../nucleo/lib/estado.mjs');

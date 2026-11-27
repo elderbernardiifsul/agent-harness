@@ -30,12 +30,27 @@ export function nomesDosRotulos(texto) {
   return Object.fromEntries(ROTULOS_PADRAO.map(p => [p, completa ? nomes[p] : p]));
 }
 
-// Cria no repositório `repo` os rótulos que faltam. Falha do gh vira aviso com o que fazer; nunca lança.
+// O repositório do projeto no GitHub: github.repo da configuração ou, sem ele (o init não o grava), o que o gh
+// acha pelo remoto, como o núcleo faz (repoAtual em nucleo/lib/github.mjs). Sem remoto ou sem gh, null.
+export function repoDoProjeto(ctx) {
+  const doConfig = ctx.configDoProjeto?.github?.repo;
+  if (typeof doConfig === 'string' && doConfig) return doConfig;
+  const r = ctx.gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
+  const nome = String(r.saida ?? '').trim();
+  return r.codigo === 0 && /^[^/\s]+\/[^/\s]+$/.test(nome) ? nome : null;
+}
+
+// Cria no repositório `repo` os rótulos que faltam; `repo` nulo (projeto sem repositório no GitHub) só avisa.
+// Falha do gh vira aviso com o que fazer; nunca lança.
 export function criarRotulos(ctx, repo, comando) {
   let texto = null;
   try { texto = fs.readFileSync(path.join(ctx.raiz, ...ARQUIVO_ROTULOS.split('/')), 'utf8'); } catch { /* sem arquivo: nomes padrão */ }
   const nomes = nomesDosRotulos(texto);
-  const avisar = motivo => ctx.avisar(`Aviso: não criei os rótulos de triagem no GitHub (${motivo}).\nFaça: confira o gh (gh auth status) e github.repo em .harness/config.json e rode tools/ah metodo ${comando} de novo, ou crie à mão os rótulos ${Object.values(nomes).join(', ')}\n`);
+  const aMao = `crie à mão os rótulos ${Object.values(nomes).join(', ')}`;
+  if (!repo) {
+    return ctx.avisar(`Aviso: não criei os rótulos de triagem no GitHub (não achei o repositório do projeto no GitHub).\nFaça: ligue o projeto ao repositório (git remote add origin <endereço>; gh repo view deve mostrá-lo) ou escreva dono/nome em github.repo em .harness/config.json, e rode tools/ah metodo ${comando} de novo; ou ${aMao}\n`);
+  }
+  const avisar = motivo => ctx.avisar(`Aviso: não criei os rótulos de triagem no GitHub (${motivo}).\nFaça: confira o gh (gh auth status) e github.repo em .harness/config.json e rode tools/ah metodo ${comando} de novo, ou ${aMao}\n`);
   const erroDe = r => String(r.erro || r.saida).split('\n').map(l => l.trim()).find(Boolean)?.slice(0, 200) || `código ${r.codigo}`;
 
   const lista = ctx.gh(['label', 'list', '--repo', repo, '--json', 'name', '--limit', '200']);

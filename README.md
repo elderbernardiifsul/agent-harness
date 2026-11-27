@@ -23,7 +23,7 @@ Esta seção é para o agente de código que recebeu o endereço deste repositó
 
    `agentes` lista os agentes que o aluno vai usar, entre os que o método suporta: `claude-code`, `codex` e `opencode`. O agente que você é entra sempre, se for um deles. Agente fora dessa lista não entra (escolher o mais parecido não vale): registre só os suportados e avise o aluno de que as skills não serão copiadas para o agente dele, e de que o roteiro para adaptá-lo está em `docs/agentes/` deste repositório.
 
-   Antes de rodar, avise o aluno de que o `tools/ah metodo instalar` baixa duas coleções de skills de terceiros (Superpowers e as skills do Matt Pocock), cada uma num commit fixado em `nucleo/extensoes/metodo/colecoes.json`, e as copia para o projeto com a licença; peça o "sim". Depois, rode `tools/ah metodo instalar` e faça, na `dev`, o commit que ele indica (ele já leva o `.harness/config.json`).
+   Antes de rodar, avise o aluno de que o `tools/ah metodo instalar` baixa duas coleções de skills de terceiros (Superpowers e as skills do Matt Pocock), cada uma num commit fixado em `nucleo/extensoes/metodo/colecoes.json`, e as copia para o projeto com a licença, e que, com o projeto ligado a um repositório no GitHub, cria nele os rótulos de triagem que faltam; peça o "sim". Depois, rode `tools/ah metodo instalar` e faça, na `dev`, o commit que ele indica (ele já leva o `.harness/config.json`).
 6. **Conferir.** `tools/ah doctor`. Relate ao aluno o que ficou instalado, cada aviso e o que fazer com ele.
 7. **Quando algo falha.** Toda recusa do harness traz o motivo e uma linha `Faça:` com o próximo passo: siga-a e repita o passo. Sem `Faça:`, ou quando a mesma recusa volta, pare e relate ao aluno o comando, a saída e o que você tentou.
 
@@ -63,7 +63,7 @@ AH_SESSAO=ana-terminal tools/ah close
 
 `tools/ah --help` lista os comandos, e `tools/ah <comando> --help` mostra o uso de cada um. O projeto recebe a referência de uso em `docs/agents/sessoes-paralelas.md`, e o `AGENTS.md` dele ganha um trecho que aponta para ela.
 
-Para levar ao projeto uma versão mais nova do harness, baixe a versão nova numa `<nova cache>`, como no passo 3 de "Instalar num projeto" (a `<cache>` é um clone raso de um commit só e não se atualiza no lugar), e, na pasta do projeto, rode `tools/ah atualizar --de <nova cache> --simular` para ver o que mudaria e `tools/ah atualizar --de <nova cache>` para trocar. Com um clone completo dado pelo aluno, atualize esse clone e use `--de <clone>`. Configuração, extensões e estado não são tocados. A pasta antiga pode ser apagada depois: o projeto passa a registrar a nova.
+Para levar ao projeto uma versão mais nova do harness, baixe a versão nova numa `<nova cache>`, como no passo 3 de "Instalar num projeto" (a `<cache>` é um clone raso de um commit só e não se atualiza no lugar), e, na pasta do projeto, rode `tools/ah atualizar --de <nova cache> --simular` para ver o que mudaria e `tools/ah atualizar --de <nova cache>` para trocar. Com um clone completo dado pelo aluno, atualize esse clone e use `--de <clone>`. Configuração, extensões e estado não são tocados. Com a extensão `metodo` ligada, faça o commit que o `atualizar` indica e rode `tools/ah metodo atualizar`, que traz as skills do harness da cópia nova do núcleo. A pasta antiga pode ser apagada depois: o projeto passa a registrar a nova.
 
 ## Laboratório
 

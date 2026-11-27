@@ -165,3 +165,19 @@ Outros:
   - o `verifica.mjs` com os dois Node.
 - Com o `gh` falso, o `doctor` dá ok à proteção de `stage` e `main` num projeto sem remoto, porque o `gh` falso responde sucesso a tudo. Não é defeito do harness.
 - Efeito colateral da revisão: um `ah init` de um subagente rodou uma vez sem `AH_ESTADO` e criou `$HOME/.local/state/agent-harness/`, com `maquina.json` e `loja/origem.json`, às 01:38 de 27/11. A pasta não existia antes. A remoção foi deixada ao professor.
+
+## Consertos de I5, I6 e de parte do "Menor"
+
+- **I5.** Sem `github.repo`, o `metodo instalar` e o `metodo atualizar` acham o repositório pelo `gh repo view`, como o `repoAtual` do núcleo, e criam os rótulos nele (`rotulos.mjs`, `repoDoProjeto`). Sem repositório, avisam com o próximo passo. O passo 5 do README avisa o aluno de que os rótulos são criados no GitHub.
+- **I6.** No `doctor`, o item novo `Skills do harness em dia (metodo)` compara a trava com `.harness/nucleo/extensoes/metodo/skills/`. O `ah atualizar`, com a `metodo` ligada, termina mandando rodar `tools/ah metodo atualizar`, e o README diz o mesmo.
+- **Menor, consertados:**
+  - o conserto de "Skills iguais à trava" só fala em guardar mudanças quando há arquivo alterado;
+  - `comandos.md` lista as seis skills do harness;
+  - o segundo exemplo do `metodo instalar` tem o commit antes do `Agora rode`;
+  - o "Faça" do uso do `metodo` está igual ao texto real;
+  - o subtítulo virou `### metodo atualizar`;
+  - `CLAUDE_CONFIG_DIR` entrou nas variáveis lidas;
+  - o trecho `agents-metodo.md` aponta o encerramento para `docs/agents/sessoes-paralelas.md`.
+- **Menor, deixados:**
+  - a skill mantida por mudança à mão que sai da trava. O conserto pede decidir como a trava guarda uma skill fora da lista, em cada destino;
+  - a spec, seção 6 (skills renomeadas, diferença, `triage → implement`, 1.3.1 contra 1.3.2). É decisão de desenho, não conserto.

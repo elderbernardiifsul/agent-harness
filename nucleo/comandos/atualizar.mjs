@@ -320,6 +320,11 @@ function atualizarNoProjeto(o, amb, { aqui, raiz, dirHarness, dirNucleo }) {
     caminhos: ['.harness/nucleo', ARQUIVO_AGENTS, ARQUIVO_CLAUDE_MD], mensagem: MENSAGEM_DO_COMMIT,
     falta: `Falta levar a atualização para o ramo base ${amb.config.git.base} (as frentes partem dele)`,
   }));
+  // As skills do harness no projeto são cópias da pasta skills/ da extensão metodo: a cópia nova do núcleo não as troca.
+  const metodo = amb.config.extensoes?.metodo;
+  if (metodo === true || (metodo !== null && typeof metodo === 'object' && !Array.isArray(metodo))) {
+    amb.escrever('A extensão metodo está ligada: depois do commit, rode tools/ah metodo atualizar, que traz as skills do harness da cópia nova do núcleo.\n');
+  }
   return 0;
 }
 

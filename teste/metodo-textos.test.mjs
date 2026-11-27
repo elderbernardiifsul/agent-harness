@@ -88,6 +88,19 @@ test('a atualização é por uma cache nova (sem git pull no clone raso), e a ta
   assert.doesNotMatch(secao, /tag de versão/);
 });
 
+test('a atualização do harness manda rodar o metodo atualizar, e o passo 5 avisa dos rótulos criados no GitHub', () => {
+  const { readme, secao } = secaoDoReadme();
+  const iniciar = readme.slice(readme.indexOf('\n## Iniciar um projeto com o harness'), readme.indexOf('\n## Laboratório'));
+  assert.match(iniciar, /tools\/ah atualizar --de <nova cache>[^]*tools\/ah metodo atualizar/);
+  assert.match(passo(secao, 5), /rótulos de triagem/);
+});
+
+test('o trecho do método aponta o encerramento para o sessoes-paralelas.md, sem repetir os passos', () => {
+  const trecho = ler('nucleo/extensoes/metodo/modelos/agents-metodo.md');
+  assert.match(trecho, /docs\/agents\/sessoes-paralelas\.md/);
+  assert.doesNotMatch(trecho, /Encerrar é fazer o merge/);
+});
+
 test('o passo 5 liga metodo (com agentes), registros e modelo', () => {
   const { secao } = secaoDoReadme();
   const passo5 = secao.slice(secao.indexOf('\n5. '), secao.indexOf('\n6. '));
