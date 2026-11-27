@@ -319,7 +319,7 @@ export async function executar(args, amb) {
     }
     if (refs.temWt && comSubmodulos(refs.wt)) {
       throw recusa(`O worktree ${refs.wt} tem submódulos, e o git não remove worktree com submódulos.`,
-        `confira que o trabalho dos submódulos está guardado (git -C ${refs.wt} submodule status), remova o worktree com git worktree remove --force ${refs.wt} e rode ah close de novo; nada foi apagado`);
+        `veja os commits dos submódulos que não estão em nenhum remoto (git -C ${refs.wt} submodule foreach --recursive 'git log --oneline HEAD --branches --not --remotes') e empurre o que aparecer para o remoto do submódulo, porque a remoção forçada apaga o que só existe neles; depois, git worktree remove --force ${refs.wt} e ah close de novo; nada foi apagado`);
     }
     // As extensões conferem o que é delas (antesDeFechar) antes de qualquer mudança; a que recusa (ou falha) para
     // o close aqui. O que ela gravou na frente volta para o objeto que o close grava adiante.

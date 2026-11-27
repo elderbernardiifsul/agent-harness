@@ -49,7 +49,7 @@ O OpenCode 2.4.2 não foi ensaiado: as duas chaves de API dele na máquina estav
 
 ### Worktree com submódulos no `close`
 
-O `git worktree remove` sem `--force` recusa worktree com submódulos. Antes, o `close` só descobria isso na remoção, depois de comentar o fechamento nos tickets, e a recusa mandava procurar "alteração ou arquivo novo". Agora a conferência é feita junto com a do worktree trancado, antes de mexer nos tickets, com a regra do git (pasta `modules` do worktree, ou submódulo do índice com repositório na pasta), e a recusa diz a saída verificada: `git worktree remove --force <wt>` e `ah close` de novo (commit `51c2dab`). Num ensaio à mão, `git submodule deinit --all` não bastou para o git remover o worktree; por isso a saída é a remoção forçada, feita por quem usa e nunca pelo `close`.
+O `git worktree remove` sem `--force` recusa worktree com submódulos. Antes, o `close` só descobria isso na remoção, depois de comentar o fechamento nos tickets, e a recusa mandava procurar "alteração ou arquivo novo". Agora a conferência é feita junto com a do worktree trancado, antes de mexer nos tickets, com a regra do git (pasta `modules` do worktree, ou submódulo do índice com repositório na pasta), e a recusa diz a saída (commit `51c2dab`, saída corrigida depois da revisão). Num ensaio à mão, `git submodule deinit --all` não bastou para o git remover o worktree; por isso a saída é a remoção forçada, feita por quem usa e nunca pelo `close`. Antes dela, a recusa manda listar os commits dos submódulos que não estão em nenhum remoto (`git -C <wt> submodule foreach --recursive 'git log --oneline HEAD --branches --not --remotes'`) e empurrá-los: o submódulo iniciado no worktree guarda os objetos na pasta `modules` do worktree, que a remoção forçada apaga, e o `git submodule status` não mostra o commit que só existe ali.
 
 ### Resíduos
 
@@ -61,6 +61,19 @@ O `git worktree remove` sem `--force` recusa worktree com submódulos. Antes, o 
 ### Documentos
 
 Seção 16 do desenho (sem CI). README ("Situação", limites, referência, "Desenvolvimento"), `AGENTS.md` (verificação local antes de integrar), histórico das fatias, seção "Limites" de `docs/referencia/comandos.md` (submódulos, Windows e macOS) e o roteiro de `docs/agentes/`. O fluxo `.github/workflows/ci.yml` saiu do repositório. A CI que o `init` instala nos projetos (`modelos/ci/`) continua.
+
+### Revisão independente
+
+Um agente sem as conclusões desta execução revisou o diff do código (`nucleo`, `ferramentas`, `teste`, `package.json`). Achados e o que foi feito:
+
+| Achado | Conferido | Feito |
+|---|---|---|
+| A primeira saída da recusa dos submódulos (`git submodule status` e depois `--force`) podia apagar um commit que só existia no submódulo do worktree | por execução (reproduzido de novo aqui) | a saída passou a listar e mandar empurrar os commits fora dos remotos antes da remoção forçada |
+| Com `FORCE_COLOR` no ambiente, o `verifica` nunca passava (o resumo não casava com as linhas coloridas), e o teste do guia também falhava | por execução | o resumo tira as cores; o `verifica` e o teste do guia rodam o `node --test` de dentro com `NO_COLOR` e sem `FORCE_COLOR` |
+| `--node` com caminho relativo dava "não terminou" em vez da recusa | por execução | caminho com barra é resolvido a partir de onde se chama |
+| O teste de contrato aceitava `''` em `arquivos`, que as travas recusam | por leitura | o teste de contrato passou a recusar |
+
+Sem defeito encontrado: as travas com `arquivos` (inclusive `AH_GUARD=off`, que não vale para edição, como antes) e a detecção de submódulos, conferida contra o `git worktree remove` real em quatro cenários, com caminhos com espaço.
 
 ## O "pronto quando", item por item
 
@@ -88,12 +101,12 @@ Seção 16 do desenho (sem CI). README ("Situação", limites, referência, "Des
 
 ## Conferência final
 
-No ramo `fecha-p1`, antes do merge na `dev`:
+No ramo `fecha-p1`, antes do merge na `dev`, com `FORCE_COLOR=1` herdado:
 
 ```
-$ node ferramentas/verifica.mjs --node "$(mise where node@22)/bin/node" --node "$(command -v node)"
-ok      suíte no Node v22.23.5: 993 testes, 992 passaram, 0 falharam, 1 pulados
-ok      suíte no Node v26.13.1: 993 testes, 992 passaram, 0 falharam, 1 pulados
+$ FORCE_COLOR=1 node ferramentas/verifica.mjs --node "$(mise where node@22)/bin/node" --node "$(command -v node)"
+ok      suíte no Node v22.23.5: 995 testes, 994 passaram, 0 falharam, 1 pulados
+ok      suíte no Node v26.13.1: 995 testes, 994 passaram, 0 falharam, 1 pulados
 ok      varredura de termos
 Sistema: linux. Windows e macOS não são verificados aqui (o repositório não tem CI).
 ```

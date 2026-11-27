@@ -9,7 +9,7 @@
 //   node ferramentas/verifica.mjs --node "$(mise where node@22)/bin/node" --node "$(command -v node)"
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -17,8 +17,10 @@ const MINIMO = Number(/\d+/.exec(JSON.parse(readFileSync(join(RAIZ, 'package.jso
 const USO = 'uso: node ferramentas/verifica.mjs [--node <executável>]...';
 const GRANDE = 256 * 1024 * 1024;
 
-// Tira da saída do `node --test` os números do fim e os nomes dos testes que falharam.
-export function resumoDaSuite(saida) {
+// Tira da saída do `node --test` os números do fim e os nomes dos testes que falharam. As cores
+// (FORCE_COLOR herdado do ambiente) saem antes.
+export function resumoDaSuite(bruta) {
+  const saida = bruta.replace(/\x1b\[[0-9;]*m/g, '');
   const numero = nome => {
     const m = new RegExp(`^ℹ ${nome} (\\d+)$`, 'm').exec(saida);
     return m ? Number(m[1]) : null;
@@ -36,7 +38,8 @@ function recusar(motivo, faca) {
 function lerArgs(args) {
   const nodes = [];
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--node' && args[i + 1]) nodes.push(args[++i]);
+    // Caminho relativo vale a partir de onde se chama; a suíte roda na raiz do repositório.
+    if (args[i] === '--node' && args[i + 1]) nodes.push(/[\\/]/.test(args[++i]) ? resolve(args[i]) : args[i]);
     else recusar(`opção desconhecida: ${args[i]}`, USO);
   }
   return nodes.length ? nodes : [process.execPath];
@@ -54,6 +57,9 @@ function versaoDe(node) {
 function rodarSuite(node, versao) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
+  // Sem cor: os testes que leem a saída de outro `node --test` (guia de extensão) esperam texto puro.
+  delete env.FORCE_COLOR;
+  env.NO_COLOR = '1';
   const r = spawnSync(node, ['--test', '--test-reporter=spec', 'teste/*.test.mjs'], { cwd: RAIZ, env, encoding: 'utf8', maxBuffer: GRANDE });
   const s = resumoDaSuite(`${r.stdout}\n${r.stderr}`);
   const passou = r.status === 0 && s.falharam === 0;

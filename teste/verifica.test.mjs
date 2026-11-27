@@ -21,6 +21,22 @@ test('o resumo da suíte tira os números e os nomes dos testes que falharam', (
   assert.deepEqual(resumoDaSuite(saida), { testes: 3, passaram: 1, falharam: 1, pulados: 1, falhas: ['quebra no meio'] });
 });
 
+test('o resumo lê a saída colorida (FORCE_COLOR herdado do ambiente)', () => {
+  const saida = ['\x1b[34mℹ tests 2\x1b[39m', '\x1b[34mℹ pass 1\x1b[39m', '\x1b[34mℹ fail 1\x1b[39m', '\x1b[34mℹ skipped 0\x1b[39m',
+    '\x1b[31m✖ failing tests:\x1b[39m', '\x1b[31m✖ quebra (1.2ms)\x1b[39m'].join('\n');
+  assert.deepEqual(resumoDaSuite(saida), { testes: 2, passaram: 1, falharam: 1, pulados: 0, falhas: ['quebra'] });
+});
+
+test('--node relativo vale a partir da pasta de onde se chama, não da raiz do repositório', { skip: process.platform === 'win32' }, t => {
+  const pasta = mkdtempSync(join(tmpdir(), 'ah-verifica-'));
+  t.after(() => rmSync(pasta, { recursive: true, force: true }));
+  writeFileSync(join(pasta, 'node'), '#!/bin/sh\necho v20.11.0\n');
+  chmodSync(join(pasta, 'node'), 0o755);
+  const r = spawnSync(process.execPath, [script, '--node', './node'], { cwd: pasta, encoding: 'utf8' });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, new RegExp(`${join(pasta, 'node').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: v20\\.11\\.0 é mais antigo`));
+});
+
 test('sem as linhas de número, o resumo diz que a suíte não terminou', () => {
   assert.deepEqual(resumoDaSuite('Error: Cannot find module'), { testes: null, passaram: null, falharam: null, pulados: null, falhas: [] });
 });

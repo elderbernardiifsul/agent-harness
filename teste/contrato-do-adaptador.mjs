@@ -154,7 +154,7 @@ export function testarAdaptador(nome, a, exemplos) {
         assert.equal(e.acao?.tipo, 'edicao', `o adaptador ${nome} não informa acao.tipo 'edicao' para uma edição de arquivo`);
         // Um arquivo vem em acao.arquivo; uma ferramenta que escreve vários (patch), em acao.arquivos.
         const veio = Object.hasOwn(e.acao, 'arquivos') ? e.acao.arquivos : [e.acao.arquivo];
-        assert.ok(Array.isArray(veio) && veio.length > 0 && veio.every(x => typeof x === 'string'), `o adaptador ${nome} não informa o arquivo (acao.arquivo, ou acao.arquivos no patch) na edição`);
+        assert.ok(Array.isArray(veio) && veio.length > 0 && veio.every(x => typeof x === 'string' && x !== ''), `o adaptador ${nome} não informa o arquivo (acao.arquivo, ou acao.arquivos no patch) na edição`);
         const esperado = ex.antes.edicao.arquivos ?? [ex.antes.edicao.arquivo];
         assert.deepEqual(veio.map(x => path.resolve(D, x)), esperado.map(x => path.resolve(D, x)), `o adaptador ${nome} informa o arquivo errado na edição (veio ${JSON.stringify(veio)})`);
       });

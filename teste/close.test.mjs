@@ -683,7 +683,7 @@ test('worktree com submódulo: close recusa antes de mexer nos tickets, e a remo
   const antes = comentarios(p).length;
   const r = p.ah(['close']);
   assert.equal(r.codigo, 1, r.saida);
-  assert.match(r.erro, /^Recusado: O worktree .* tem submódulos, e o git não remove worktree com submódulos\.\nFaça: .*git worktree remove --force /);
+  assert.match(r.erro, /^Recusado: O worktree .* tem submódulos, e o git não remove worktree com submódulos\.\nFaça: veja os commits dos submódulos que não estão em nenhum remoto \(git -C .* submodule foreach --recursive 'git log --oneline HEAD --branches --not --remotes'\) e empurre o que aparecer.*; depois, git worktree remove --force /);
   assert.equal(comentarios(p).length, antes);
   assert.equal(lerFrenteDoTeste(p, 'carrinho').fechando, undefined);
   assert.equal(git(p.raiz, ['worktree', 'remove', '--force', wt]).status, 0);
