@@ -75,14 +75,19 @@ function cercaPara(texto) {
   return '`'.repeat(Math.max(4, ...maiores));
 }
 
-// `<!-- ah:<tipo> chave=valor … v=1 -->`, com cada valor em encodeURIComponent (sem espaço, legível por máquina).
-function marcador(tipo, campos) {
+// `<!-- ah:<tipo> chave=valor … v=<n> -->`, com cada valor em encodeURIComponent (sem espaço, legível por máquina).
+function marcador(tipo, campos, versao = 1) {
   const pares = Object.entries(campos).map(([k, v]) => `${k}=${encodeURIComponent(v ?? '')}`);
-  return `<!-- ah:${tipo} ${pares.join(' ')} v=1 -->`;
+  return `<!-- ah:${tipo} ${pares.join(' ')} v=${versao} -->`;
 }
 
-// O comentário com o diário de um plano: {corpo, cortado}.
-export function corpoDoDiario({ frente, diario, commit }) {
+// As duas fases de um diário no ticket. `passagem`: o trabalho continua (handoff), e a retomada o devolve.
+// `guardado`: saiu do worktree de propósito (`registros guardar`), e a retomada não o traz de volta.
+export const FASES = ['passagem', 'guardado'];
+
+// O comentário com o diário de um plano: {corpo, cortado}. Marcador v=2: `em` (quando foi guardado, ISO, para
+// achar o mais novo entre tickets e máquinas) e `fase`.
+export function corpoDoDiario({ frente, diario, commit, fase = 'passagem', em = new Date().toISOString() }) {
   const reconhecido = lerDiario(diario.texto).reconhecido;
   const limite = reconhecido ? LIMITE_RECONHECIDO : LIMITE_DESCONHECIDO;
   const cortado = diario.texto.length > limite;
@@ -92,7 +97,7 @@ export function corpoDoDiario({ frente, diario, commit }) {
     : `Formato não reconhecido: o diário vai como texto, cortado em ${LIMITE_DESCONHECIDO} caracteres.`;
   const cerca = cercaPara(texto);
   const corpo = [
-    marcador('registro', { id: frente.id, nome: frente.nome, pasta: diario.pasta, plano: diario.plano, commit, cortado: cortado ? '1' : '0' }),
+    marcador('registro', { id: frente.id, nome: frente.nome, pasta: diario.pasta, plano: diario.plano, commit, cortado: cortado ? '1' : '0', em, fase }, 2),
     `**Diário da execução por subagentes** da frente ${frente.id} ${frente.nome}: plano \`${diario.plano ?? diario.pasta}\`, commit \`${commit}\`.`,
     ...(motivo ? [`> ${motivo}`] : []),
     '',
@@ -105,18 +110,20 @@ export function corpoDoDiario({ frente, diario, commit }) {
 }
 
 // Os campos do marcador `ah:registro` de um comentário, ou null (o do resumo, `ah:registro-resumo`, não conta).
+// O v=1 (antes de 27/11) não tem `em` nem `fase`: conta como o mais antigo (em vazio) e como passagem.
 export function lerMarcador(corpo) {
-  const m = /<!-- ah:registro ((?:\S+=\S* )*)v=1 -->/.exec(String(corpo));
+  const m = /<!-- ah:registro ((?:\S+=\S* )*)v=[12] -->/.exec(String(corpo));
   if (!m) return null;
   const campos = {};
   for (const par of m[1].trim().split(' ')) {
     const i = par.indexOf('=');
     try { campos[par.slice(0, i)] = decodeURIComponent(par.slice(i + 1)); } catch { return null; }
   }
-  if (!campos.id || !campos.pasta) return null;
+  const fase = campos.fase || 'passagem';
+  if (!campos.id || !campos.pasta || !FASES.includes(fase)) return null;
   return {
     id: campos.id, nome: campos.nome ?? '', pasta: campos.pasta, plano: campos.plano || null,
-    commit: campos.commit ?? '', cortado: campos.cortado === '1',
+    commit: campos.commit ?? '', cortado: campos.cortado === '1', em: campos.em ?? '', fase,
   };
 }
 

@@ -45,10 +45,11 @@ test('corpoDoDiario e a leitura de volta dão o mesmo marcador e o mesmo texto',
     [PLANO, DIARIO],
     ['docs/planos/plano com espaço.md', `# SDD ledger — plan: docs/planos/plano com espaço.md\nTask 1: complete (commits a..b, review clean)\n\`\`\`js\nconst x = 1;\n\`\`\`\n\`\`\`\`\`\n`],
   ]) {
-    const { corpo, cortado } = corpoDoDiario({ frente: FRENTE, diario: { pasta: 'carrinho', plano, texto }, commit: '9f8e7d6' });
+    const em = '2026-11-27T12:00:00.000Z';
+    const { corpo, cortado } = corpoDoDiario({ frente: FRENTE, diario: { pasta: 'carrinho', plano, texto }, commit: '9f8e7d6', em });
     assert.equal(cortado, false);
-    assert.match(corpo, /^<!-- ah:registro id=as-1 nome=carrinho pasta=carrinho plano=\S+ commit=9f8e7d6 cortado=0 v=1 -->\n/);
-    assert.deepEqual(lerMarcador(corpo), { id: 'as-1', nome: 'carrinho', pasta: 'carrinho', plano, commit: '9f8e7d6', cortado: false });
+    assert.match(corpo, /^<!-- ah:registro id=as-1 nome=carrinho pasta=carrinho plano=\S+ commit=9f8e7d6 cortado=0 em=\S+ fase=passagem v=2 -->\n/);
+    assert.deepEqual(lerMarcador(corpo), { id: 'as-1', nome: 'carrinho', pasta: 'carrinho', plano, commit: '9f8e7d6', cortado: false, em, fase: 'passagem' });
     assert.equal(diarioDoComentario(corpo), texto);
   }
   assert.equal(lerMarcador('comentário qualquer'), null);
@@ -144,4 +145,14 @@ test('limparPastaDoSdd tira só as pastas de plano e o .gitignore do sdd-workspa
   assert.ok(fs.existsSync(path.join(wt, '.superpowers', 'brainstorm')));
   assert.ok(!fs.existsSync(sdd));
   assert.deepEqual(limparPastaDoSdd(path.join(wt, 'nao-existe')), []);
+});
+
+test('marcador v=2: em e fase; o v=1 ainda se lê, como o mais antigo e de passagem', () => {
+  const { corpo } = corpoDoDiario({ frente: FRENTE, diario: { pasta: 'carrinho', plano: PLANO, texto: DIARIO }, commit: 'abc1234', fase: 'guardado', em: '2026-11-27T10:00:00.000Z' });
+  assert.match(corpo, /^<!-- ah:registro .* em=2026-11-27T10%3A00%3A00\.000Z fase=guardado v=2 -->\n/);
+  const m = lerMarcador(corpo);
+  assert.deepEqual([m.em, m.fase], ['2026-11-27T10:00:00.000Z', 'guardado']);
+  const antigo = lerMarcador('<!-- ah:registro id=as-1 nome=carrinho pasta=carrinho plano= commit=abc1234 cortado=0 v=1 -->\n');
+  assert.deepEqual([antigo.em, antigo.fase, antigo.pasta], ['', 'passagem', 'carrinho']);
+  assert.equal(lerMarcador('<!-- ah:registro id=as-1 pasta=x fase=outra v=2 -->'), null);
 });
