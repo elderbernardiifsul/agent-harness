@@ -9,10 +9,23 @@ Plano: `docs/superpowers/plans/2026-11-26-metodo-fatias-3-e-4.md`. Ramo `p2-regi
 | Plano | `044e674` | plano aprovado pelo orquestrador em 26/11 |
 | 1 | `f47f937` | P2: `ctx.sessao(id)` e a opção `sessoes` do `ctxFalso` |
 | 2 | `88e1bdf` | P5: `ignorados(ctx)` (descartável ou guardado) e o `close` |
+| 2 (revisão) | `b41db9b` | pasta-mãe ignorada inteira pelo projeto (`.superpowers/` no `.gitignore`) listada item a item; documentação da revisão |
+| 2 (re-revisão) | `dc5ffe5` | a pasta-mãe vai ao git como caminho literal (`--literal-pathspecs`) |
+| 3 | `5d20b57` | extensão `modelo` e os padrões datados |
+| 4 | `773c57f` | `registros/diario.mjs`: leitura e formato do diário |
+| 5 | `9b8fbf2` | `ah registros guardar`, `ignorados` e `aoPassar` |
+| 6 | `839bb42` | retomada, resumo no fechamento e lembrete do começo de sessão |
+| 3 a 6 (revisão) | `6841764` | consertos locais da revisão: validação do marcador, cópia cortada mantida, `ignorados` só das pastas de plano, parada na primeira falha de rede, `\r\n`, avisos honestos; `origem: null` na `modelo` |
+| 3 a 6 (decisões) | `ce3cfd7` | marcador v=2 (`em`, `fase`), retomada pelo diário de passagem mais novo, `registros devolver`, só autor com marcador do núcleo |
+| 3 a 6 (segunda revisão) | `833a755` | fonte que junta ticket e cópia pelo `em`, cópia pendente nunca trocada, tickets iguais marcados, fase e data do pendente no close, `.gitignore` que sobra, arquivos versionados preservados, mensagens do `devolver`, marcador antigo do núcleo |
 
 ## Ensaio do git (Tarefa 2)
 
 Com git 2.56.0, num repositório descartável com só `.superpowers/sdd/plano-a/progress.md` e o `.gitignore` com `*` que o `sdd-workspace` grava, `git ls-files -z -o -i --exclude-standard --directory` lista `.superpowers/`, `.superpowers/sdd/`, `.superpowers/sdd/.gitignore` e `.superpowers/sdd/plano-a/`. Com outro ignorado em `.superpowers/` (`x.log` excluído por `.git/info/exclude`), ele também aparece na lista. Com um arquivo não ignorado em `.superpowers/` (`brainstorm/x`), a pasta-mãe sai da lista de ignorados (vira `?? .superpowers/` no `status`). Daí a regra: a pasta-mãe de um declarado casa só quando há itens dela na lista e todos casam.
+
+## Ensaio do pathspec (re-revisão da Tarefa 2)
+
+Com git 2.56.0: `git ls-files -o -i --exclude-standard -- 'a[1]/'` e `-- 'b*/'` devolvem só o conteúdo da pasta de nome literal, mesmo com `a1/` e `bx/` ao lado (o git casa primeiro o caminho literal que existe). Já `-- ':x/'` não devolve nada: o `:` no começo é lido como pathspec mágico. Com `--literal-pathspecs`, os três casos dão o conteúdo da pasta. O teste do close cobre `a[1]/` (com `a1/` ao lado) e `:dados/`; só o segundo falhava antes do conserto.
 
 ## Padrões de modelo (Tarefa 3)
 
@@ -41,7 +54,48 @@ Conferidos em 27/11/2026 (madrugada, UTC 03h), na documentação oficial de cada
 - Esta máquina não tem o provedor `anthropic` configurado (o `opencode models` lista `opencode-go/…`), e as chaves estavam vencidas em 26/11: não deu para conferir as variantes no catálogo.
 - Escolha: `alto` = `anthropic/claude-opus-5-5`; `medio` = `anthropic/claude-sonnet-5-5`; `leve` = `anthropic/claude-haiku-5-5`, todos sem variante (esforço `null`, "padrão do agente"). Decisão de quem constrói: um padrão com uma variante que o catálogo do aluno não tenha quebraria a execução, e o projeto acrescenta a variante na configuração depois de conferir o catálogo dele.
 
+## Revisão das Tarefas 3 a 6 e decisões (27/11)
+
+Um revisor novo (opus) leu os commits `5d20b57` a `839bb42` e reproduziu, num teste descartável, cinco defeitos importantes da `registros`: a retomada devolvia o diário velho do próprio worktree depois de uma ida e volta entre máquinas; o diário tirado de propósito pelo `guardar` voltava na retomada; a retomada pelo ticket seguida de handoff comentava o mesmo diário de novo; qualquer comentário com o id da frente virava `progress.md` (canal de injeção num repositório público); e o `guardar` de um plano com tarefa parada apagava o diário sem aviso, fazendo o plano recomeçar do zero. O orquestrador decidiu (27/11):
+
+1. marcador v=2 com `em` e `fase`; a retomada usa o comentário de passagem mais novo entre todos os tickets; o diário do worktree só é trocado quando é igual à cópia desta máquina; a cópia é reserva; ao devolver do ticket, a cópia sabe que ele já está lá;
+2. `tools/ah registros devolver`; o `guardar` com tarefa parada avisa esse próximo passo; o lembrete só pede o `guardar` antes do `close`;
+3. só vale o diário de quem tem marcador do núcleo na frente naquele ticket (a mesma regra de autor do núcleo); pasta e plano do marcador validados.
+
+Os consertos locais foram aprovados como propostos. Ficaram com o orquestrador: a seção 8 da spec (que ainda diz que o `guardar` remove `.superpowers/sdd/` inteira) e a criação de `docs/agents/metodo.md` (fatia 2), para onde a `modelo` aponta os critérios.
+
 ## Pendências e observações
 
 - Teste intermitente fora do ramo: `teste/shell.test.mjs:189` ("cadeia de eval tem orçamento global") falhou uma vez, com a carga média da máquina em 28, por tempo de relógio acima de 2 s; isolado, passou três vezes. O orquestrador decidiu subir o limite no `p2-metodo` (27/11); este ramo não mexe nele.
+- Cópias órfãs (decidido em 27/11: fica para depois): depois de um fechamento com falha parcial de rede, ou de um fechamento só local, a cópia em `<estado>/registros/<id>/` fica para sempre e nada tenta comentar o pendente. Proposta: a reação `noSweep` lista as cópias de frentes que não estão mais no estado, e o `ah sweep --reparar` comenta o diário e o resumo pendentes e apaga a cópia.
+- Limite da regra de autor (confirmado pela segunda revisão, 27/11): um terceiro que forje, com o próprio login, um marcador do núcleo para a frente (por exemplo `ah:passagem id=as-1 … login=<ele>`, na última linha do mesmo comentário do diário) passa a contar como "da frente" naquele ticket, e o diário dele volta na retomada. O núcleo tem o mesmo limite: `nucleo/lib/reserva.mjs` (`marcadoresDosComentarios`) também só confere que o autor é o login declarado, e um `ah:fechamento` ou `ah:retomada` forjado mexe no estado da reserva. A regra impede passar-se por outro login, mas não prova que o autor participa da frente. Levado ao orquestrador com uma proposta.
 - A seção "Extensões" de `docs/referencia/comandos.md` diz que só a `recursos` acompanha o harness. Ela não é das seções deste ramo; fica para o orquestrador acrescentar `registros` e `modelo` ao integrar.
+
+## Verificação final (Tarefa 7)
+
+`node ferramentas/verifica.mjs --node "$(mise where node@22)/bin/node" --node "$(command -v node)"`, em 27/11, no commit `833a755` (depois das duas revisões), código 0:
+
+```
+ok      suíte no Node v22.23.5: 1062 testes, 1061 passaram, 0 falharam, 1 pulados
+ok      suíte no Node v26.13.1: 1062 testes, 1061 passaram, 0 falharam, 1 pulados
+ok      varredura de termos
+Sistema: linux. Windows e macOS não são verificados aqui (o repositório não tem CI).
+```
+
+## Desvios do plano
+
+- As Tarefas 1 a 6 rodaram na própria sessão, sem subagentes de implementação. A P2 e a P5 foram revisadas pelo orquestrador (duas rodadas); as Tarefas 3 a 6, por um revisor novo, e o código das decisões que vieram dessa revisão, por um segundo revisor novo, que achou três defeitos importantes e oito menores, consertados em `833a755`, salvo o limite da regra de autor (pendências).
+- Tarefa 1: o teste de `ctx.sessao` roda no próprio processo (`montarCtx` com o registro gravado por `registrarSessao`), em vez de um comando de extensão num projeto descartável; cobre o mesmo comportamento com menos peças.
+- Tarefa 2: a interface da P5 mudou durante a escrita do plano, por decisão do orquestrador (a fatia 8 também a usa): `ignorados(ctx)` com `descartavel` ou `guardar`, no lugar da lista fixa com `{frente}`.
+- Tarefas 4 e 5: escrevi o módulo junto com o teste novo, antes de rodar o vermelho; conferi o vermelho depois, tirando o módulo (falha por módulo ausente).
+- Tarefa 5: o `guardar` também remove a pasta de plano que só tem `plan-path` (instruções e relatórios sem diário ainda), que é do subagent-driven-development; o resto de `.superpowers/sdd/` fica, com aviso (revisão de 27/11).
+
+## Texto sugerido para o `metodo.md` (fatia 2, ramo `p2-metodo`)
+
+Para o orquestrador encaixar onde a fatia 2 decidir; uma regra num lugar só, por isso o detalhe fica em `docs/referencia/comandos.md`.
+
+> **Nível de modelo.** Cada tarefa do plano traz `Nível: alto`, `Nível: medio` ou `Nível: leve`. `alto`: decisão de desenho, peça que protege dados ou trabalho, depuração difícil, revisão final. `medio`: integração entre arquivos, tarefa descrita em prosa. `leve`: tarefa com o código inteiro no plano, ajuste mecânico num arquivo. Para saber o modelo e o esforço no seu agente, rode `tools/ah modelo <nível>`; ao abrir um subagente, passe os dois. O nível é sugestão: o harness nunca recusa por causa de modelo.
+>
+> **Diário da execução por subagentes.** O subagent-driven-development grava o diário de cada plano em `.superpowers/sdd/`, que o git ignora e que some com o worktree. Rode `tools/ah registros guardar` em dois momentos: quando todas as tarefas do plano estiverem concluídas, antes de a skill apagar a pasta do plano no fim da revisão final; e antes do `ah close`. O diário vai para o ticket da frente, e a retomada em outra máquina o devolve.
+
+A preparação do método liga `registros` e `modelo` em `extensoes` (seção 4 da spec); nenhuma das duas precisa de configuração para funcionar.
