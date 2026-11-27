@@ -44,6 +44,7 @@ export default {
             else if (a === '--colecao' || a === '--para') {
               const valor = args[++i];
               if (valor === undefined || valor.startsWith('--')) throw recusa(`Falta o valor de ${a}`);
+              if (typeof opcoes[a.slice(2)] === 'string') throw recusa(`informe ${a} uma vez só`);
               opcoes[a.slice(2)] = valor;
             } else throw recusa(`${a.startsWith('--') ? 'Opção desconhecida' : 'Argumento a mais'}: ${a.slice(0, 40)}`);
           }

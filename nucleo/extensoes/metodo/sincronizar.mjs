@@ -110,7 +110,7 @@ function planejar(raiz, { copias, destinos, anterior, tocadas, forcar }) {
         const links = linksDe(dir);
         const bitsIguais = process.platform === 'win32' || mesmaLista(executaveisDe(dir), executaveis);
         if (!links.length && bitsIguais && mesmosHashes(noDisco, desejado)) continue;
-        escritas.push({ colecao: nome, destino, skill, arquivos, noDisco });
+        escritas.push({ colecao: nome, destino, skill, arquivos, noDisco, bitsNoDisco: executaveisDe(dir) });
         for (const [rel, h] of Object.entries(noDisco)) {
           if (h !== desejado[rel] && h !== hashAntigo(destino, skill, rel)) perdas.push(`${destino}: ${skill}/${rel}`);
         }
@@ -176,6 +176,7 @@ function diferencas(plano) {
     for (const [rel, h] of Object.entries(desejado)) {
       if (!(rel in e.noDisco)) d.novos.add(`${e.skill}/${rel}`);
       else if (e.noDisco[rel] !== h) d.alterados.add(`${e.skill}/${rel}`);
+      else if (e.arquivos.find(f => f.caminho === rel).modo === 0o755 !== e.bitsNoDisco.includes(rel)) d.alterados.add(`${e.skill}/${rel} (modo)`);
     }
     for (const rel of Object.keys(e.noDisco)) if (!(rel in desejado)) d.removidos.add(`${e.skill}/${rel}`);
   }

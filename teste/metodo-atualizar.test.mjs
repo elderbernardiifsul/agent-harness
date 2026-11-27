@@ -13,9 +13,11 @@ const ler = (p, rel) => fs.readFileSync(caminho(p, rel), 'utf8');
 const travaDe = p => JSON.parse(ler(p, '.harness/skills.lock.json'));
 
 // Projeto com a extensão metodo ligada e uma coleção falsa (alfa), já instalada no commit inicial.
-function cenario(t) {
-  const c = criarColecao({ skills: { 'skills/alfa': { 'SKILL.md': 'alfa v1\n' }, 'skills/gama': { 'SKILL.md': 'gama\n' } } });
+function cenario(t, { outra = false, executavel = false, instalar = true } = {}) {
+  const c = criarColecao({ skills: { 'skills/alfa': { 'SKILL.md': 'alfa v1\n', 'rodar.sh': '#!/bin/sh\n' }, 'skills/gama': { 'SKILL.md': 'gama\n' } }, executaveis: executavel ? ['skills/alfa/rodar.sh'] : [] });
   t.after(() => c.limpar());
+  const o = outra ? criarColecao({ skills: { 'skills/delta': { 'SKILL.md': 'delta\n' }, 'skills/eta': { 'SKILL.md': 'eta\n' } } }) : null;
+  if (o) t.after(() => o.limpar());
   const p = criarProjeto();
   t.after(() => p.limpar());
   const pasta = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ah-metodo-atualizar-')));
@@ -23,6 +25,7 @@ function cenario(t) {
   fs.mkdirSync(path.join(pasta, 'skills', 'preparar-projeto'), { recursive: true });
   fs.writeFileSync(path.join(pasta, 'skills', 'preparar-projeto', 'SKILL.md'), 'preparar-projeto\n');
   const colecoes = { versaoDoFormato: 1, colecoes: { 'agent-harness': { local: 'skills', skills: { 'preparar-projeto': 'preparar-projeto' }, extensoes: {} }, falsa: { origem: c.origem, commit: c.commit, versao: '1.0.0', licenca: 'LICENSE', skills: { alfa: 'skills/alfa', gama: 'skills/gama' } } } };
+  if (o) colecoes.colecoes.outra = { origem: o.origem, commit: o.commit, versao: '2.0.0', licenca: 'LICENSE', skills: { delta: 'skills/delta', eta: 'skills/eta' } };
   const arquivo = path.join(pasta, 'colecoes.json');
   const gravarColecoes = () => fs.writeFileSync(arquivo, JSON.stringify(colecoes, null, 2));
   gravarColecoes();
@@ -34,8 +37,8 @@ function cenario(t) {
   fs.writeFileSync(cfg, JSON.stringify(conf, null, 2));
   assert.equal(p.git(['add', '--', '.harness/config.json']).codigo, 0);
   assert.equal(p.git(['commit', '-q', '-m', 'configura']).codigo, 0);
-  ok(p.ah(['metodo', 'instalar']));
-  return { p, c, colecoes, gravarColecoes };
+  if (instalar) ok(p.ah(['metodo', 'instalar']));
+  return { p, c, o, colecoes, gravarColecoes };
 }
 
 test('atualizar --simular mostra o que muda e não grava', t => {
@@ -44,7 +47,9 @@ test('atualizar --simular mostra o que muda e não grava', t => {
   colecoes.colecoes.falsa.skills.beta = 'skills/beta';
   gravarColecoes();
   const antes = ler(p, '.harness/skills.lock.json');
+  const agentsAntes = ler(p, 'AGENTS.md');
   const r = ok(p.ah(['metodo', 'atualizar', '--simular']));
+  assert.equal(ler(p, 'AGENTS.md'), agentsAntes);
   assert.match(r.saida, /Alterados:\n.*alfa\/SKILL\.md/);
   assert.match(r.saida, /Novas skills: beta/);
   assert.match(r.saida, /Simulação: nada foi gravado\./);
@@ -116,4 +121,57 @@ test('atualizar recusa mudança à mão, e --forcar a descarta', t => {
   assert.equal(ler(p, '.claude/skills/alfa/SKILL.md'), 'meu jeito\n');
   ok(p.ah(['metodo', 'atualizar', '--forcar']));
   assert.equal(ler(p, '.claude/skills/alfa/SKILL.md'), 'alfa v2\n');
+});
+
+test('atualizar --simular antes de instalar não grava nada', t => {
+  const { p } = cenario(t, { instalar: false });
+  const agentsAntes = ler(p, 'AGENTS.md');
+  const r = ok(p.ah(['metodo', 'atualizar', '--simular']));
+  assert.match(r.saida, /Simulação: nada foi gravado\./);
+  assert.equal(fs.existsSync(caminho(p, '.harness/skills.lock.json')), false);
+  assert.equal(fs.existsSync(caminho(p, '.claude/skills')), false);
+  assert.equal(ler(p, 'AGENTS.md'), agentsAntes);
+});
+
+test('atualizar --colecao falsa não mexe nas outras coleções', t => {
+  const { p, c, o, colecoes, gravarColecoes } = cenario(t, { outra: true });
+  const antes = travaDe(p).colecoes.outra;
+  colecoes.colecoes.falsa.commit = c.novoCommit({ 'skills/alfa/SKILL.md': 'alfa v2\n' });
+  colecoes.colecoes.outra.commit = o.novoCommit({ 'skills/delta/SKILL.md': 'delta v2\n' }); // recomendado mudou, mas não foi pedido
+  delete colecoes.colecoes.outra.skills.eta; // saiu da lista, mas não foi pedido
+  gravarColecoes();
+  ok(p.ah(['metodo', 'atualizar', '--colecao', 'falsa']));
+  assert.equal(ler(p, '.claude/skills/alfa/SKILL.md'), 'alfa v2\n');
+  assert.equal(ler(p, '.claude/skills/delta/SKILL.md'), 'delta\n');
+  assert.equal(ler(p, '.claude/skills/eta/SKILL.md'), 'eta\n');
+  assert.deepEqual(travaDe(p).colecoes.outra, antes);
+});
+
+test('atualizar --para com ref inexistente recusa e não muda nada', t => {
+  const { p } = cenario(t);
+  const trava = ler(p, '.harness/skills.lock.json');
+  const r = p.ah(['metodo', 'atualizar', '--colecao', 'falsa', '--para', 'v99']);
+  assert.notEqual(r.codigo, 0);
+  assert.match(r.erro, /^Recusado: [^]*v99[^]*Faça:/);
+  assert.equal(ler(p, '.harness/skills.lock.json'), trava);
+  assert.equal(ler(p, '.claude/skills/alfa/SKILL.md'), 'alfa v1\n');
+});
+
+test('atualizar lista como Alterados o script que só mudou o bit de execução', t => {
+  const { p, c, colecoes, gravarColecoes } = cenario(t);
+  fs.chmodSync(path.join(c.dir, 'skills/alfa/rodar.sh'), 0o755);
+  assert.equal(spawnSync('git', ['-C', c.dir, '-c', 'user.name=a', '-c', 'user.email=a@b.test', 'commit', '-qam', 'bit'], { encoding: 'utf8' }).status, 0);
+  colecoes.colecoes.falsa.commit = spawnSync('git', ['-C', c.dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+  gravarColecoes();
+  const r = ok(p.ah(['metodo', 'atualizar', '--simular']));
+  assert.match(r.saida, /Alterados:\n.*alfa\/rodar\.sh \(modo\)/);
+});
+
+test('atualizar recusa --colecao ou --para repetidos', t => {
+  const { p } = cenario(t);
+  for (const args of [['--colecao', 'falsa', '--colecao', 'outra'], ['--colecao', 'falsa', '--para', 'a', '--para', 'b']]) {
+    const r = p.ah(['metodo', 'atualizar', ...args]);
+    assert.notEqual(r.codigo, 0);
+    assert.match(r.erro, /^Recusado: informe --(colecao|para) uma vez só[^]*Faça:/);
+  }
 });

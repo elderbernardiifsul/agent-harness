@@ -637,11 +637,13 @@ Leva as skills já instaladas para a versão nova das coleções, com as mesmas 
 | `--simular` | mostra o que mudaria e não grava nada (nem trava nem skills) |
 | `--forcar` | descarta as mudanças à mão nas skills, como no `instalar` |
 
+Com `--para`, a coleção fica à frente (ou atrás) do recomendado: um `atualizar` simples depois a devolve ao commit de `colecoes.json`, e o item `Coleções na versão recomendada` do `doctor` avisa enquanto ela estiver fora dele. Um ref que a origem não tem (tag errada) recusa com o erro do git, antes de qualquer escrita. Repetir `--colecao` ou `--para` recusa (`informe --para uma vez só`). Sem trava anterior, o `atualizar` age como a primeira instalação. Um script que só mudou o bit de execução aparece em `Alterados:` com `(modo)`.
+
 Relatório, por coleção com mudança: `Atualizei N skill(s) de <coleção> (<versão>, <commit>) em <pastas>.`, seguido de `Alterados:`, `Novos arquivos:` e `Arquivos removidos:` (cada um com `<coleção>: <skill>/<arquivo>, …`), `Novas skills: …` e, no fim, `Skills removidas: …` (a skill que saiu da lista é apagada se está igual à trava; com mudança à mão, fica e há aviso). Com `--simular`, termina com `Simulação: nada foi gravado.`; sem mudança, diz `Nada a mudar: as skills já estão como a trava.`
 
 ```
 $ tools/ah metodo atualizar --colecao superpowers --para v7.0.3 --simular
-Atualizei 1 skill(s) de superpowers (v7.0.3, 3fa9c21) em .claude/skills, .agents/skills.
+Atualizei 2 skill(s) de superpowers (v7.0.3, 3fa9c21) em .claude/skills, .agents/skills.
 Alterados:
   superpowers: brainstorming/SKILL.md
 Novas skills: revisao
@@ -651,7 +653,7 @@ Simulação: nada foi gravado.
 | Recusa | Faça |
 |---|---|
 | `--para precisa de --colecao (…)` | rode tools/ah metodo atualizar --colecao <nome> --para <tag\|commit>; sem --para, cada coleção vai para o commit recomendado |
-| `Falta o valor de --colecao` / `--para` | dê o valor logo depois da opção |
+| `Falta o valor de --colecao` / `--para` / `informe --colecao uma vez só` | dê o valor logo depois da opção, e uma vez só |
 | `Opção desconhecida: …` / `Argumento a mais: …` | use ah metodo atualizar [--colecao <nome>] [--para <tag\|commit>] [--simular] [--forcar] |
 | `não conheço a coleção <nome>` | use uma das coleções de colecoes.json |
 | `os agentes do método mudaram desde a última instalação` | rode tools/ah metodo instalar, que leva todas as coleções às pastas novas |
