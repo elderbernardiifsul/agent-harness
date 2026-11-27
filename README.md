@@ -2,9 +2,35 @@
 
 Harness para várias sessões de agentes de código no mesmo repositório. Cada sessão trabalha numa frente própria, com ramo e worktree, e um conjunto de comandos coordena os ramos, as travas no gancho do agente, o estado local e os tickets no GitHub. Requer Node 22 ou mais novo e não tem dependências.
 
+## Instalar num projeto (instruções para o agente)
+
+Esta seção é para o agente de código que recebeu o endereço deste repositório (https://github.com/elderbernardiifsul/agent-harness), ou um clone dele, com um pedido como "instale o harness daqui" ou "prepare meu projeto". Ela é o único lugar do procedimento; a skill `preparar-projeto`, instalada no projeto, aponta para cá. O aluno não digita comando: você executa cada passo, mostra o resultado e pede licença antes de instalar algo na máquina dele, criar algo no GitHub ou executar código baixado.
+
+1. **Confirmar o alvo.** Confirme com o aluno a pasta do projeto e se ele já existe. Projeto existente: precisa ser um repositório git com pelo menos um commit; com alteração solta, peça a ele que a commite ou guarde antes. Projeto novo: `git init -b main` na pasta e um primeiro commit (`git commit --allow-empty -m "começo"`); com o "sim" do aluno, `gh repo create <dono>/<nome> --private --source . --push` (privado, salvo pedido dele).
+2. **Conferir os requisitos.** `node --version` (22 ou mais novo) e `git --version`. O `gh` autenticado (`gh auth status`) é opcional: sem ele, o `init` pede `--sigla`, e o projeto fica sem proteção de ramo e sem os rótulos de triagem. Faltando Node ou git, diga ao aluno o que falta e como instalar no sistema dele, e espere o "sim" antes de instalar.
+3. **Trazer o harness.** Com um clone dado pelo aluno, ele é a `<origem>`: siga para o passo 4. Sem clone:
+   - Ache a versão. `git ls-remote --tags https://github.com/elderbernardiifsul/agent-harness 'v*'` lista as tags publicadas: use a maior `vX.Y.Z`, e o commit dela é o da linha `refs/tags/vX.Y.Z^{}` (ou da linha sem `^{}`, quando não houver essa). Sem tag publicada, use a `main`: `git ls-remote https://github.com/elderbernardiifsul/agent-harness refs/heads/main` mostra o commit dela.
+   - Baixe numa pasta de cache da máquina, fora do projeto. A `<cache>` é `$HOME/.cache/agent-harness/<versão>` no Linux, com a tag (`v0.3.0`) ou `main-<7 primeiros caracteres do commit>`; em outro sistema, o equivalente que você escolher. `git clone --depth 1 --branch <tag ou main> https://github.com/elderbernardiifsul/agent-harness <cache>`. Uma `<cache>` que já existe com esse commit é reaproveitada.
+   - Confira o commit: `git -C <cache> rev-parse HEAD` tem de dar o commit que o `ls-remote` mostrou. Diferente (a `main` andou entre as duas leituras), leia de novo e baixe numa pasta nova.
+   - Mostre ao aluno a origem (o endereço), a versão e o commit, e peça a confirmação antes de executar qualquer coisa da `<cache>`. Sem o "sim", pare.
+
+   Daqui em diante, a `<origem>` é a `<cache>` (ou o clone dado).
+4. **Instalar o núcleo.** Na pasta do projeto: `node <origem>/nucleo/bin/ah.mjs init`. Sem o `gh`, acrescente `--sigla` com 2 a 4 letras minúsculas (`--sigla as` para Ana Souza). O `init` termina com os comandos do commit: faça-o no ramo base, `dev` (`git switch dev`, depois o `git add -- …` e o `git commit` que ele imprimiu).
+5. **Ligar o método.** Em `.harness/config.json`, no objeto `extensoes` (que o `init` deixa vazio), acrescente as três extensões do método, mantendo as que já estiverem lá:
+
+   ```json
+   "extensoes": { "metodo": { "agentes": ["claude-code"] }, "registros": true, "modelo": true }
+   ```
+
+   `agentes` lista os agentes que o aluno vai usar (`claude-code`, `codex`, `opencode`); o agente que você é entra sempre. Rode `tools/ah metodo instalar` e faça, na `dev`, o commit que ele indica.
+6. **Conferir.** `tools/ah doctor`. Relate ao aluno o que ficou instalado, cada aviso e o que fazer com ele.
+7. **Quando algo falha.** Toda recusa do harness traz o motivo e uma linha `Faça:` com o próximo passo: siga-a e repita o passo. Sem `Faça:`, ou quando a mesma recusa volta, pare e relate ao aluno o comando, a saída e o que você tentou.
+
+Para reparar uma instalação que já existe, rode `tools/ah doctor` na pasta do projeto e siga o "Faça" de cada item que não estiver ok. Criar a tag de versão faz parte da publicação deste repositório e espera a ordem do autor.
+
 ## Para que serve este repositório
 
-1. **Base para iniciar projetos.** O `ah init` instala o harness num repositório novo ou existente. A partir daí, as sessões do agente trabalham no projeto sob as regras do harness. Veja "Iniciar um projeto com o harness".
+1. **Base para iniciar projetos.** O `ah init` instala o harness num repositório novo ou existente, e o método (as skills e o `AGENTS.md` de princípios) vem em seguida. A partir daí, as sessões do agente trabalham no projeto sob as regras do harness. Veja "Instalar num projeto (instruções para o agente)" e "Iniciar um projeto com o harness".
 2. **Laboratório.** Instalado num projeto descartável, o harness permite observar várias sessões em paralelo, as recusas das travas, a passagem de bastão e a fila de trabalho pesado, sem rede e sem tocar em projeto real. Veja "Laboratório".
 3. **Objeto de estudo.** O repositório guarda o desenho, os planos de cada etapa, os registros de execução e de revisão e os ensaios com agente real. Dá para estudar que problemas o harness ataca, com que mecanismo e onde ele para. Veja [`docs/estudo/`](docs/estudo/README.md).
 
@@ -23,30 +49,7 @@ Limites conhecidos:
 
 ## Iniciar um projeto com o harness
 
-Requisitos do projeto: repositório git com pelo menos um commit e Node 22 ou mais novo. Para tickets e proteção de ramo, o `gh` autenticado e o repositório no GitHub.
-
-Para um projeto que ainda não existe:
-
-```
-mkdir meu-projeto && cd meu-projeto
-git init -b main
-git commit --allow-empty -m "começo"
-gh repo create <dono>/meu-projeto --private --source . --push   # opcional: tickets e proteção de ramo
-```
-
-Clone este repositório, abra o agente na pasta do projeto e faça o pedido: "prepare meu projeto com o harness, a partir do clone em `<caminho>`". O agente executa, na pasta do projeto:
-
-```
-node <clone>/nucleo/bin/ah.mjs init
-```
-
-Sem o `gh`, ou sem autenticação nele, o `init` não consegue propor a sigla. Nesse caso, use `node <clone>/nucleo/bin/ah.mjs init --sigla <sigla>`, com 2 a 4 letras minúsculas (por exemplo, `--sigla as` para `ana-souza`).
-
-O `init` cria os ramos que faltam (`dev` e `stage`, localmente) e não faz commit. Ele termina com os comandos exatos do commit, que deve ser feito **no ramo base** (`dev`), pois as frentes partem dele. Se o projeto estiver em outro ramo (por exemplo, `main`), execute primeiro `git switch dev` e depois o `git add -- …` com os caminhos gravados e o `git commit`. Por fim:
-
-```
-tools/ah doctor
-```
+O procedimento de instalação, num projeto novo ou existente (requisitos, `init`, método e `doctor`), está em "Instalar num projeto (instruções para o agente)", acima. Abra o agente na pasta do projeto e peça: "prepare meu projeto com o harness daqui: https://github.com/elderbernardiifsul/agent-harness" (ou "a partir do clone em `<clone>`"). O que segue vale depois da instalação.
 
 A proteção de ramo no servidor só é aplicada aos ramos que já estão no remoto. Depois do primeiro push de `dev`, `stage` e `main`, rode o `init` de novo; o `doctor` acusa enquanto faltar.
 
