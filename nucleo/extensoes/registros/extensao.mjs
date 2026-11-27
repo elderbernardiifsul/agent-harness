@@ -27,7 +27,7 @@ import path from 'node:path';
 // extensão acompanha o harness: o caminho vale no clone (nucleo/) e na cópia instalada (.harness/nucleo/).
 import { lerMarcadores } from '../../lib/reserva.mjs';
 import {
-  acharDiarios, arquivosDe, corpoDoDiario, devolverDiario, diarioDoComentario, gitignoreDoSdd, lerDiario, lerMarcador, limparPastaDoSdd,
+  acharDiarios, arquivosDoSdd, corpoDoDiario, devolverDiario, diarioDoComentario, gitignoreDoSdd, lerDiario, lerMarcador, limparPastaDoSdd,
   pastasDoSdd, resumoDoFechamento,
 } from './diario.mjs';
 
@@ -65,6 +65,20 @@ function dentroDe(base, ...partes) {
 export const dirDasCopias = (ctx, frente) => dentroDe(path.join(ctx.dirEstado, 'registros'), frente.id);
 const dirDaCopia = (ctx, frente, pasta) => dentroDe(dirDasCopias(ctx, frente), pasta);
 
+// A cópia local guarda o diário e os relatórios da execução, que podem citar dados do projeto: nasce só para o dono
+// (0700 nas pastas, 0600 nos arquivos), da pasta registros/ até o arquivo.
+function pastaPrivada(ctx, dir) {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const base = path.join(ctx.dirEstado, 'registros');
+  for (let d = dir; d.startsWith(base) && d !== path.dirname(base); d = path.dirname(d)) {
+    try { fs.chmodSync(d, 0o700); } catch { /* sistema sem permissões do POSIX */ }
+  }
+}
+function arquivoPrivado(arquivo, conteudo) {
+  fs.writeFileSync(arquivo, conteudo, { mode: 0o600 });
+  try { fs.chmodSync(arquivo, 0o600); } catch { /* sistema sem permissões do POSIX */ }
+}
+
 // O aviso de que o filtro tirou algo do comentário: é uma rede, não garantia.
 function avisarSegredos(ctx, pasta, removidos) {
   if (!removidos) return;
@@ -82,10 +96,10 @@ function comentar(ctx, ticket, corpo) {
 // que fase, desde quando).
 function gravarCopia(ctx, frente, { pasta, plano, texto, commit, fase, em, tickets, cortado }) {
   const dir = dirDaCopia(ctx, frente, pasta);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'progress.md'), texto);
+  pastaPrivada(ctx, dir);
+  arquivoPrivado(path.join(dir, 'progress.md'), texto);
   const meta = { id: frente.id, nome: frente.nome, pasta, plano, commit, fase, em, tickets, cortado };
-  fs.writeFileSync(path.join(dir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`);
+  arquivoPrivado(path.join(dir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`);
 }
 
 // As cópias guardadas da frente nesta máquina: [{pasta, plano, texto, meta}], em ordem de pasta.
@@ -170,19 +184,20 @@ function rastreadosDe(ctx, wt) {
   return new Set(r.codigo === 0 ? r.saida.split('\0').filter(Boolean) : []);
 }
 
-// Copia para a cópia do plano (`arquivos/`) os arquivos da pasta dele que o git não versiona: o diário, as
-// instruções, os relatórios e o que mais houver lá. Devolve os caminhos absolutos copiados, os únicos que o guardar
-// tira do worktree.
+// Copia para a cópia do plano (`arquivos/`) o que o subagent-driven-development grava na pasta dele (o diário, o
+// plan-path, as instruções, os relatórios e os pacotes de revisão), fora o que o git versiona. Link simbólico e
+// arquivo acima de 5 MB não são copiados e ficam, com aviso. Devolve os caminhos absolutos copiados, os únicos que o
+// guardar tira do worktree.
 function copiarPastaDoPlano(ctx, frente, wt, pasta, rastreados) {
   const origem = path.join(pastaSdd(wt), pasta);
   const destino = dentroDe(dirDaCopia(ctx, frente, pasta), 'arquivos');
+  const { copiar, recusados } = arquivosDoSdd(origem);
+  for (const r of recusados) ctx.avisar(`Aviso: não copiei ${path.relative(wt, r.abs)} (${r.motivo}); ele fica no worktree.\n`);
   const copiados = [];
-  for (const abs of arquivosDe(origem)) {
-    const rel = path.relative(origem, abs);
+  for (const abs of copiar) {
     if (rastreados.has(path.relative(wt, abs).split(path.sep).join('/'))) continue;
-    const alvo = dentroDe(destino, rel);
-    fs.mkdirSync(path.dirname(alvo), { recursive: true });
-    fs.copyFileSync(abs, alvo);
+    pastaPrivada(ctx, destino);
+    arquivoPrivado(dentroDe(destino, path.basename(abs)), fs.readFileSync(abs));
     copiados.push(abs);
   }
   return copiados;

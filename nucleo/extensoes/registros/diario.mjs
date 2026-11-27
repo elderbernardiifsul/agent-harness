@@ -26,6 +26,39 @@ const PASTA_VALIDA = /^[^./\\][^/\\]*$/;
 const planoValido = plano => typeof plano === 'string' && plano !== '' && !path.isAbsolute(plano) && !plano.includes('\\') && !plano.split('/').includes('..');
 
 const sdd = worktree => path.join(worktree, '.superpowers', 'sdd');
+
+// Os arquivos que o subagent-driven-development 7.0.2 grava na pasta de um plano (SKILL.md e scripts/ da skill): o
+// diário, o marcador do plano, as instruções e os relatórios de cada tarefa e os pacotes de revisão. Só eles são
+// guardados e tirados do worktree; o resto da pasta (um arquivo do aluno) fica, e o close recusa por ele.
+const ARQUIVO_DO_SDD = /^(?:progress\.md|plan-path|task-\d+-(?:brief|report)\.md|review-[0-9a-f]+\.\.[0-9a-f]+\.diff)$/;
+// Acima disto, o arquivo não é copiado (fica no worktree, com aviso).
+export const LIMITE_DO_ARQUIVO = 5 * 1024 * 1024;
+
+// O que um arquivo é, sem seguir link simbólico: 'comum', 'link', 'grande' ou null (não existe ou não é arquivo).
+function tipoDoArquivo(abs) {
+  let st;
+  try { st = fs.lstatSync(abs); } catch { return null; }
+  if (st.isSymbolicLink()) return 'link';
+  if (!st.isFile()) return null;
+  return st.size > LIMITE_DO_ARQUIVO ? 'grande' : 'comum';
+}
+
+// Os arquivos do subagent-driven-development na pasta de um plano: {copiar: [abs], recusados: [{abs, motivo}]}. Link
+// simbólico não é seguido (poderia apontar para fora do worktree) e arquivo grande não é copiado: os dois ficam.
+export function arquivosDoSdd(pastaDoPlano) {
+  let nomes;
+  try { nomes = fs.readdirSync(pastaDoPlano).sort(); } catch { return { copiar: [], recusados: [] }; }
+  const copiar = [];
+  const recusados = [];
+  for (const nome of nomes.filter(n => ARQUIVO_DO_SDD.test(n))) {
+    const abs = path.join(pastaDoPlano, nome);
+    const tipo = tipoDoArquivo(abs);
+    if (tipo === 'comum') copiar.push(abs);
+    else if (tipo === 'link') recusados.push({ abs, motivo: 'link simbólico' });
+    else if (tipo === 'grande') recusados.push({ abs, motivo: 'maior que 5 MB' });
+  }
+  return { copiar, recusados };
+}
 const lerOuNada = arquivo => { try { return fs.readFileSync(arquivo, 'utf8'); } catch { return null; } };
 const curta = (t, n = 100) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
 
@@ -40,6 +73,8 @@ export function acharDiarios(worktree) {
   const achados = [];
   for (const pasta of nomes) {
     const arquivo = path.join(sdd(worktree), pasta, 'progress.md');
+    // Só o diário que é arquivo comum: um link simbólico levaria a publicar o arquivo para onde ele aponta.
+    if (tipoDoArquivo(arquivo) !== 'comum') continue;
     const texto = lerOuNada(arquivo);
     if (texto === null) continue;
     const marcado = lerOuNada(path.join(sdd(worktree), pasta, 'plan-path'))?.trim() || null;
@@ -99,9 +134,13 @@ const SEGREDOS = [
   // chave de acesso da AWS
   /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
 ];
-// NOME=valor (ou NOME: valor) com nome de variável de segredo, em maiúsculas como as de ambiente: *_TOKEN,
-// *_SECRET, *_KEY, *PASSWORD…
-const ATRIBUICAO = /\b([A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|_KEY|APIKEY)[A-Z0-9_]*)(\s*(?:=|:\s)\s*)(?:"([^"\n]*)"|'([^'\n]*)'|([^\s"']+))/g;
+// `Bearer <token>` (cabeçalho Authorization): fica o Bearer, sai o token.
+const BEARER = /\b(Bearer\s+)[A-Za-z0-9._~+/-]+=*/g;
+// NOME=valor (ou NOME: valor) com nome de variável de segredo: em maiúsculas, como as de ambiente, com prefixo
+// opcional (TOKEN, GITHUB_TOKEN, SECRET, *_KEY, PASSWORD, PASSWD, APIKEY…); e, em minúsculas, os nomes que aparecem
+// em configuração (password, passwd, api_key, apikey).
+const NOME_DE_SEGREDO = String.raw`(?:[A-Z][A-Z0-9_]*)?(?:TOKEN|SECRET|PASSWORD|PASSWD|_KEY|API_?KEY)[A-Z0-9_]*|password|passwd|api_?key`;
+const ATRIBUICAO = new RegExp(String.raw`\b(${NOME_DE_SEGREDO})(\s*(?:=|:\s)\s*)(?:"([^"\n]*)"|'([^'\n]*)'|([^\s"']+))`, 'g');
 // usuário:senha@ dentro de uma URL
 const CREDENCIAL_EM_URL = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)([^\s@/]+)(@)/gi;
 const REMOVIDO = '[removido]';
@@ -111,6 +150,7 @@ export function mascararSegredos(texto) {
   let n = 0;
   let r = String(texto);
   for (const re of SEGREDOS) r = r.replace(re, () => { n += 1; return REMOVIDO; });
+  r = r.replace(BEARER, (tudo, antes) => { n += 1; return `${antes}${REMOVIDO}`; });
   r = r.replace(ATRIBUICAO, (tudo, nome, sinal, aspas2, aspas1, solto) => {
     const valor = aspas2 ?? aspas1 ?? solto ?? '';
     if (!valor || valor === REMOVIDO) return tudo;
@@ -224,7 +264,7 @@ export function devolverDiario(worktree, { pasta, plano, texto }) {
 export function pastasDoSdd(worktree) {
   try {
     return fs.readdirSync(sdd(worktree), { withFileTypes: true })
-      .filter(e => e.isDirectory() && fs.existsSync(path.join(sdd(worktree), e.name, 'progress.md')))
+      .filter(e => e.isDirectory() && tipoDoArquivo(path.join(sdd(worktree), e.name, 'progress.md')) === 'comum')
       .map(e => `.superpowers/sdd/${e.name}/`).sort();
   } catch {
     return [];

@@ -187,3 +187,13 @@ test('corpoDoDiario mascara os segredos antes de cortar e diz quantos removeu', 
   assert.match(corpo, /GITHUB_TOKEN=\[removido\]/);
   assert.match(resumoDoFechamento({ frente: FRENTE, copias: [{ pasta: 'carrinho', plano: PLANO, texto }] }), /GITHUB_TOKEN=\[removido\]/);
 });
+
+test('mascararSegredos: nomes simples, Bearer e nomes em minúsculas', () => {
+  const linhas = ['PASSWORD=hunter2', 'SECRET=abc', 'TOKEN=def', 'APIKEY=ghi', 'PASSWD=jkl', 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.e30.x', 'password=hunter3', 'api_key: zzz999'];
+  const r = mascararSegredos(linhas.join('\n'));
+  assert.equal(r.n, linhas.length);
+  for (const segredo of ['hunter2', 'abc', 'def', 'ghi', 'jkl', 'eyJhbGciOiJIUzI1NiJ9', 'hunter3', 'zzz999']) assert.ok(!r.texto.includes(segredo), segredo);
+  assert.match(r.texto, /^PASSWORD=\[removido\]$/m);
+  assert.match(r.texto, /^Authorization: Bearer \[removido\]$/m);
+  assert.match(r.texto, /^api_key: \[removido\]$/m);
+});
