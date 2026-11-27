@@ -135,7 +135,7 @@ Nível: medio.
 
 **Interfaces:**
 - Produces:
-  - `colecoes.json`: `{versaoDoFormato: 1, colecoes: {<nome>: {origem, commit, versao, licenca, skills: {<skill>: <pasta na origem>}, arquivosDoProjeto?: {<destino no projeto>: <arquivo na origem>}}}}`, mais `agent-harness: {local: "skills", skills: {"preparar-projeto": "preparar-projeto"}}`.
+  - `colecoes.json`: `{versaoDoFormato: 1, colecoes: {<nome>: {origem, commit, versao, licenca, skills: {<skill>: <pasta na origem>}, arquivosDoProjeto?: {<destino no projeto>: <arquivo na origem>}}}}`, mais `agent-harness: {local: "skills", skills: {"preparar-projeto": "preparar-projeto"}, extensoes: {<skill>: <extensão>}}`. Em `extensoes`, a skill do harness que só é instalada com aquela extensão ligada (spec, seção 4); nesta fatia o mapa fica vazio (`{}`), e as fatias seguintes acrescentam as suas skills (`orquestrar` → `orquestracao`; `wiki-ingerir`, `wiki-consultar`, `wiki-conferir`, `reuniao-ingerir` → `wiki`).
   - `lerColecoes(dirExtensao: string): {colecoes: object}`; lança `Error` com o motivo para formato inválido.
   - `destinosDe(agentes: string[]): string[]`: pastas únicas, na ordem dos agentes, pela tabela da Task 1.
   - `dirDoCache(env, plataforma = process.platform, casa = os.homedir()): string`: `env.AH_CACHE` quando definida; senão, `<cache da máquina>/agent-harness/colecoes` (Linux: `XDG_CACHE_HOME` ou `~/.cache`; macOS: `~/Library/Caches`; Windows: `LOCALAPPDATA`).
@@ -228,6 +228,10 @@ test('instalar cria os rótulos de triagem pelo gh; sem gh, avisa e termina', ()
 });
 test('instalar sem rede não grava nada', () => {
   // uma das coleções com origem inexistente: código 1, erro casa /^Recusado: não consegui buscar/ e /Faça:/; nenhuma pasta de skills nem trava
+});
+test('skill do harness ligada a uma extensão só é instalada com a extensão ligada', () => {
+  // colecoes.json de teste com agent-harness.extensoes = {'so-com-recursos': 'recursos'}; sem recursos ligada: a pasta não existe;
+  // com extensoes.recursos = true e instalar de novo: existe; desligando e instalando: removida (estava igual à trava)
 });
 test('instalar de novo não muda nada e diz isso', () => {
   // segunda execução: código 0, saída 'Nada a mudar: as skills já estão como a trava.\n' seguida de 'Agora rode: tools/ah doctor\n'
