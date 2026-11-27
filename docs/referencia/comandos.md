@@ -497,7 +497,21 @@ Bloqueia: nada
 
 ## Extensões
 
-Uma extensão acrescenta comandos, travas, verificações do `doctor`, reações ao ciclo de vida, linhas no resumo e colunas no quadro sem alterar o núcleo. A interface está em `docs/extensoes/interface.md`, e o passo a passo de criação, em `docs/extensoes/como-estender.md`. As do projeto ficam em `.harness/extensoes/<nome>/extensao.mjs`; as que acompanham o harness, em `.harness/nucleo/extensoes/<nome>/` (nesta versão, só a `recursos`).
+Uma extensão acrescenta comandos, travas, verificações do `doctor`, reações ao ciclo de vida, linhas no resumo e colunas no quadro sem alterar o núcleo. A interface está em `docs/extensoes/interface.md`, e o passo a passo de criação, em `docs/extensoes/como-estender.md`. As do projeto ficam em `.harness/extensoes/<nome>/extensao.mjs`; as que acompanham o harness, em `.harness/nucleo/extensoes/<nome>/`:
+
+| Extensão | Para que serve | Referência |
+|---|---|---|
+| `recursos` | Registro de recursos por frente (porta, banco), para duas frentes não usarem o mesmo | "recursos" |
+| `metodo` | Instala e atualiza as skills do método com versão fixada, escreve o `AGENTS.md` de princípios e confere tudo no `doctor` | "metodo" |
+| `registros` | Leva o diário da execução por subagentes para o ticket da frente e o devolve na retomada | "registros" |
+| `modelo` | Traduz os níveis `alto`, `medio` e `leve` do plano em modelo e esforço de cada agente | "modelo" |
+| `wiki` | Confere a wiki do projeto (a invariante de evidência) e conversa com o resto do ciclo | "wiki" |
+| `ambiente` | Banco e portas por worktree, criados na abertura e apagados no fechamento | "ambiente" |
+| `migracao` | Reserva do número de migração entre frentes | "migracao" |
+| `prova` | Prova por árvore: grava a árvore testada para não repetir o teste ponta a ponta | "prova" |
+| `orquestracao` | Candidatos para a orquestração: o que está livre para começar | "orquestracao" |
+
+O `metodo instalar` deixa ligadas `metodo`, `registros` e `modelo`; as outras se ligam em `extensoes`, no `.harness/config.json`, quando o projeto precisar delas.
 
 **Configuração.** Uma extensão só carrega quando a chave dela existe em `extensoes`, no `.harness/config.json` (padrão: `{}`, nenhuma ligada):
 
