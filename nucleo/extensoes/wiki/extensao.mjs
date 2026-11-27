@@ -4,7 +4,8 @@
 // (`docs/wiki/<tema>/<artigo>.md`, com index.md e log.md) é escrita pelo agente com as skills wiki-ingerir,
 // wiki-consultar e wiki-conferir; o formato está em formato.md, nesta pasta. Esta extensão traz a parte
 // determinística: `ah wiki conferir` (a invariante de evidência), `ah wiki fontes` (o que a wiki pode citar, pela
-// configuração) e o aviso do doctor. Ela sugere e relata; nunca recusa o trabalho.
+// configuração), o aviso do doctor, uma linha no começo da sessão e a sugestão de ingestão no fechamento da frente.
+// Ela sugere e relata; nunca recusa o trabalho.
 //
 // Configuração opcional em extensoes.wiki: {pasta, fontes, foraDasFontes} (ver fontes.mjs).
 // A conferência é reescrita de astro-han/karpathy-llm-wiki (MIT, commit eafcc77; LICENSE-karpathy-llm-wiki).
@@ -12,7 +13,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { configDaWiki, listarFontes, validarConfig } from './fontes.mjs';
-import { conferir, contagem, ehArtigo, existeWiki, relatorio } from './conferir.mjs';
+import { artigosDaWiki, conferir, contagem, ehArtigo, existeWiki, relatorio } from './conferir.mjs';
+import { fontesNovas, listaCurta } from './novidades.mjs';
 
 const USO = 'ah wiki conferir [--json] [--pendentes] [<artigo>...] | fontes [--json]';
 
@@ -81,6 +83,32 @@ export default {
         }
         return SUBCOMANDOS[sub](args, ctx);
       },
+    },
+  },
+
+  // Uma linha no começo da sessão: quantos artigos e o que chegou de fonte desde a última ingestão.
+  resumo(ctx) {
+    const cfg = configDaWiki(ctx.config);
+    if (!existeWiki(ctx.raiz, cfg)) return `Wiki: ainda vazia; a primeira ingestão (skill wiki-ingerir) cria ${cfg.pasta}/.`;
+    const artigos = `Wiki: ${artigosDaWiki(ctx.raiz, cfg).length} artigo(s)`;
+    let novas;
+    try { novas = fontesNovas(ctx.git, 'HEAD', cfg); } catch { return `${artigos}.`; }
+    if (novas === null) return `${artigos}; nenhuma ingestão registrada no git ainda (commite ${cfg.pasta}/log.md).`;
+    if (!novas.length) return `${artigos}; nenhuma fonte nova desde a última ingestão.`;
+    return `${artigos}; ${novas.length} fonte(s) nova(s) desde a última ingestão (${listaCurta(novas)}): skill wiki-ingerir.`;
+  },
+
+  reacoes: {
+    // Último momento em que o ramo da frente existe: se ele mudou fonte depois da última ingestão, sugere ingerir.
+    // Nunca recusa (devolve null): a wiki é sugestão, não etapa obrigatória.
+    antesDeFechar(ctx) {
+      if (ctx.aberturaDesfeita || !ctx.frente?.ramo) return null;
+      let novas;
+      try { novas = fontesNovas(ctx.git, ctx.frente.ramo, configDaWiki(ctx.config)); } catch { return null; }
+      if (novas?.length) {
+        ctx.escrever(`Wiki: a frente mudou fonte(s) sem ingestão (${listaCurta(novas)}). Sugestão: ingira com a skill wiki-ingerir antes de começar outra coisa.\n`);
+      }
+      return null;
     },
   },
 
