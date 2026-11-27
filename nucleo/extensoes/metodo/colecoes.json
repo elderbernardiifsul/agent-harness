@@ -1,0 +1,48 @@
+{
+  "versaoDoFormato": 1,
+  "colecoes": {
+    "superpowers": {
+      "origem": "https://github.com/obra/superpowers.git",
+      "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+      "versao": "7.0.2",
+      "licenca": "LICENSE",
+      "skills": {
+        "brainstorming": "skills/brainstorming",
+        "executing-plans": "skills/executing-plans",
+        "requesting-code-review": "skills/requesting-code-review",
+        "subagent-driven-development": "skills/subagent-driven-development",
+        "systematic-debugging": "skills/systematic-debugging",
+        "test-driven-development": "skills/test-driven-development",
+        "verification-before-completion": "skills/verification-before-completion",
+        "writing-plans": "skills/writing-plans"
+      }
+    },
+    "mattpocock-skills": {
+      "origem": "https://github.com/mattpocock/skills.git",
+      "commit": "d1478fcb140db0b93c0c8df17bcfd311844749d0",
+      "versao": "1.3.2",
+      "licenca": "LICENSE",
+      "skills": {
+        "domain-modeling": "skills/engineering/domain-modeling",
+        "grilling": "skills/productivity/grilling",
+        "prototype": "skills/engineering/prototype",
+        "research": "skills/engineering/research",
+        "to-tickets": "skills/engineering/to-tickets",
+        "triage": "skills/engineering/triage",
+        "wayfinder": "skills/engineering/wayfinder"
+      },
+      "arquivosDoProjeto": {
+        "docs/agents/issue-tracker.md": "skills/engineering/setup-matt-pocock-skills/issue-tracker-github.md",
+        "docs/agents/triage-labels.md": "skills/engineering/setup-matt-pocock-skills/triage-labels.md",
+        "docs/agents/domain.md": "skills/engineering/setup-matt-pocock-skills/domain.md"
+      }
+    },
+    "agent-harness": {
+      "local": "skills",
+      "skills": {
+        "preparar-projeto": "preparar-projeto"
+      },
+      "extensoes": {}
+    }
+  }
+}
