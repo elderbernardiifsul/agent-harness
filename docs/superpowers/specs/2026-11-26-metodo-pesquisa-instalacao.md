@@ -214,3 +214,12 @@ OpenCode:
 - Nenhum comando de instalação foi executado. Os caminhos marcados como [inferência] (marketplace do próprio repositório com `#tag` ou `--ref`) precisam de teste num ambiente descartável.
 - Os docs do Codex redirecionam para `learn.chatgpt.com`. Algumas respostas vieram de resumo da página, não de texto integral.
 - Não verifiquei o comportamento real do `npx skills update` com um `ref` de tag, nem onde o OpenCode V2 guarda pacotes vindos de git.
+
+## Conferência pelo ensaio (27/11/2026)
+
+Sondagem num `HOME` descartável (registro em `docs/superpowers/plans/2026-11-26-metodo-fatia-1-registro.md`):
+
+- Claude Code 2.1.332: lê skills só de `.claude/skills/`; lê `AGENTS.md` sem `CLAUDE.md` e pelo `@AGENTS.md` dentro do `CLAUDE.md`. Confirma a seção 3.1. A documentação não diz, mas o ensaio mostrou: o Claude Code não carrega `CLAUDE.md` nem `AGENTS.md` de pasta dentro do rascunho de uma sessão.
+- Codex 0.172.0: lê skills só de `.agents/skills/`; lê `AGENTS.md`. Confirma a seção 3.2.
+- Os dois resolvem `superpowers:<nome>` para a skill local `<nome>` sem instrução.
+- OpenCode 2.4.2: não ensaiado com modelo (chaves de provedor vencidas nesta máquina); a seção 3.3 segue só pela documentação.
