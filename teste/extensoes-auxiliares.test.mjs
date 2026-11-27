@@ -26,6 +26,14 @@ test('ctxFalso guarda o que a extensão escreveu e gravou, sem disco', async () 
   assert.throws(() => { ctx.frente.nome = 'x'; }, TypeError);
 });
 
+test('ctxFalso responde ctx.sessao pela opção sessoes', () => {
+  const ctx = ctxFalso({ sessoes: { 'sessao-b-0002': { id: 'sessao-b-0002', modelo: 'leve-1' } } });
+  assert.equal(ctx.sessao('sessao-b-0002').modelo, 'leve-1');
+  assert.ok(Object.isFrozen(ctx.sessao('sessao-b-0002')));
+  assert.equal(ctx.sessao('outra'), null);
+  assert.equal(ctxFalso().sessao('sessao-teste-0001'), null);
+});
+
 test('projetoDeTeste: projeto descartável com o núcleo, a extensão ligada, o despacho e o gancho', t => {
   const p = projetoDeTeste({ extensoes: { recursos: true } });
   t.after(() => p.limpar());

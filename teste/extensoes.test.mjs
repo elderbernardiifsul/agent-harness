@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { criarProjeto, dirDoTeste, ganchoPre, amb as ambDoTeste, apagarPastaDeTeste } from './apoio/repo.mjs';
 import {
-  VERSAO_DA_INTERFACE, carregarExtensoes, descobrir, esquecerExtensoes, montarCtx,
+  VERSAO_DA_INTERFACE, carregarExtensoes, descobrir, esquecerExtensoes, expandirPastasMaes, ignoradosDasExtensoes, montarCtx, separarIgnorados,
 } from '../nucleo/lib/extensoes.mjs';
 import { aplicarPadroes, validarConfig } from '../nucleo/lib/config.mjs';
 import { avaliar } from '../nucleo/lib/travas.mjs';
@@ -15,6 +15,7 @@ import { gravarFrente, lerFrente } from '../nucleo/lib/frente.mjs';
 import { ErroDeUso } from '../nucleo/lib/caminhos.mjs';
 import { tratar } from '../nucleo/adaptadores/contrato.mjs';
 import { lerEventos } from '../nucleo/lib/estado.mjs';
+import { registrarSessao } from '../nucleo/lib/sessao.mjs';
 
 const ECO = path.join(path.dirname(fileURLToPath(import.meta.url)), 'extensoes-de-teste', 'eco');
 
@@ -152,6 +153,99 @@ test('ctx: frente só de leitura e gravarCampos só nos campos da extensão', as
   assert.equal(ctx.ErroDeUso, ErroDeUso);
   assert.equal(typeof ctx.git, 'function');
   assert.equal(typeof ctx.gh, 'function');
+});
+
+test('ctx.sessao lê o registro da sessão, só de leitura, e devolve null sem ele', async t => {
+  const pp = pastas(t, { eco: fonte() });
+  const r = await carregar(pp, { eco: true });
+  registrarSessao(pp.dirEstado, { id: 's1', agente: 'claude-code', modelo: 'modelo-de-teste' });
+  const ctx = montarCtx(r.ativas[0], { raiz: pp.raiz, config: aplicarPadroes({ projeto: 'loja' }), dirEstado: pp.dirEstado, sessaoId: 's1', env: {} });
+  const s = ctx.sessao('s1');
+  assert.deepEqual([s.agente, s.modelo], ['claude-code', 'modelo-de-teste']);
+  assert.ok(Object.isFrozen(s));
+  assert.equal(ctx.sessao('nao-existe'), null);
+  assert.equal(ctx.sessao(null), null);
+  assert.equal(ctx.sessao('../fora'), null);
+  // Registro ilegível: null, sem lançar (a coluna do quadro não pode derrubar o board).
+  fs.writeFileSync(path.join(pp.dirEstado, 'sessoes', 's1.json'), '{');
+  assert.equal(ctx.sessao('s1'), null);
+  // Sem pasta de estado: null.
+  assert.equal(montarCtx(r.ativas[0], { raiz: pp.raiz, config: aplicarPadroes({ projeto: 'loja' }), sessaoId: 's1', env: {} }).sessao('s1'), null);
+});
+
+// ---------------------------------------------------------------- ignorados de que a extensão cuida (P5)
+
+test('ignorados: a forma exige uma função', async t => {
+  const pp = pastas(t, { lista: fonte('ignorados: []'), boa: fonte('ignorados: () => []') });
+  const r = await carregar(pp, { lista: true, boa: true });
+  assert.match(porNome(r, 'lista').motivo, /^ignorados deve ser uma função \(ctx\) -> \[\{caminho, descartavel, guardar\}\]$/);
+  assert.equal(porNome(r, 'boa').carregou, true);
+});
+
+test('ignoradosDasExtensoes valida cada item, recebe a frente e transforma erro em falha', async t => {
+  const pp = pastas(t, {
+    boa: fonte(`ignorados: ctx => [{ caminho: '.cache/', guardar: 'tools/ah boa salvar --frente ' + ctx.frente.nome }, { caminho: './.env.frente', descartavel: true }]`),
+    ruim: fonte(`ignorados: () => [{ caminho: '/abs', descartavel: true }, { caminho: 'a/../b', descartavel: true }, { caminho: 'x' }, { caminho: 'y', descartavel: true, guardar: 'g' }, { caminho: '', guardar: 'g' }, { caminho: 'a\\\\b', descartavel: true }, { caminho: 'ok.txt', guardar: 'g' }]`),
+    lanca: fonte(`ignorados() { throw new Error('quebrou'); }`),
+    promessa: fonte(`async ignorados() { throw new Error('rejeitou'); }`),
+    forma: fonte(`ignorados: () => 'texto'`),
+  });
+  const amb = { raiz: pp.raiz, config: aplicarPadroes({ projeto: 'loja', extensoes: { boa: true, ruim: true, lanca: true, promessa: true, forma: true } }), dirEstado: pp.dirEstado, env: {} };
+  esquecerExtensoes();
+  const r = await ignoradosDasExtensoes(amb, { id: 'as-1', nome: 'carrinho' }, { dirNucleo: pp.dirNucleo });
+  assert.deepEqual(r.declarados, [
+    { extensao: 'boa', caminho: '.cache/', descartavel: false, guardar: 'tools/ah boa salvar --frente carrinho' },
+    { extensao: 'boa', caminho: '.env.frente', descartavel: true, guardar: null },
+    { extensao: 'ruim', caminho: 'ok.txt', descartavel: false, guardar: 'g' },
+  ]);
+  const falhas = Object.fromEntries(r.falhas.map(f => [f.extensao, f.motivo]));
+  assert.match(falhas.lanca, /quebrou/);
+  assert.match(falhas.promessa, /rejeitou/);
+  assert.match(falhas.forma, /deve devolver uma lista/);
+  assert.equal(r.falhas.filter(f => f.extensao === 'ruim').length, 6);
+  assert.match(r.falhas.find(f => f.extensao === 'ruim').motivo, /ignorados\[0\]\.caminho deve ser relativo ao worktree/);
+});
+
+test('expandirPastasMaes: pasta-mãe listada sem filhos é listada de novo, item a item', () => {
+  const sdd = { extensao: 'registros', caminho: '.superpowers/sdd/', descartavel: false, guardar: 'g' };
+  const pedidas = [];
+  const dentro = pasta => { pedidas.push(pasta); return ['.superpowers/sdd/.gitignore', '.superpowers/sdd/p/progress.md', '.superpowers/x.log']; };
+  // O projeto ignora `.superpowers/` no próprio .gitignore: o git com --directory dá só a pasta-mãe (ensaio de 27/11).
+  assert.deepEqual(expandirPastasMaes(['.superpowers/', '.env'], [sdd], dentro), ['.superpowers/sdd/.gitignore', '.superpowers/sdd/p/progress.md', '.superpowers/x.log', '.env']);
+  assert.deepEqual(pedidas, ['.superpowers/']);
+  // Com filhos já listados, ou sem declarado dentro, ou o próprio declarado: nada muda e o git não é chamado de novo.
+  const ja = ['.superpowers/', '.superpowers/sdd/'];
+  assert.deepEqual(expandirPastasMaes(ja, [sdd], () => assert.fail('não devia listar')), ja);
+  assert.deepEqual(expandirPastasMaes(['outra/'], [sdd], () => assert.fail('não devia listar')), ['outra/']);
+  assert.deepEqual(expandirPastasMaes(['.superpowers/sdd/'], [sdd], () => assert.fail('não devia listar')), ['.superpowers/sdd/']);
+  // A listagem vazia mantém a pasta (fica com os outros, e a recusa de sempre a protege).
+  assert.deepEqual(expandirPastasMaes(['.superpowers/'], [sdd], () => []), ['.superpowers/']);
+});
+
+test('separarIgnorados: caminho declarado, pasta-mãe só com itens cobertos, descartável e o resto', () => {
+  const sdd = { extensao: 'registros', caminho: '.superpowers/sdd/', descartavel: false, guardar: 'tools/ah registros guardar --frente carrinho' };
+  const env = { extensao: 'ambiente', caminho: '.env.frente', descartavel: true, guardar: null };
+  // A lista que o git 2.56 dá para um worktree com só .superpowers/sdd/<plano>/ (ensaio de 26/11).
+  const doEnsaio = ['.superpowers/', '.superpowers/sdd/', '.superpowers/sdd/.gitignore', '.superpowers/sdd/plano-a/'];
+  assert.deepEqual(separarIgnorados(doEnsaio, [sdd]), { descartaveis: [], guardados: [{ extensao: 'registros', guardar: sdd.guardar, itens: doEnsaio }], outros: [] });
+  // Outro ignorado dentro da pasta-mãe: ela e ele ficam de fora.
+  const comLog = separarIgnorados([...doEnsaio, '.superpowers/x.log'], [sdd]);
+  assert.deepEqual(comLog.outros, ['.superpowers/', '.superpowers/x.log']);
+  assert.deepEqual(comLog.guardados[0].itens, doEnsaio.slice(1));
+  assert.deepEqual(separarIgnorados(['.env.frente', '.env', '.env.frente.bak'], [sdd, env]), { descartaveis: ['.env.frente'], guardados: [], outros: ['.env', '.env.frente.bak'] });
+  // Pasta-mãe listada sem nada dentro na lista: não se sabe o que tem; fica de fora.
+  assert.deepEqual(separarIgnorados(['.superpowers/'], [sdd]).outros, ['.superpowers/']);
+  // Pasta-mãe só com descartáveis é descartável.
+  const dir = { extensao: 'ambiente', caminho: 'tmp/env/', descartavel: true, guardar: null };
+  assert.deepEqual(separarIgnorados(['tmp/', 'tmp/env/'], [dir]).descartaveis, ['tmp/', 'tmp/env/']);
+  // Coberto por um descartável e por um guardar: vale o guardar (o mais cuidadoso).
+  const tudo = { extensao: 'ambiente', caminho: '.superpowers/', descartavel: true, guardar: null };
+  assert.deepEqual(separarIgnorados(['.superpowers/sdd/'], [tudo, sdd]).guardados[0].itens, ['.superpowers/sdd/']);
+  // Pastas-mães aninhadas.
+  const fundo = { extensao: 'x', caminho: 'a/b/c/', descartavel: false, guardar: 'g' };
+  assert.deepEqual(separarIgnorados(['a/', 'a/b/', 'a/b/c/', 'a/b/c/d'], [fundo]).guardados[0].itens, ['a/', 'a/b/', 'a/b/c/', 'a/b/c/d']);
+  assert.deepEqual(separarIgnorados(['a/', 'a/b/', 'a/b/c/', 'a/b/z'], [fundo]).outros, ['a/', 'a/b/', 'a/b/z']);
+  assert.deepEqual(separarIgnorados([], [sdd]), { descartaveis: [], guardados: [], outros: [] });
 });
 
 // ---------------------------------------------------------------- travas (no próprio processo)

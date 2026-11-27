@@ -44,7 +44,7 @@ test('gh falso: login trocável, rótulo, lista por rótulo, ticket apagado e se
   p.ghSemear(4, { labels: ['em-andamento'], state: 'CLOSED' });
   p.ghSemear(5, { labels: ['outro'] });
   const lista = JSON.parse(gh(['issue', 'list', '--label', 'em-andamento', '--state', 'open', '--json', 'number,comments', '--limit', '50'], o()).saida);
-  assert.deepEqual(lista, [{ number: 2, comments: [{ author: { login: 'carla-dias' }, body: 'b', url: 'https://github.com/exemplo/loja/issues/2#issuecomment-1' }] }]);
+  assert.deepEqual(lista, [{ number: 2, comments: [{ author: { login: 'carla-dias' }, authorAssociation: 'OWNER', body: 'b', url: 'https://github.com/exemplo/loja/issues/2#issuecomment-1' }] }]);
   p.ghSemear(8, { apagado: true });
   for (const args of [['issue', 'view', '8', '--json', 'state'], ['issue', 'comment', '8', '--body-file', '-'], ['issue', 'edit', '8', '--add-label', 'x']]) {
     const r = gh(args, o());

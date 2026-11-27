@@ -500,7 +500,21 @@ Bloqueia: nada
 
 ## Extensões
 
-Uma extensão acrescenta comandos, travas, verificações do `doctor`, reações ao ciclo de vida, linhas no resumo e colunas no quadro sem alterar o núcleo. A interface está em `docs/extensoes/interface.md`, e o passo a passo de criação, em `docs/extensoes/como-estender.md`. As do projeto ficam em `.harness/extensoes/<nome>/extensao.mjs`; as que acompanham o harness, em `.harness/nucleo/extensoes/<nome>/` (nesta versão, a `recursos` e a `metodo`).
+Uma extensão acrescenta comandos, travas, verificações do `doctor`, reações ao ciclo de vida, linhas no resumo e colunas no quadro sem alterar o núcleo. A interface está em `docs/extensoes/interface.md`, e o passo a passo de criação, em `docs/extensoes/como-estender.md`. As do projeto ficam em `.harness/extensoes/<nome>/extensao.mjs`; as que acompanham o harness, em `.harness/nucleo/extensoes/<nome>/`:
+
+| Extensão | Para que serve | Referência |
+|---|---|---|
+| `recursos` | Registro de recursos por frente (porta, banco), para duas frentes não usarem o mesmo | "recursos" |
+| `metodo` | Instala e atualiza as skills do método com versão fixada, escreve o `AGENTS.md` de princípios e confere tudo no `doctor` | "metodo" |
+| `registros` | Leva o diário da execução por subagentes para o ticket da frente e o devolve na retomada | "registros" |
+| `modelo` | Traduz os níveis `alto`, `medio` e `leve` do plano em modelo e esforço de cada agente | "modelo" |
+| `wiki` | Confere a wiki do projeto (a invariante de evidência) e conversa com o resto do ciclo | "wiki" |
+| `ambiente` | Banco e portas por worktree, criados na abertura e apagados no fechamento | "ambiente" |
+| `migracao` | Reserva do número de migração entre frentes | "migracao" |
+| `prova` | Prova por árvore: grava a árvore testada para não repetir o teste ponta a ponta | "prova" |
+| `orquestracao` | Candidatos para a orquestração: o que está livre para começar | "orquestracao" |
+
+A preparação do projeto (README, "Instalar num projeto", passo 5) liga `metodo`, `registros` e `modelo`; as outras se ligam em `extensoes`, no `.harness/config.json`, quando o projeto precisar delas.
 
 **Configuração.** Uma extensão só carrega quando a chave dela existe em `extensoes`, no `.harness/config.json` (padrão: `{}`, nenhuma ligada):
 
@@ -675,6 +689,90 @@ Uma pasta de skill com arquivo ilegível vira aviso nos itens `Skills iguais à 
 
 Limite: a conferência de plugin duplicado lê só o Claude Code; para o Codex e o OpenCode a sondagem não achou onde ficam os plugins instalados, e o `doctor` não chuta.
 
+## modelo
+
+```
+ah modelo [alto|medio|leve] [--agente <nome>] [--json]
+```
+
+Comando da extensão `modelo`, que acompanha o harness e só existe com `"modelo"` ligada em `extensoes` (a preparação do método a liga). Traduz os três níveis neutros que o plano marca em cada tarefa (`Nível: alto|medio|leve`) para o modelo e o esforço reais de cada agente. Nunca recusa por causa de modelo: as únicas recusas são de uso do comando.
+
+- **Com nível.** Uma linha por agente (ou só o de `--agente`): `alto (claude-code): modelo opus, esforço high`, seguida de `Como usar: …`, com a opção de linha de comando ou o campo do subagente em que o par entra. Esforço `null` sai como `padrão do agente`.
+- **Sem nível.** A tabela inteira, a data dos padrões e `Critérios: docs/agents/metodo.md (nível de modelo).`
+- **`--json`.** `{"nivel"?, "padroesDe", "traducoes": [{"agente", "nivel", "modelo", "esforco", "origem", "uso"}]}`, com `origem` `padrao` ou `projeto`.
+- **Sessão.** Não exige sessão.
+- **Padrões.** Em `.harness/nucleo/extensoes/modelo/padroes.json`, com a data e as fontes (a documentação oficial de cada agente, conferida em 2026-11-27). No OpenCode, o modelo é `provedor/modelo` e o esforço é uma variante do catálogo do provedor (`--model <modelo>#<variante>`); como variante desconhecida dá erro de resolução, o padrão não fixa variante. Nomes de modelo mudam: o projeto troca os dele na configuração.
+- **Configuração.** `extensoes.modelo.agentes.<agente>.<nível>` com `modelo` (texto) e `esforco` (texto ou `null`), mesclados campo a campo sobre o padrão. Um agente que não está nos padrões pode ser acrescentado; o nível que ele não traduz sai como `sem tradução (acrescente em extensoes.modelo.agentes)`.
+
+```json
+"extensoes": { "modelo": { "agentes": { "opencode": { "leve": { "modelo": "opencode-go/claude-haiku-5-5" } } } } }
+```
+
+- **Quadro.** A coluna `MODELO` do `board` mostra o modelo que a sessão dona da frente declarou ao começar (`modelo` do registro da sessão, lido por `ctx.sessao`); hoje só o adaptador do Claude Code informa. Sem dona ou sem o dado, `—`.
+
+```
+$ tools/ah modelo
+Níveis de modelo (padrões de 2026-11-27; o projeto muda os dele em extensoes.modelo.agentes):
+  alto (claude-code): modelo opus, esforço high
+  medio (claude-code): modelo sonnet, esforço medium
+  leve (claude-code): modelo haiku, esforço low
+  alto (codex): modelo gpt-6.2-astra, esforço high
+  medio (codex): modelo gpt-6.2-sol, esforço medium
+  leve (codex): modelo gpt-6-luna, esforço low
+  alto (opencode): modelo anthropic/claude-opus-5-5, esforço padrão do agente
+  medio (opencode): modelo anthropic/claude-sonnet-5-5, esforço padrão do agente
+  leve (opencode): modelo anthropic/claude-haiku-5-5, esforço padrão do agente
+Critérios: docs/agents/metodo.md (nível de modelo).
+$ tools/ah modelo leve --agente codex
+leve (codex): modelo gpt-6-luna, esforço low
+Como usar: codex -m <modelo> -c model_reasoning_effort=<esforço>
+```
+
+| Recusa | Faça |
+|---|---|
+| `Nível desconhecido: altissimo.` | use alto, medio ou leve (tools/ah modelo mostra a tabela) |
+| `Agente desconhecido: cursor.` | use claude-code, codex ou opencode, ou acrescente o agente em extensoes.modelo.agentes |
+| `Opção desconhecida: …` / `Argumento a mais: …` / `A opção --agente precisa do nome do agente.` | use o uso acima |
+
+## registros
+
+```
+ah registros guardar [--frente <nome>]
+ah registros devolver [--frente <nome>]
+```
+
+Comando da extensão `registros`, que acompanha o harness e só existe com `"registros"` ligada em `extensoes` (a preparação do método a liga). Leva para o ticket da frente o diário da execução por subagentes: o `progress.md` que o subagent-driven-development grava, por plano, em `.superpowers/sdd/<pasta do plano>/`, dentro do worktree e ignorado pelo git. Sem isso, o diário some com o worktree, e a própria skill o apaga quando a revisão final fica limpa.
+
+- **`guardar`.** Para cada plano achado no worktree da frente da sessão (ou da dada em `--frente`, por nome ou id): comenta o diário em cada ticket da frente, com o marcador `<!-- ah:registro id=<id> nome=<nome> pasta=<pasta> plano=<plano> commit=<commit> cortado=<0|1> em=<ISO> fase=guardado v=2 -->`; guarda uma cópia em `<estado>/registros/<id da frente>/<pasta>/` (`progress.md` e `meta.json`, com o estado de cada ticket: `comentado` ou `pendente`); e tira do worktree as pastas de plano e o `.gitignore` que o `sdd-workspace` cria, sem apagar o que o git versiona (o projeto pode versionar os diários, como o `sdd-workspace` prevê). O que não é do subagent-driven-development (um arquivo do aluno em `.superpowers/sdd/`) fica, com um aviso, e o `close` continua recusando por ele na linha de sempre dos ignorados: a extensão declara ao `close` só as pastas de plano e o `.gitignore` do `sdd-workspace`. O mesmo diário, na mesma fase, já comentado no mesmo ticket não é comentado de novo. Plano com tarefa parada (citada no diário sem a linha `complete`) é guardado do mesmo jeito, com o aviso `o plano … tem tarefa parada (…); o diário saiu do worktree e está guardado. Para continuar o plano: tools/ah registros devolver --frente carrinho`.
+- **Quando rodar.** No fim do subagent-driven-development, antes de a skill apagar a pasta do plano, e antes do `ah close`. Quem esquece encontra a recusa do `close` com a linha `itens ignorados que a extensão registros guarda (…); saída: tools/ah registros guardar --frente carrinho e repita ah close`.
+- **Diário grande ou estranho.** O diário reconhecido (primeira linha `# SDD ledger — plan: …`) vai inteiro até 60 000 caracteres; acima disso, ou em outro formato (até 4 000 caracteres, como texto), vai cortado, com `cortado=1` e uma linha que diz o motivo. A cópia local guarda o diário inteiro e não é apagada no fechamento enquanto o ticket tiver só a parte cortada.
+- **Sem ticket.** Só a cópia, com o aviso `a frente as-1 não tem ticket: o diário ficou só nesta máquina (…)`.
+- **Sem rede.** A cópia vale como guarda e a pasta sai do worktree mesmo assim; o ticket fica `pendente`, com o aviso, e o `close` comenta o diário antes do resumo.
+- **`--frente` em frente alheia.** Vale para frente passada, órfã (dona morta) ou sem dona. A frente ativa de outra sessão viva é recusada: ela pode estar no meio da execução.
+- **`devolver`.** Traz de volta ao worktree o diário mais novo de cada plano da frente, inclusive o que o `guardar` tirou (fase `guardado`), pelas regras da retomada abaixo. A saída diz por que não trouxe nada: `Nada a devolver: o worktree já tem o diário mais novo de cada plano.`, `Nada a devolver: não achei diário desta frente nos tickets nem nesta máquina.`, `Nada devolvido: veja os avisos acima.` ou `A frente as-1 carrinho não tem worktree nesta máquina; nada a devolver.`
+- **Handoff.** A reação `aoPassar` comenta o diário (fase `passagem`) e guarda a cópia como o `guardar`, mas deixa a pasta no worktree, porque o trabalho continua. Sem rede, avisa que outra máquina que retomar a frente não terá o diário.
+- **Retomada.** Na retomada (`ah open` de frente passada), cada plano recebe o diário de passagem mais novo: o comentário `ah:registro` da frente com o maior `em`, juntando todos os tickets (o marcador `v=1`, sem `em` nem `fase`, conta como o mais antigo e como passagem). O diário de fase `guardado` saiu de propósito e não volta sozinho (para ele, `registros devolver`). A cópia desta máquina entra na conta quando nenhum ticket se leu, quando o ticket não tem o plano, ou quando ela é mais nova (guardada sem rede, com o ticket pendente); a cópia com ticket pendente não é trocada pelo que vem do ticket. Ele vai para `progress.md` e `plan-path`, com o `.gitignore` de `.superpowers/sdd/`, no lugar em que o subagent-driven-development o procura (`Registros: devolvi o diário de 2 planos a …/.superpowers/sdd/ (do ticket).`), e a cópia desta máquina passa a saber em que tickets ele já está (todos os que têm o mesmo texto e o mesmo `em`). O diário que já está no worktree só é trocado quando é igual à cópia desta máquina (ninguém mexeu nele aqui desde a última guarda) e o do ticket é mais novo; diferente da cópia, fica, com o aviso e o próximo passo. Diário cortado no ticket não é devolvido.
+- **Quem pode deixar diário.** Só vale o comentário cujo autor tem acesso ao repositório (o `authorAssociation` que o GitHub dá ao comentário é `OWNER`, `MEMBER` ou `COLLABORATOR`; sem o campo, num `gh` antigo, o comentário não vale) e tem marcador do harness nesta frente naquele ticket (abertura, retomada, tomada ou passagem, com o autor igual ao `login` do marcador; o `ah:frente` antigo, sem `login`, vale pelo autor; a mesma regra do núcleo); os outros são ignorados, com `Aviso: ignorei o diário que @<login> comentou em #7 (associação NONE): …`. O marcador sozinho não basta, porque um terceiro pode forjá-lo com o próprio login. O motivo: num repositório público qualquer um comenta, e o diário é lido pelo agente como instrução de trabalho. Pelo mesmo motivo, o nome da pasta e o caminho do plano vindos do marcador são conferidos (sem `..`, sem barra invertida, pasta sem ponto no começo).
+- **Fechamento.** Depois do `close`, a reação `depoisDeFechar` comenta primeiro o diário que ficou `pendente` e depois o resumo (marcador `ah:registro-resumo`): por plano, as tarefas concluídas com os commits e o veredito da revisão, as paradas com a última linha e as decisões (`Ruling:`). Com todos os comentários feitos, apaga a cópia (`Registros: resumo da execução comentado em #7.`). Fechamento só local, sem ticket ou sem rede: mostra o resumo na saída e mantém a cópia. Na primeira falha de rede, a reação para de chamar o `gh` (`Aviso: sem rede (…): parei de comentar; …`), para a rede travada não segurar a trava. Sem cópia: `Registros: nenhum diário guardado para a frente as-1.` Ela roda sob a trava das frentes do `close`; cada chamada ao `gh` tem o prazo de 15 s do núcleo.
+- **Começo de sessão.** Quando o worktree da frente tem diário sem cópia, ou diferente dela, o resumo traz `Registros: antes do ah close, rode tools/ah registros guardar.` (no meio do plano, guardar tiraria a pasta de que a execução precisa).
+- **Nunca recusa o trabalho.** A extensão não usa `antesDeFechar`; as reações que falham viram aviso.
+
+```
+$ tools/ah registros guardar
+Diário de 1 plano guardado em /home/ana/.local/state/agent-harness/loja/registros/as-1; comentado em #7.
+$ tools/ah close
+Registros: resumo da execução comentado em #7.
+Frente as-1 carrinho fechada.
+```
+
+| Recusa | Faça |
+|---|---|
+| `Falta o subcomando.` / `Subcomando desconhecido: …` / `Argumento desconhecido: …` / `A opção --frente precisa do nome da frente.` | use `ah registros guardar\|devolver [--frente <nome>]` |
+| `não sei qual é a sessão` | defina AH_SESSAO ou ligue o adaptador do agente |
+| `Esta sessão não tem frente.` | abra uma com ah open <nome>, ou diga qual com --frente <nome> |
+| `Não achei a frente <nome>.` | rode ah board para ver as frentes abertas |
+| `A frente <id> <nome> é da sessão <s>, que está viva.` | peça à sessão dona (<s>) que rode tools/ah registros guardar (ou devolver); com a sessão morta (frente órfã) ou a frente passada, o --frente vale |
+
 ## whoami
 
 ```
@@ -848,7 +946,7 @@ Fecha a frente em foco da sessão sem perda de trabalho. O comando confere que o
 
 - **Tickets:** cada ticket recebe o comentário `Frente as-1 (carrinho) fechada.`, com o resumo e o marcador `fechamento` (`estado=livre`). Com reserva, o comando remove o rótulo e os responsáveis atribuídos pela frente (os da reserva local e os indicados pelos marcadores do ticket, exceto os logins mantidos por outra frente ativa no ticket; o rótulo permanece se outra frente ainda o mantém). O ticket não é fechado. A operação ocorre uma única vez, mesmo que o `close` seja repetido.
 - **Fila:** as operações que falham por falta de rede (comentário ou edição) entram na fila de pendentes, em ordem, e são enviadas no próximo comando com rede (todo comando que altera ticket reenvia a fila antes); o `close` avisa `o comentário ficou na fila; sai no próximo comando com rede`. Erro permanente (ticket inexistente) retira a operação da fila e a registra em `pendentes-descartados.jsonl`. `ah doctor` e `ah sweep` mostram a fila; `ah sweep --reparar` a reenvia.
-- `--descartar-ignorados`: aceita a perda dos arquivos ignorados pelo git presentes no worktree (`node_modules/`, caches…); sem a opção, o `close` recusa e lista esses itens. O worktree é sempre removido com `git worktree remove` sem `--force` (comando que já apaga os ignorados): se surgir alteração ou arquivo novo entre a conferência e a remoção, o `close` recusa e não apaga nada.
+- `--descartar-ignorados`: aceita a perda dos arquivos ignorados pelo git presentes no worktree (`node_modules/`, caches…); sem a opção, o `close` recusa e lista esses itens. Os itens de que uma extensão ligada cuida (campo `ignorados`, em `docs/extensoes/interface.md`) têm tratamento próprio: o descartável (refeito a partir do estado, como o arquivo de ambiente da frente) não conta como perda e sai com o worktree; o guardado (como o diário do subagent-driven-development, da extensão `registros`) recusa numa linha só dele, com o comando da extensão que o leva a um lugar durável: `itens ignorados que a extensão registros guarda (4); saída: tools/ah registros guardar --frente carrinho e repita ah close (o --descartar-ignorados apagaria junto)`. Os outros seguem a linha de sempre. Se a extensão falha ao declarar, o `close` avisa (`Aviso: a extensão <nome> falhou em ignorados: …`) e os itens dela seguem a linha de sempre. O worktree é sempre removido com `git worktree remove` sem `--force` (comando que já apaga os ignorados): se surgir alteração ou arquivo novo entre a conferência e a remoção, o `close` recusa e não apaga nada.
 - `<nome>` fecha uma frente pelo nome. Se a dona não está viva (encerrada, morta ou sem registro) ou a frente está passada, esta sessão a fecha com as mesmas conferências, e a saída informa `A frente era da sessão <id>, já encerrada; esta sessão a fechou.` (ou `que não está viva (<motivo>)`, ou `A frente estava passada pela sessão sessao-t, sem dona; esta sessão a fechou.`).
 - **Frente passada com tickets:** outra máquina pode tê-la retomado. O `close` primeiro assume a frente nos tickets, pelo mesmo procedimento de disputa da retomada, e só então a fecha. Se ela está ativa em outra máquina (ou já foi fechada lá), o comando fecha apenas o registro e o worktree locais, sem comentar nem alterar os tickets e sem alterar o histórico. Sem rede, recusa.
 - **Fases:** a rede fica fora da trava do estado. Na primeira fase, sob a trava, ocorrem as recusas, as conferências de perda de trabalho e o `antesDeFechar`, e o registro da frente recebe a marca `fechando` com o processo do `close`. Na segunda, fora da trava, ocorrem a consulta ao GitHub (frente passada com tickets) e o comentário de fechamento. Na terceira, de novo sob a trava, o `close` reconfere, remove worktree e ramo, grava o histórico e retira o registro; o `push` que apaga o ramo remoto roda depois, fora da trava. Enquanto o processo do `close` vive, outro `close`, o `handoff`, o `takeover` e a retomada pelo `open` recusam a frente, e o quadro a mostra como `fechando`; com o processo morto, a marca deixa de valer e o `close` seguinte termina o fechamento. Na terceira fase (e para retirar a marca depois de uma recusa) o `close` espera a trava por até 30 s, como o `atualizar` (`AH_CLOSE_ESPERA_DA_TRAVA_MS` troca o valor, para ensaio). Limite no Windows: ali o harness não lê a hora de início de um processo, e a marca `fechando` se confere só pelo pid. O `close` tira a própria marca em toda recusa ou erro; só um `close` morto à força a deixa, e se o pid dele for reaproveitado por outro processo, a frente continua `fechando` enquanto esse processo viver. Saída: confirme que nenhum `ah close` está rodando e apague o campo `fechando` de `<estado>/frentes/<nome>.json`; o `close` seguinte termina sem comentar de novo.
@@ -881,7 +979,7 @@ A linha `Falta: git push …` aparece apenas quando o projeto tem remoto. O `clo
 | `Não fechei carrinho: um ah close anterior parou no meio do comentário de fechamento, e preciso do GitHub para saber em que tickets ele saiu (…).` | tente de novo com rede; nada foi apagado |
 | `O checkout principal não está no ramo base dev.` | rode `git switch dev` no checkout principal |
 | `O checkout principal tem alterações em docs/agents/historico-das-frentes.md.` | faça commit ou descarte essas alterações |
-| `Fechar a frente … perderia trabalho.` | lista o que se perderia (commits fora do ramo base e do remoto, arquivos soltos, itens ignorados) e o que fazer com cada um |
+| `Fechar a frente … perderia trabalho.` | lista o que se perderia (commits fora do ramo base e do remoto, arquivos soltos, itens ignorados) e o que fazer com cada um; os itens guardados por uma extensão vêm numa linha própria, com o comando dela |
 | `Não fechei carrinho: há operações desta máquina na fila para #1 que precisam sair antes.` | tente de novo com rede; nada foi apagado |
 | `Não fechei carrinho: preciso do GitHub para confirmar que ninguém retomou carrinho (…).` | tente de novo com rede; nada foi apagado |
 | `Não consegui conferir …` | resolva o que o git descreve; nada foi apagado |
