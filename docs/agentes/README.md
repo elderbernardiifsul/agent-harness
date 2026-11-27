@@ -47,6 +47,6 @@ Ordem de leitura: este arquivo, `contrato.md`, `exemplo-claude-code.md`, `escrev
 O adaptador está concluído quando:
 
 1. `AH_ADAPTADOR=<agente> node --test teste/contrato-adaptadores.test.mjs` passa no clone (ver [provar.md](provar.md));
-2. a suíte inteira (`node --test teste/`) continua passando;
+2. a suíte inteira (`npm test`) continua passando;
 3. o ensaio com o agente real recusou as ações proibidas e está registrado em `docs/referencia/ensaio-<agente>.md`;
 4. os eventos que o agente não entrega estão declarados (`EVENTOS_ENTREGUES`) e anotados na tabela de capacidades.

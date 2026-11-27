@@ -1,6 +1,6 @@
 # Prova do adaptador
 
-A prova tem duas etapas, nesta ordem: os testes de contrato (automáticos, executados na CI) e o ensaio com o agente real (manual, na máquina de quem escreve o adaptador, com as credenciais do agente).
+A prova tem duas etapas, nesta ordem: os testes de contrato (automáticos, executados no clone) e o ensaio com o agente real (manual, na máquina de quem escreve o adaptador, com as credenciais do agente).
 
 ## 1. Testes de contrato
 
@@ -11,6 +11,11 @@ AH_ADAPTADOR=<agente> node --test teste/contrato-adaptadores.test.mjs
 ```
 
 Sem `AH_ADAPTADOR`, os testes rodam para todos os adaptadores do registro. Se o `/tmp` da máquina for pequeno, aponte `TMPDIR` para outra pasta, pois o teste ponta a ponta cria um projeto descartável em `TMPDIR`.
+
+**Caixa de areia do agente.** Os testes criam processos (`git`, `node`) e repositórios git descartáveis em `TMPDIR`. Uma caixa de areia que restringe isso impede a suíte de rodar, e o sintoma não diz a causa: cada arquivo aparece como `✖ teste/<arquivo>.test.mjs` com `'test failed'` e nenhum teste dentro dele. Foi o que aconteceu com o Codex 0.172.0 no modo `workspace-write` (`spawnSync` falha com `EPERM` e o `git init` não cria o repositório). Nesse caso, há duas saídas:
+
+- rodar os testes fora da caixa de areia (no Codex, pedir a aprovação do comando, ou abrir o agente com acesso total num clone descartável), que é o caminho para a prova;
+- para ler a mensagem de um teste que não depende de processo nem de git, rodar o arquivo direto, sem o `--test`: `AH_ADAPTADOR=<agente> node teste/contrato-adaptadores.test.mjs`. Assim aparece, por exemplo, `o adaptador <agente> não está no registro: acrescente-o em ADAPTADORES, em nucleo/adaptadores/registro.mjs`.
 
 Verificações dos testes (`teste/contrato-do-adaptador.mjs`):
 
@@ -37,7 +42,7 @@ o adaptador <agente> não leva a mensagem da recusa ao agente (nem na saída nem
 o adaptador <agente> não tem exemplos: crie teste/eventos-gravados/<agente>/exemplos.mjs exportando exemplos(cwd)
 ```
 
-Em seguida, rodam-se a suíte inteira, `node --test teste/`, e a varredura de termos, `node ferramentas/varre-termos.mjs` (código 0).
+Em seguida, rodam-se a suíte inteira, `npm test`, e a varredura de termos, `node ferramentas/varre-termos.mjs` (código 0).
 
 ## 2. Ensaio com o agente real
 
