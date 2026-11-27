@@ -47,3 +47,14 @@ test('executor.md tem os campos que o orquestrador preenche', () => {
   const texto = ler('executor.md');
   for (const campo of ['<frente>', '<worktree>', '<tickets ou plano>']) assert.ok(texto.includes(campo), `falta ${campo}`);
 });
+
+test('o texto cobre o que a revisão achou: sessão entrega com handoff, subagente fica no worktree, ponte do --para, retomada', () => {
+  const skill = ler('SKILL.md');
+  const executor = ler('executor.md');
+  assert.match(executor, /cd <worktree> &&/, 'o subagente começa cada comando no worktree');
+  assert.match(executor, /tools\/ah handoff <frente> --nota "entregue/, 'a sessão passa a frente ao entregar');
+  assert.match(skill, /frente de outra sessão[^\n]*só depois do handoff/i, 'o fechamento espera o handoff da sessão');
+  assert.match(skill, /tools\/ah whoami/, 'a ponte entre a sessão listada e o id do --para');
+  assert.match(skill, /passada ou órfã/, 'a retomada de uma orquestração parada');
+  assert.match(skill, /não descarte/i, 'checkout principal sujo não se limpa por conta própria');
+});

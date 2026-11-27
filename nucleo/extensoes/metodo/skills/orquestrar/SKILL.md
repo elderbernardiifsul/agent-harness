@@ -19,7 +19,8 @@ Resultado:
 
 - esta sessão tem o papel de orquestradora;
 - você sabe quais frentes estão abertas, de quem, e o que o `sweep` achou fora do lugar; cada achado foi resolvido pelo "Faça" dele ou virou linha no ticket de decisões;
-- o checkout principal está na base e sem alteração solta;
+- o checkout principal está na base e sem alteração solta; se não está, não descarte nada: descubra de quem é a alteração (o `tools/ah board` mostra as frentes e as sessões) e leve ao ticket de decisões;
+- retomando uma orquestração parada: cada frente passada ou órfã dela (o `tools/ah board` e o `tools/ah sweep` mostram) foi retomada com `tools/ah open <nome>` (ou `--para <sessão>`), ou virou linha no ticket de decisões; o ticket de decisões é o mesmo da rodada anterior;
 - existe um ticket de decisões desta orquestração ("Decisões da orquestração <data>: <assunto>"), novo ou retomado. Toda pergunta ao humano vai para lá com a decisão padrão que você aplicou, e o trabalho segue com o padrão. O humano responde por exceção: silêncio é o padrão.
 
 ## 2. Escolher
@@ -28,7 +29,7 @@ Dados: `tools/ah candidatos`, que lista os tickets livres (sem bloqueio pendente
 
 Resultado: para cada candidato, uma decisão sua, entra agora ou não entra.
 
-- Não entra o que depende de ação do humano (publicar, credencial, custo, decisão de desenho) nem o que mexeria nos mesmos arquivos de uma frente aberta (o `tools/ah board` mostra as sobreposições). Cada um vira linha no ticket de decisões, com o motivo.
+- Não entra o que depende de ação do humano (publicar, credencial, custo, decisão de desenho) nem o que, pelo que o ticket descreve, mexeria nos mesmos arquivos de uma frente aberta. Cada um vira linha no ticket de decisões, com o motivo.
 - Ticket que parece pronto e está em "Fora" (sem o rótulo, com a marca) não muda de rótulo por conta sua: vira linha no ticket de decisões.
 - Nenhum candidato entra: vá ao passo 7.
 
@@ -36,8 +37,8 @@ Resultado: para cada candidato, uma decisão sua, entra agora ou não entra.
 
 Uma frente por ticket ou plano: `tools/ah open <nome> --tickets <n>` (com `--plano <arquivo>` quando houver plano).
 
-- **Subagente.** Abra a frente nesta sessão e dê ao subagente o caminho do worktree da frente e o texto de quem executa (passo 4). O modelo vem de `tools/ah modelo <nível>`, com o nível que o plano marca na tarefa (`Nível: alto|medio|leve`); sem marca, `medio`.
-- **Sessão ociosa.** Uma sessão viva no `tools/ah board` e sem trabalho em andamento: `tools/ah open <nome> --tickets <n> --para <sessão>` e a mensagem de atribuição, com o texto de quem executa. Sessão nova quem abre é o humano: peça no ticket de decisões.
+- **Subagente.** Abra a frente nesta sessão e dê ao subagente o caminho do worktree da frente e o texto de quem executa (passo 4). O modelo vem de `tools/ah modelo <nível>`, com o nível que o plano marca na tarefa (`Nível: alto|medio|leve`); sem marca, `medio`. O subagente usa a mesma sessão desta orquestradora: o harness não o separa das outras frentes dela nem do checkout principal. Por isso o texto de quem executa manda começar todo comando com `cd <worktree> &&`.
+- **Sessão ociosa.** Uma sessão viva no `tools/ah board` e sem trabalho em andamento: `tools/ah open <nome> --tickets <n> --para <sessão>` e a mensagem de atribuição, com o texto de quem executa. O `--para` recebe o id da sessão no harness (o de "Sessões vivas" no `tools/ah board`), não o nome que o agente dá a ela: para ligar os dois, peça à sessão que rode `tools/ah whoami` e responda com o id. Sessão nova quem abre é o humano: peça no ticket de decisões.
 
 Resultado: cada frente tem dona (esta sessão ou a sessão ociosa), e quem executa recebeu o texto inteiro, com a frente, o worktree e os tickets ou o plano.
 
@@ -51,25 +52,25 @@ Resultado: quem executa recebeu o texto sem cortes, com os campos preenchidos.
 
 As entregas chegam sozinhas (o fim de um subagente, a mensagem de uma sessão). Entre uma e outra, espere sem consultar em laço.
 
-A cada entrega, confira com evidência antes de aceitar: os commits no ramo da frente (`git log <base>..<ramo>`), os testes rodados por você no worktree, o `tools/ah board` e, quando for o caso, um revisor novo. "Pronto" sem comando e saída não é entrega.
+A cada entrega, confira com evidência antes de aceitar: os commits no ramo da frente (`git log <base>..<ramo>`), os testes rodados por você no worktree (`cd <worktree> && …`), o `tools/ah board` e, quando for o caso, um revisor novo. "Pronto" sem comando e saída não é entrega.
 
 Resultado: cada frente está num destes estados, com a evidência anotada:
 
 - em execução;
-- entregue e conferida;
+- entregue e conferida; a frente de uma sessão, além disso, já passada por ela com `tools/ah handoff` (a frente ativa de uma sessão viva só a dona mexe: a trava recusa o seu merge no worktree, a prova e o fechamento);
 - devolvida a quem executa, com o que falta;
 - travada: passada com `tools/ah handoff <nome>` (com a nota do que falta) e, se falta decisão, linha no ticket de decisões.
 
 ## 6. Fechar cada frente
 
-Na ordem, para cada frente entregue e conferida:
+Na ordem, para cada frente entregue e conferida. Frente de outra sessão: só depois do handoff dela (passo 5).
 
-1. **Revisão.** `tools/ah pede-revisao <ramo>`. Se pede, um revisor novo, sem o contexto de quem executou, revisa o diff; os achados se corrigem na frente antes de seguir.
-2. **Reintegração.** A base mesclada no worktree da frente (`git merge <base>` lá), com os testes de novo. Com a extensão `migracao` ligada e migração na frente: `tools/ah migracao renumerar --frente <nome>`.
+1. **Revisão.** `tools/ah pede-revisao <ramo>`. Se pede, um revisor novo, sem o contexto de quem executou, revisa o diff. Os achados voltam a quem executou (passo 5) e se corrigem na frente antes de seguir.
+2. **Reintegração.** A base mesclada no worktree da frente (`git -C <worktree> merge <base>`), com os testes de novo (com a prova ligada, o teste da reintegração é o da prova, no item 4: não rode duas vezes). Conflito que não é trivial volta a quem executou; o trivial você resolve e anota. Com a extensão `migracao` ligada e migração na frente: `tools/ah migracao renumerar --frente <nome>`.
 3. **Registros.** Com a extensão `registros` ligada: `tools/ah registros guardar --frente <nome>`, que leva o diário da execução por subagentes para o ticket antes de o worktree sumir.
 4. **Prova.** Com a extensão `prova` ligada: `tools/ah prova <rótulo> --frente <nome>`, no estado reintegrado.
 5. **Merge.** `git merge --no-ff <ramo>` na base, no checkout principal. Com a prova: `tools/ah prova --confere <base>`. Código 0: a árvore é a provada, e o teste não se repete. Código 3: outra coisa entrou no meio, e o teste roda na base.
-6. **Fechamento.** `tools/ah close <nome>` no checkout principal, e o ticket fechado com o commit do merge como evidência.
+6. **Fechamento.** `tools/ah close <nome>` no checkout principal, e o ticket fechado com o commit do merge como evidência (local enquanto a base não for publicada: diga isso no comentário). O `close` sugere enviar a base (`git push`): isso é publicar, e fica para o passo 7.
 
 Resultado: a base tem o merge; os testes da base passam, com o comando e a saída anotados para o relatório; a frente saiu do quadro; o ticket está fechado com o commit.
 

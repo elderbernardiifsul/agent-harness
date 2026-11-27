@@ -89,3 +89,31 @@ test('configuração inválida não carrega', async () => {
   await assert.rejects(() => carregarParaTeste(EXTENSAO, { rotulo: 'x' }), /campo desconhecido/);
   await carregarParaTeste(EXTENSAO, { pronto: 'pronto', pendencia: 'Pendente', revisao: ['src/pagamento/**'] });
 });
+
+test('ticket com o rótulo de reserva (frente em outra máquina) fica de fora', t => {
+  const p = projeto(t, { tickets: { 18: { title: 'Busca por CEP', labels: [PRONTO, 'em-andamento'], assignees: ['carla'] }, 13: { title: 'Carrinho vazio', labels: [PRONTO] } } });
+  const j = JSON.parse(ok(p.ah(['candidatos', '--json'])).saida);
+  assert.deepEqual(j.candidatos.map(c => c.numero), [13]);
+  assert.deepEqual(j.fora, [{ numero: 18, titulo: 'Busca por CEP', motivo: 'com o rótulo em-andamento (frente em outra máquina?)' }]);
+});
+
+test('a lista dos prontos não traz os comentários; só os que ainda passam têm os comentários lidos, um a um', t => {
+  const p = projeto(t);
+  const log = path.join(p.raiz, '..', 'gh.log');
+  ok(p.ah(['candidatos'], { env: { GH_FALSO_LOG: log } }));
+  const chamadas = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l).argv);
+  const lista = chamadas.find(a => a[0] === 'issue' && a[1] === 'list');
+  assert.ok(!lista[lista.indexOf('--json') + 1].includes('comments'), 'a lista não pede comentários');
+  const vistos = chamadas.filter(a => a[0] === 'issue' && a[1] === 'view').map(a => Number(a[2])).sort();
+  assert.deepEqual(vistos, [12, 13, 14, 16], 'só os livres, com o rótulo e sem a marca no corpo (não o #15, bloqueado, nem o #17, sem rótulo)');
+});
+
+test('lista incompleta (mais tickets que o limite) avisa, sem motivo falso', t => {
+  const tickets = Object.fromEntries(Array.from({ length: 201 }, (_, i) => [i + 1, { title: `Ticket ${i + 1}`, labels: [PRONTO] }]));
+  const p = projeto(t, { tickets });
+  const r = ok(p.ah(['candidatos']));
+  assert.match(r.saida, /lista incompleta/);
+  const j = JSON.parse(ok(p.ah(['candidatos', '--json'])).saida);
+  assert.equal(j.incompleta, true);
+  assert.ok(!j.fora.some(f => f.motivo.startsWith('sem o rótulo')), 'nenhum pronto vira "sem o rótulo" por causa do limite');
+});

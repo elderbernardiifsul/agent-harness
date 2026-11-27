@@ -62,3 +62,26 @@ test('ramo inexistente ou sem argumento recusa', t => {
   assert.match(r.erro, /Faça: confira o nome com git branch/);
   assert.equal(p.ah(['pede-revisao']).codigo, 1);
 });
+
+test('nome com acento, arquivo movido para fora e padrão com barra final ainda pedem revisão', t => {
+  const p = novoProjeto(t, { revisao: ['src/pagamento/'] });
+  frenteCom(p, 'acento', ['src/pagamento/cartão.js']);
+  assert.deepEqual(JSON.parse(ok(p.ah(['pede-revisao', 'feat/acento', '--json'])).saida).arquivos, ['src/pagamento/cartão.js']);
+  const q = novoProjeto(t);
+  fs.mkdirSync(path.join(q.raiz, 'src', 'pagamento'), { recursive: true });
+  fs.writeFileSync(path.join(q.raiz, 'src', 'pagamento', 'boleto.js'), 'boleto\n');
+  assert.equal(q.git(['add', '-A']).codigo, 0);
+  assert.equal(q.git(['commit', '-q', '-m', 'boleto']).codigo, 0);
+  ok(q.ah(['open', 'mover']));
+  const wt = q.frente('mover').worktree;
+  assert.equal(q.git(['mv', 'src/pagamento/boleto.js', 'src/boleto.js'], { cwd: wt }).codigo, 0);
+  assert.equal(q.git(['commit', '-q', '-m', 'move'], { cwd: wt }).codigo, 0);
+  assert.deepEqual(JSON.parse(ok(q.ah(['pede-revisao', 'feat/mover', '--json'])).saida).arquivos, ['src/pagamento/boleto.js']);
+});
+
+test('padrão com ./ ou / no começo não carrega', async () => {
+  const { carregarParaTeste } = await import('../nucleo/lib/extensoes-teste.mjs');
+  const arquivo = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'nucleo', 'extensoes', 'orquestracao', 'extensao.mjs');
+  await assert.rejects(() => carregarParaTeste(arquivo, { revisao: ['./src/**'] }), /relativo à raiz/);
+  await assert.rejects(() => carregarParaTeste(arquivo, { revisao: ['/src/**'] }), /relativo à raiz/);
+});
