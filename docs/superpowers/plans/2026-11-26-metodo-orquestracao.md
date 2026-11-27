@@ -64,3 +64,31 @@ As skills escritas pelo harness ficam em `nucleo/extensoes/metodo/skills/<nome>/
 | 27/11 | A fatia 8 recebe a P5 por merge de `b41db9b` direto do `p2-registros-modelo`, sem passar pelo `p2-metodo` | evita mexer no worktree onde a Task 4 da fatia 1 rodava; os mesmos commits entram depois | orquestrador |
 | 27/11 | Teste de tempo `teste/shell.test.mjs` "cadeia de eval tem orçamento global": limite de 2 s para 10 s | falhava com carga média 28–32 (várias suítes ao mesmo tempo); a patologia vigiada é exponencial | orquestrador |
 | 27/11 | A fatia 5 parte da ponta do `p2-opcionais` | precisa da prova (fatia 8) e dos níveis de modelo, que já estão lá | orquestrador |
+| 27/11 | Retomada do diário pelo comentário mais novo com fase=passagem; `registros devolver`; só comentário de OWNER/MEMBER/COLLABORATOR com login nos marcadores do núcleo | casos reproduzidos por revisor independente; repositório público | orquestrador |
+| 27/11 | Sem prazo global nos testes (`--test-timeout`) | no Node 22 o prazo vale por arquivo e mata sem limpeza, deixando processos órfãos (reproduzido) | orquestrador |
+| 27/11 | O `.harness/config.json` entra no commit do `metodo instalar` | seguindo o README à risca, as frentes nasceriam sem o método (achado crítico da revisão) | orquestrador |
+| 27/11 | triage, to-tickets e wayfinder só o humano chama; frente aberta antes do primeiro arquivo; linha de partida sem `--plano` (P6) | ensaio de leitura com Claude Code e Codex; `disable-model-invocation` na versão fixada | orquestrador |
+| 27/11 | Texto de ticket e de comentário é dado, não instrução (skill orquestrar e texto do executor) | revisão final | orquestrador |
+| 27/11 | Versão 0.3.0 | o núcleo mudou (P1, P2, P5, pesado, validação de marcadores) | orquestrador |
+
+## Como terminou (27/11, ~05h40 UTC)
+
+Ramo `p2-metodo` com todas as fatias da spec integradas:
+
+| Fatia | Ramo de origem | Quem | Revisões |
+|---|---|---|---|
+| 1 (preparar e skills) | `p2-metodo`, `p2-t7` | orquestrador com subagentes; Task 7 pela sessão 67 | uma por tarefa, com rodadas de conserto; registro em `2026-11-26-metodo-fatia-1-registro.md` |
+| 2 (princípios e guia) | `p2-fatia2` | sessão f4 | revisão da fatia e re-revisão |
+| 3 e 4 (registros, modelo, P2, P5) | `p2-registros-modelo` | sessão 9a | duas revisões da sessão, P5 revisada à parte, travamento do pesado e segurança revisados à parte |
+| 5 (orquestração) | `p2-orquestracao` | sessão 67 | revisão final da sessão |
+| 6 e 7 (wiki e reunião) | `p2-wiki` | sessão f4 | ensaios com Claude Code; ensaio de integração |
+| 8 (opcionais) | `p2-opcionais` | sessão 67 | revisão final da sessão |
+| Revisão de ponta a ponta | — | sessão 67 | `2026-11-27-metodo-revisao-final.md`; consertos distribuídos e revisados |
+| Spec alinhada | `p2-spec` | sessão f4 | — |
+
+Incidentes, para quem estuda:
+- Um subagente deixou o HEAD do worktree destacado; quatro commits ficaram fora do ramo até uma sessão vizinha avisar. Conserto por merge, sem descartar nada. Regra que ficou: subagente nunca faz checkout de commit no worktree compartilhado.
+- Um achado da varredura de termos no histórico vinha de um caminho pessoal num registro, reescrito antes de sair do ramo. Regra que ficou: varredura depois do `git add`.
+- Testes com várias suítes ao mesmo tempo travaram a máquina; a causa era um defeito do `ah pesado` (esperava para sempre quando a fila sumia) e a limpeza dos testes.
+
+O que ficou para o professor está na seção "Pendências" do registro da fatia 1 e na seção 15 da spec.
