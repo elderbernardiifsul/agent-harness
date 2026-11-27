@@ -34,6 +34,7 @@ Para ver o harness em funcionamento, instale-o num projeto descartável (README,
 | `teste/` | Testes do harness; `teste/apoio/` monta repositórios descartáveis e o `gh` falso |
 | `ferramentas/` | Ferramentas deste repositório (varredura de termos) |
 | `docs/estudo/` | Guia de estudo: problemas, mecanismos, código, testes e limites; histórico da construção |
+| `docs/guia/` | Guia de como começar, para aprendizes e agentes |
 | `docs/referencia/` | Referência dos comandos, capacidades por agente e ensaios |
 | `docs/agentes/`, `docs/extensoes/` | Roteiro de adaptação de agentes e guia de extensão |
 | `docs/superpowers/` | Desenho (`specs/`), planos e registros de execução (`plans/`) |

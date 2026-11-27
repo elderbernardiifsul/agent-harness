@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -260,4 +261,108 @@ test('link quebrado na pasta da skill: aviso de alterado, sem derrubar o item', 
   const i = itemDe(p, 'Skills iguais à trava');
   assert.equal(i.estado, 'aviso');
   assert.match(i.fazer, /alfa\/quebrado/);
+});
+
+// ---------------------------------------------------------------- documento do método e skills citadas (fatia 2)
+const DOC = 'docs/agents/metodo.md';
+const METODO = fs.readFileSync(new URL('../nucleo/extensoes/metodo/modelos/metodo.md', import.meta.url), 'utf8');
+const regravarTrava = (p, mudar) => {
+  const arq = caminho(p, '.harness/skills.lock.json');
+  const tr = JSON.parse(fs.readFileSync(arq, 'utf8'));
+  mudar(tr);
+  fs.writeFileSync(arq, JSON.stringify(tr, null, 2));
+};
+
+test('doctor: metodo.md igual à trava passa; mudado à mão avisa', t => {
+  const { p } = cenario(t);
+  assert.equal(itemDe(p, 'Documento do método igual à trava').estado, 'ok');
+  fs.appendFileSync(caminho(p, DOC), '\nNota da Ana.\n');
+  const i = itemDe(p, 'Documento do método igual à trava');
+  assert.equal(i.estado, 'aviso');
+  assert.match(i.fazer, /docs\/agents\/metodo\.md foi mudado à mão/);
+  assert.match(i.fazer, /fora das marcas.*--forcar/);
+});
+
+test('doctor: metodo.md com CRLF igual ao instalado passa', t => {
+  const { p } = cenario(t);
+  fs.writeFileSync(caminho(p, DOC), METODO.replace(/\n/g, '\r\n'));
+  assert.equal(itemDe(p, 'Documento do método igual à trava').estado, 'ok');
+});
+
+test('doctor: trava sem documentos, arquivo ausente e link avisam com o conserto', { skip: process.platform === 'win32' }, t => {
+  const { p } = cenario(t);
+  regravarTrava(p, tr => { delete tr.documentos; });
+  fs.renameSync(caminho(p, DOC), caminho(p, `${DOC}.guardado`));
+  const semCampo = itemDe(p, 'Documento do método igual à trava');
+  assert.equal(semCampo.estado, 'aviso');
+  assert.match(semCampo.fazer, /ainda não foi instalado.*tools\/ah metodo instalar/);
+  fs.renameSync(caminho(p, `${DOC}.guardado`), caminho(p, DOC));
+  regravarTrava(p, tr => { tr.documentos = { [DOC]: 'a'.repeat(64) }; });
+  fs.rmSync(caminho(p, DOC));
+  assert.match(itemDe(p, 'Documento do método igual à trava').fazer, /docs\/agents\/metodo\.md não existe.*tools\/ah metodo instalar/);
+  fs.symlinkSync('../../AGENTS.md', caminho(p, DOC));
+  assert.match(itemDe(p, 'Documento do método igual à trava').fazer, /não é um arquivo comum.*apague-o/);
+});
+
+test('doctor: skill citada no metodo.md e fora da trava avisa', t => {
+  const { p } = cenario(t);
+  // O colecoes.json de teste não tem as skills reais que o texto do método cita.
+  const i = itemDe(p, 'Skills citadas no método instaladas');
+  assert.equal(i.estado, 'aviso');
+  assert.match(i.fazer, /\d+ citada\(s\) e fora da trava: brainstorming, .* e mais \d+/);
+  assert.match(i.fazer, /tools\/ah metodo instalar/);
+  fs.writeFileSync(caminho(p, DOC), 'Use `alfa` e `gama`.\n');
+  assert.equal(itemDe(p, 'Skills citadas no método instaladas').estado, 'ok');
+});
+
+test('doctor: skill da tabela No lugar e skill de extensão desligada não avisam', t => {
+  const { p, colecoes, gravarColecoes } = cenario(t);
+  const local = path.join(path.dirname(p.env.AH_METODO_COLECOES), 'skills', 'so-com-recursos');
+  fs.mkdirSync(local, { recursive: true });
+  fs.writeFileSync(path.join(local, 'SKILL.md'), 'so-com-recursos\n');
+  colecoes.colecoes['agent-harness'].skills['so-com-recursos'] = 'so-com-recursos';
+  colecoes.colecoes['agent-harness'].extensoes['so-com-recursos'] = 'recursos';
+  gravarColecoes();
+  fs.writeFileSync(caminho(p, DOC), 'Use `using-git-worktrees` e `so-com-recursos`.\n');
+  assert.equal(itemDe(p, 'Skills citadas no método instaladas').estado, 'ok');
+  const cfg = caminho(p, '.harness/config.json');
+  const conf = JSON.parse(fs.readFileSync(cfg, 'utf8'));
+  conf.extensoes.recursos = true;
+  fs.writeFileSync(cfg, JSON.stringify(conf, null, 2));
+  const i = itemDe(p, 'Skills citadas no método instaladas');
+  assert.equal(i.estado, 'aviso');
+  assert.match(i.fazer, /so-com-recursos/);
+});
+
+test('doctor sem trava: os dois itens novos ficam ok', t => {
+  const { p } = cenario(t);
+  fs.rmSync(caminho(p, '.harness/skills.lock.json'));
+  assert.equal(itemDe(p, 'Documento do método igual à trava').estado, 'ok');
+  assert.equal(itemDe(p, 'Skills citadas no método instaladas').estado, 'ok');
+});
+
+test('doctor: link no lugar do metodo.md avisa "não é um arquivo comum", mesmo sem documentos na trava', { skip: process.platform === 'win32' }, t => {
+  const { p } = cenario(t);
+  regravarTrava(p, tr => { delete tr.documentos; });
+  fs.rmSync(caminho(p, DOC));
+  fs.symlinkSync('../../AGENTS.md', caminho(p, DOC));
+  const i = itemDe(p, 'Documento do método igual à trava');
+  assert.equal(i.estado, 'aviso');
+  assert.match(i.fazer, /não é um arquivo comum.*apague-o/);
+});
+
+test('doctor: metodo.md igual ao texto novo do harness passa, mesmo com a trava de outro texto', t => {
+  const { p } = cenario(t);
+  regravarTrava(p, tr => { tr.documentos[DOC] = 'b'.repeat(64); });
+  assert.equal(itemDe(p, 'Documento do método igual à trava').estado, 'ok');
+});
+
+test('doctor: metodo.md igual à trava, mas o harness trouxe texto novo, avisa para instalar', t => {
+  const { p } = cenario(t);
+  // Simula o projeto que ficou com o texto de uma versão anterior do harness, sem mexer nele.
+  fs.writeFileSync(caminho(p, DOC), 'texto da versão anterior\n');
+  regravarTrava(p, tr => { tr.documentos[DOC] = crypto.createHash('sha256').update('texto da versão anterior\n').digest('hex'); });
+  const i = itemDe(p, 'Documento do método igual à trava');
+  assert.equal(i.estado, 'aviso');
+  assert.match(i.fazer, /texto novo.*tools\/ah metodo instalar/);
 });

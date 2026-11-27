@@ -51,6 +51,13 @@ export function hashesDe(dirSkill) {
 function errosDaTrava(t) {
   if (!eObjeto(t) || t.versaoDoFormato !== 1) return 'versaoDoFormato precisa ser 1';
   if (!Array.isArray(t.destinos) || !t.destinos.every(d => PASTAS.includes(d))) return `destinos só pode ter ${PASTAS.join(', ')}`;
+  // `documentos` (opcional; a trava de antes da fatia 2 não tem): {caminho no projeto: sha256 do texto instalado}.
+  if (t.documentos !== undefined) {
+    if (!eObjeto(t.documentos)) return 'documentos precisa ser {caminho: sha256}';
+    for (const [rel, hash] of Object.entries(t.documentos)) {
+      if (!caminhoSeguro(rel) || !/^[0-9a-f]{64}$/.test(hash)) return `documentos tem uma entrada inválida: ${rel.slice(0, 60)}`;
+    }
+  }
   if (!eObjeto(t.colecoes)) return 'colecoes precisa ser um objeto';
   for (const [nome, c] of Object.entries(t.colecoes)) {
     if (!eObjeto(c) || !Array.isArray(c.skills) || !c.skills.every(s => typeof s === 'string' && NOME.test(s))) return `colecoes.${nome}.skills precisa ser uma lista de nomes simples`;
@@ -87,7 +94,10 @@ export function textoDaTrava(trava) {
       arquivos: Object.fromEntries(emOrdem(Object.keys(c.arquivos)).map(k => [k, c.arquivos[k]])),
     };
   }
-  return `${JSON.stringify({ versaoDoFormato: 1, destinos: emOrdem(trava.destinos), colecoes }, null, 2)}\n`;
+  const documentos = trava.documentos && Object.keys(trava.documentos).length
+    ? { documentos: Object.fromEntries(emOrdem(Object.keys(trava.documentos)).map(k => [k, trava.documentos[k]])) }
+    : {};
+  return `${JSON.stringify({ versaoDoFormato: 1, destinos: emOrdem(trava.destinos), ...documentos, colecoes }, null, 2)}\n`;
 }
 
 export function gravarTrava(raiz, trava) {

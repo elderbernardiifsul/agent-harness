@@ -2,6 +2,8 @@
 
 Harness para várias sessões de agentes de código no mesmo repositório. Cada sessão trabalha numa frente própria, com ramo e worktree, e um conjunto de comandos coordena os ramos, as travas no gancho do agente, o estado local e os tickets no GitHub. Requer Node 22 ou mais novo e não tem dependências.
 
+Para começar a trabalhar com o método depois de instalar, leia o guia [Como começar](docs/guia/comecar.md).
+
 ## Instalar num projeto (instruções para o agente)
 
 Esta seção é para o agente de código que recebeu o endereço deste repositório (https://github.com/elderbernardiifsul/agent-harness), ou um clone dele, com um pedido como "instale o harness daqui" ou "prepare meu projeto". Ela é o único lugar do procedimento; a skill `preparar-projeto`, instalada no projeto, aponta para cá. O aluno não digita comando: você executa cada passo, mostra o resultado e pede licença antes de instalar algo na máquina dele, criar algo no GitHub ou executar código baixado.
