@@ -32,7 +32,7 @@ Princípio que atravessa tudo **[autor]**: o harness sugere e registra; só as t
 
 - Toda interação do aluno é pelo agente **[autor]**. Do endereço do repositório ao `ah doctor` sem o aluno digitar comando.
 - Funciona com Claude Code, Codex e OpenCode **[autor]**, testado nos três (as versões instaladas nesta máquina no dia do ensaio).
-- Tudo do projeto 2 entra como extensão ou skill, sem mexer no núcleo **[autor]**. O que precisar do núcleo vira pendência para o autor decidir (seção 15).
+- Tudo do projeto 2 entra como extensão ou skill, sem mexer no núcleo **[autor]**. O que precisar do núcleo vira pendência para o autor decidir; as aprovadas estão na seção 15.
 - Cada peça é legível e explicável por um concluinte de Ciência da Computação, com a dor que resolve escrita ao lado **[autor]**.
 
 **Fora do escopo**
@@ -64,7 +64,7 @@ O `init` copia o `nucleo/` inteiro para `.harness/nucleo/` no projeto, extensõe
 
 | Pasta no clone | O que tem |
 |---|---|
-| `nucleo/extensoes/metodo/` | Extensão `metodo`: instalação e atualização das skills, trava, `AGENTS.md` de princípios, `CLAUDE.md`, conferências do `doctor`. Guarda `colecoes.json` (origem, commit recomendado e lista de skills de cada coleção), as skills escritas aqui (`skills/<nome>/SKILL.md`) e os textos instalados (`modelos/`) |
+| `nucleo/extensoes/metodo/` | Extensão `metodo`: instalação e atualização das skills, trava, `AGENTS.md` de princípios, conferências do `doctor`. Guarda `colecoes.json` (origem, commit recomendado e lista de skills de cada coleção), as skills escritas aqui (`skills/<nome>/SKILL.md`) e os textos instalados (`modelos/`) |
 | `nucleo/extensoes/registros/` | Extensão `registros` (seção 8) |
 | `nucleo/extensoes/modelo/` | Extensão `modelo` (seção 9) |
 | `nucleo/extensoes/orquestracao/` | Extensão `orquestracao` (seção 10) |
@@ -151,10 +151,14 @@ Algumas skills dele (triagem, tickets) esperam a configuração que `setup-matt-
 
 ### `AGENTS.md` e `CLAUDE.md`
 
-O Claude Code só lê o `AGENTS.md` quando não há `CLAUDE.md`; o OpenCode ignora o `CLAUDE.md` quando os dois existem na mesma pasta (pesquisa de 26/11). Com `claude-code` em `metodo.agentes`:
+O Claude Code só lê o `AGENTS.md` quando não há `CLAUDE.md`; o OpenCode ignora o `CLAUDE.md` quando os dois existem na mesma pasta (pesquisa de 26/11).
 
-- sem `CLAUDE.md`: o `metodo instalar` cria um com a única linha `@AGENTS.md`;
-- com `CLAUDE.md` de conteúdo próprio: não toca; o `doctor` avisa e diz como mover o conteúdo para o `AGENTS.md`.
+**[autor, 26/11]:** o Claude deve respeitar o `AGENTS.md` do projeto criado. Isso vale para todo projeto com o harness, com ou sem o método, e por isso passa a ser do núcleo (pendência P1, decidida), feito na fatia 1:
+
+- sem `CLAUDE.md`: o `init` (e o `ah atualizar`) cria um com a única linha `@AGENTS.md`;
+- com `CLAUDE.md` sem a linha: acrescenta `@AGENTS.md` no topo, sem tocar no resto **[desenho]**; o Claude Code passa a ler os dois;
+- o `doctor` do núcleo acusa `CLAUDE.md` sem a linha e avisa quando ele tem conteúdo próprio (o Codex e o OpenCode não o veem), com o conserto: mover esse conteúdo para o `AGENTS.md`;
+- `docs/referencia/comandos.md` acompanha a mudança.
 
 ### Conferências do `doctor` (extensão `metodo`)
 
@@ -164,7 +168,6 @@ Todas são aviso, salvo trava ilegível (falha):
 - coleção fora da versão recomendada;
 - a mesma coleção também instalada como plugin do agente (lendo o que cada agente registra: no Claude Code, `~/.claude/plugins/installed_plugins.json`; nos outros, o que o ensaio mostrar);
 - nome de skill repetido entre `.claude/skills/`, `.agents/skills/` e `.opencode/skills/`;
-- `CLAUDE.md` com conteúdo próprio;
 - skill citada no `AGENTS.md` de princípios que não está na trava (fatia 2).
 
 ## 7. Fatia 2: o `AGENTS.md` de princípios
@@ -316,15 +319,15 @@ Cada um é uma extensão própria, desligada por padrão. Comportamento a partir
 
 **Sessão nova pelo `tmux`:** de fora por enquanto (26/11), ver seção 2.
 
-## 15. Pendências do núcleo (para o autor decidir)
+## 15. Mudanças no núcleo
 
-O projeto 2 não edita `nucleo/comandos/` nem `nucleo/lib/` existentes enquanto o projeto 1 fecha em paralelo.
+O projeto 1 terminou em 26/11 (dev em 571c583). As mudanças abaixo no núcleo foram aprovadas pelo autor em 26/11 **[autor]** e entram na fatia indicada, com teste e com `docs/referencia/comandos.md` e `docs/extensoes/interface.md` atualizados junto.
 
-- **P1. `CLAUDE.md` no `init`.** Hoje o `init` escreve só no `AGENTS.md`, que o Claude Code ignora quando existe `CLAUDE.md`. O projeto 2 resolve pela extensão `metodo` (seção 6). Fica a pergunta: o `init` deveria criar o `CLAUDE.md` com `@AGENTS.md` para todos os projetos, mesmo sem o método?
-- **P2. Ler a sessão pela interface.** A coluna de modelo no quadro precisa do modelo da sessão dona da frente. A interface v1 não dá acesso aos registros de sessão; ler o arquivo direto prenderia a extensão ao formato interno. Proposta: o núcleo acrescenta `ctx.sessao(id)` (só leitura) à interface, sem mudar a versão. Sem isso, a coluna fica fora da fatia 4.
-- **P3. `--agentes` do `init`.** Hoje só aceita `claude-code`. O projeto 2 usa a própria lista (`metodo.agentes`), sem depender disso.
-- **P5. Item ignorado que uma extensão sabe guardar.** O `close` recusa worktree com item ignorado antes das reações de extensão (seção 8). O projeto 2 contorna com `ah registros guardar`. Melhoria possível no núcleo: a extensão declarar os caminhos ignorados de que cuida, e a recusa do `close` apontar o comando dela (`ah registros guardar`) em vez de só `--descartar-ignorados`. Sem isso, a fatia 3 funciona, com a ressalva escrita no `metodo.md`.
-- **P4. README.** A seção de instalação para agentes muda o `README.md`, fora da lista do que não editar, mas o fechamento do projeto 1 pode mexer nele também; o rebase sobre a `dev` resolve antes do merge.
+- **P1. `CLAUDE.md` no `init` (fatia 1).** Ver seção 6: o `init`, o `atualizar` e o `doctor` garantem a linha `@AGENTS.md`.
+- **P2. Ler a sessão pela interface (fatia 4).** O núcleo acrescenta `ctx.sessao(id)` (cópia só de leitura do registro da sessão, ou `null`) à interface, como acréscimo compatível, sem mudar a versão 1. A coluna de modelo no quadro usa isso.
+- **P3. `--agentes` do `init`.** Hoje só aceita `claude-code`. O projeto 2 usa a própria lista (`metodo.agentes`), sem depender disso; nada muda no núcleo.
+- **P5. Item ignorado que uma extensão sabe guardar (fatia 3).** O `close` recusa worktree com item ignorado antes das reações de extensão (seção 8). A extensão passa a poder declarar os caminhos ignorados de que cuida, com o comando que os guarda; a recusa do `close` para esses caminhos aponta o comando da extensão (`ah registros guardar`) em vez de só `--descartar-ignorados`. Acréscimo compatível na interface v1.
+- **P4. README.** A seção de instalação para agentes muda o `README.md`; rebase sobre a `dev` antes de cada merge.
 
 ## 16. O que fica com quem constrói
 
@@ -343,7 +346,7 @@ Cada fatia termina utilizável, testada e com o próprio "pronto". Valem para to
 **Onde os ensaios rodam [autor, 26/11]:** em pasta descartável, sem o harness de agente da máquina. Esta máquina tem o Superpowers e as skills do Matt Pocock instalados como plugins; um ensaio que os enxergasse passaria pela skill do plugin e não pela cópia do projeto. Cada ensaio com agente real roda com um `HOME` descartável (e, no Claude Code, `CLAUDE_CONFIG_DIR` apontando para dentro dele): sem plugins, skills de usuário, configurações nem instruções globais. A autenticação dos três agentes entra nesse `HOME` só como os arquivos de credencial, copiados com permissão `0600` e apagados no fim, ou por login feito ali, se a cópia não funcionar ou se o agente renovar o token de um jeito que invalide o original (quem constrói confere antes e registra). As ferramentas de áudio e vídeo que a máquina já tem podem ser usadas no ensaio da fatia 7 **[autor, 26/11]**; o que o ensaio precisar instalar a mais fica dentro da pasta descartável. O registro de cada ensaio diz a versão do agente e como o isolamento foi montado. Uma segunda passada no ambiente normal da máquina registra o aviso do `doctor` diante do plugin duplicado.
 
 **Fatia 1 (preparar e skills)**
-- Testes: `metodo instalar` sobre origens git locais descartáveis copia só as skills da lista para as pastas dos agentes configurados e grava a trava; `metodo atualizar` não sobrescreve skill alterada, mostra o que muda e vai para `--para`; cada conferência do `doctor` tem teste de aviso e de passagem; `CLAUDE.md` criado quando não existe e intocado quando tem conteúdo.
+- Testes: `metodo instalar` sobre origens git locais descartáveis copia só as skills da lista para as pastas dos agentes configurados e grava a trava; `metodo atualizar` não sobrescreve skill alterada, mostra o que muda e vai para `--para`; cada conferência do `doctor` tem teste de aviso e de passagem; `init` e `atualizar` criam o `CLAUDE.md` com `@AGENTS.md` quando não existe, acrescentam a linha quando falta e não tocam no resto; o `doctor` acusa a falta da linha.
 - Ensaio, nos três agentes desta máquina (Claude Code, Codex e OpenCode, versões registradas): um agente sem contexto, com só o endereço do repositório (antes da publicação, o endereço do clone local), prepara um projeto descartável seguindo o README, até o `doctor`; em seguida, numa sessão nova, o agente lista as skills do projeto e usa uma delas que cita outra pelo prefixo. Saídas guardadas no registro de execução da fatia.
 - O comportamento do OpenCode com nome de skill repetido está ensaiado e a saída escolhida está implementada.
 - A pesquisa de instalação (`2026-11-26-metodo-pesquisa-instalacao.md`) foi conferida contra o ensaio, e o que o ensaio desmentiu está corrigido nela.
