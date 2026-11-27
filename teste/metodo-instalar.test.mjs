@@ -350,3 +350,103 @@ test('o commit que o instalar indica leva também o .harness/config.json com as 
   commitar(p, r.saida);
   assert.equal(p.git(['status', '--porcelain', '--', '.harness/config.json']).saida, '');
 });
+
+// ---------------------------------------------------------------- docs/agents/metodo.md (fatia 2)
+const METODO = fs.readFileSync(new URL('../nucleo/extensoes/metodo/modelos/metodo.md', import.meta.url), 'utf8');
+const DOC = 'docs/agents/metodo.md';
+const regravarTrava = (p, mudar) => { const t = travaDe(p); mudar(t); fs.writeFileSync(caminho(p, '.harness/skills.lock.json'), `${JSON.stringify(t, null, 2)}\n`); };
+
+test('instalar escreve o docs/agents/metodo.md e grava o hash na trava', t => {
+  const { p, instalar } = cenario(t);
+  const r = ok(instalar());
+  assert.equal(ler(p, DOC), METODO);
+  assert.equal(travaDe(p).documentos[DOC], sha(METODO));
+  assert.match(r.saida, /Escrevi docs\/agents\/metodo\.md\.\n/);
+  assert.ok(r.saida.indexOf('Escrevi docs/agents/metodo.md.') < r.saida.indexOf('Escrevi o trecho do método'));
+  assert.match(r.saida, /git add -- .*AGENTS\.md docs\/agents\/metodo\.md/);
+});
+
+test('instalar reescreve o metodo.md que não foi mexido quando o texto do harness muda', t => {
+  const { p, instalar } = cenario(t);
+  ok(instalar());
+  fs.writeFileSync(caminho(p, DOC), 'versão antiga\n');
+  regravarTrava(p, tr => { tr.documentos[DOC] = sha('versão antiga\n'); });
+  ok(instalar());
+  assert.equal(ler(p, DOC), METODO);
+  assert.equal(travaDe(p).documentos[DOC], sha(METODO));
+});
+
+test('instalar recusa sobrescrever o metodo.md mudado à mão, e --forcar descarta', t => {
+  const { p, instalar } = cenario(t);
+  ok(instalar());
+  fs.writeFileSync(caminho(p, DOC), 'versão antiga\n');
+  regravarTrava(p, tr => { tr.documentos[DOC] = sha('versão antiga\n'); });
+  fs.appendFileSync(caminho(p, DOC), '\nNota da Ana.\n');
+  const r = instalar();
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /^Recusado: a instalação sobrescreveria arquivos do método mudados à mão \(.*docs\/agents\/metodo\.md/);
+  assert.match(r.erro, /Faça: .*fora das marcas.*--forcar/);
+  assert.equal(ler(p, DOC), 'versão antiga\n\nNota da Ana.\n');
+  ok(instalar(['--forcar']));
+  assert.equal(ler(p, DOC), METODO);
+});
+
+test('instalar não apaga o metodo.md que o projeto já tinha antes do método', t => {
+  const { p, instalar } = cenario(t);
+  fs.mkdirSync(caminho(p, 'docs/agents'), { recursive: true });
+  fs.writeFileSync(caminho(p, DOC), 'o método da loja\n');
+  const r = instalar();
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /docs\/agents\/metodo\.md/);
+  assert.equal(ler(p, DOC), 'o método da loja\n');
+  assert.ok(!existe(p, '.claude/skills/alfa'));
+  assert.ok(!existe(p, '.harness/skills.lock.json'));
+});
+
+test('projeto instalado antes desta versão ganha o metodo.md e a trava passa a ter documentos', t => {
+  const { p, instalar } = cenario(t);
+  commitar(p, ok(instalar()).saida);
+  fs.rmSync(caminho(p, DOC));
+  regravarTrava(p, tr => { delete tr.documentos; });
+  for (const args of [['add', '-A'], ['commit', '-q', '-m', 'como era antes']]) assert.equal(p.git(args).codigo, 0);
+  ok(instalar());
+  assert.equal(ler(p, DOC), METODO);
+  assert.equal(travaDe(p).documentos[DOC], sha(METODO));
+});
+
+test('metodo.md com CRLF igual ao instalado não conta como mudança à mão', t => {
+  const { p, instalar } = cenario(t);
+  ok(instalar());
+  fs.writeFileSync(caminho(p, DOC), METODO.replace(/\n/g, '\r\n'));
+  const r = instalar();
+  assert.equal(r.codigo, 0, r.erro);
+  assert.doesNotMatch(r.erro, /Recusado/);
+});
+
+test('metodo.md como link simbólico não é seguido e vira aviso', { skip: process.platform === 'win32' }, t => {
+  const { p, instalar } = cenario(t);
+  fs.mkdirSync(caminho(p, 'docs/agents'), { recursive: true });
+  fs.writeFileSync(caminho(p, 'docs/outro.md'), 'outro\n');
+  fs.symlinkSync('../outro.md', caminho(p, DOC));
+  const r = instalar();
+  assert.equal(r.codigo, 0, r.erro);
+  assert.match(r.erro, /docs\/agents\/metodo\.md é um link simbólico/);
+  assert.match(r.erro, /Faça:/);
+  assert.equal(ler(p, 'docs/outro.md'), 'outro\n');
+  assert.ok(fs.lstatSync(caminho(p, DOC)).isSymbolicLink());
+});
+
+test('instalar de novo, com o metodo.md já instalado, não muda nada', t => {
+  const { p, instalar } = cenario(t);
+  commitar(p, ok(instalar()).saida);
+  assert.equal(ok(instalar()).saida, 'Nada a mudar: as skills já estão como a trava.\nAgora rode: tools/ah doctor\n');
+  assert.equal(p.git(['status', '--porcelain']).saida, '');
+});
+
+test('atualizar --simular não grava o metodo.md', t => {
+  const { p } = cenario(t);
+  const r = ok(p.ah(['metodo', 'atualizar', '--simular']));
+  assert.ok(!existe(p, DOC));
+  assert.match(r.saida, /Escrevi docs\/agents\/metodo\.md\./);
+  assert.match(r.saida, /Simulação: nada foi gravado\./);
+});

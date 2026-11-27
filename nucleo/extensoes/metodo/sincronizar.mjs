@@ -12,6 +12,7 @@ import { buscar, dirDoCache } from './origem.mjs';
 import { ARQUIVO_ROTULOS, criarRotulos } from './rotulos.mjs';
 import { ARQUIVO_TRAVA, executaveisDe, hashesDe, lerTrava, linksDe, listarArquivos, sha256, textoDaTrava, gravarTrava } from './trava.mjs';
 import { comTrecho } from './trecho.mjs';
+import { DOCUMENTO_DO_METODO, hashDoDocumento, lerDocumento } from './documento.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const DO_HARNESS = 'agent-harness';
@@ -20,7 +21,7 @@ const ARQUIVO_AGENTS = 'AGENTS.md';
 // nasceriam sem o método. O passosDoCommit tira da conta o que não mudou.
 const ARQUIVO_CONFIG = '.harness/config.json';
 // Os arquivos de lugar fixo que o commit do método leva (as pastas das skills e os do projeto vêm à parte).
-export const CAMINHOS_DO_METODO = [ARQUIVO_TRAVA, ARQUIVO_CONFIG, ARQUIVO_AGENTS];
+export const CAMINHOS_DO_METODO = [ARQUIVO_TRAVA, ARQUIVO_CONFIG, ARQUIVO_AGENTS, DOCUMENTO_DO_METODO];
 const MENSAGEM_DO_COMMIT = 'chore: instala o método do agent-harness';
 
 const eLigada = v => v === true || (v !== null && typeof v === 'object' && !Array.isArray(v));
@@ -163,8 +164,8 @@ function escreverSkill(raiz, { destino, skill, arquivos }) {
 }
 
 // A trava nova: as coleções não tocadas como estavam, as tocadas com o que acabou de ser montado.
-function novaTrava({ anterior, tocadas, copias, fontes, destinos }) {
-  const trava = { versaoDoFormato: 1, destinos, colecoes: {} };
+function novaTrava({ anterior, tocadas, copias, fontes, destinos, documentos }) {
+  const trava = { versaoDoFormato: 1, destinos, documentos, colecoes: {} };
   for (const [nome, c] of Object.entries(anterior?.colecoes ?? {})) if (!tocadas.has(nome)) trava.colecoes[nome] = c;
   for (const [nome, copia] of Object.entries(copias)) {
     const arquivos = {};
@@ -232,16 +233,33 @@ export async function sincronizar(ctx, { colecoesPedidas = null, refs = {}, simu
   // 3. Conferir contra o disco.
   const usados = [...new Set([...destinos, ...(anterior?.destinos ?? [])])];
   const doProjeto = Object.assign({}, ...Object.values(copias).map(c => c.doProjeto));
-  const fora = [...usados, ...Object.keys(doProjeto), ARQUIVO_AGENTS].find(rel => !dentroDoProjeto(raiz, rel));
+  // Do documento do método confere-se a pasta: o arquivo que é link não é seguido (vira aviso, abaixo).
+  const fora = [...usados, ...Object.keys(doProjeto), ARQUIVO_AGENTS, path.posix.dirname(DOCUMENTO_DO_METODO)].find(rel => !dentroDoProjeto(raiz, rel));
   if (fora) throw recusa(`o destino sai do projeto: ${fora}`, `remova o link simbólico no caminho e rode tools/ah metodo ${comando} de novo`);
   const plano = planejar(raiz, { copias, destinos, anterior, tocadas, forcar });
+
+  // 4. O documento do método: escreve quando falta ou quando o disco é o que a trava registrou (ninguém mexeu);
+  // mudado à mão (ou do aluno, de antes do método) entra nas perdas; link simbólico não é seguido nem trocado.
+  const textoDoMetodo = fs.readFileSync(path.join(DIR, 'modelos', 'metodo.md'), 'utf8');
+  const hashNovo = hashDoDocumento(textoDoMetodo);
+  const hashInstalado = anterior?.documentos?.[DOCUMENTO_DO_METODO];
+  const doc = lerDocumento(raiz);
+  let escreveDocumento = doc.tipo === 'ausente' || (doc.tipo === 'arquivo' && doc.hash !== hashNovo && doc.hash === hashInstalado);
+  if (doc.tipo === 'arquivo' && doc.hash !== hashNovo && doc.hash !== hashInstalado) {
+    plano.perdas.push(DOCUMENTO_DO_METODO);
+    escreveDocumento = forcar;
+  }
   if (plano.perdas.length && !forcar) {
     const lista = plano.perdas.slice(0, 10).join('; ') + (plano.perdas.length > 10 ? `; e mais ${plano.perdas.length - 10}` : '');
-    throw recusa(`a instalação sobrescreveria arquivos de skill mudados à mão (${lista})`,
-      `guarde as suas mudanças fora da pasta da skill (ou numa skill de outro nome) e rode tools/ah metodo ${comando} de novo; para descartá-las, rode tools/ah metodo ${comando} --forcar`);
+    throw recusa(`a instalação sobrescreveria arquivos do método mudados à mão (${lista})`,
+      `guarde as suas mudanças em outro lugar (numa skill de outro nome; o que for do ${DOCUMENTO_DO_METODO}, no AGENTS.md, fora das marcas) e rode tools/ah metodo ${comando} de novo; para descartá-las, rode tools/ah metodo ${comando} --forcar`);
   }
+  const documentoNoDisco = escreveDocumento || (doc.tipo === 'arquivo' && doc.hash === hashNovo);
+  const documentos = documentoNoDisco
+    ? { [DOCUMENTO_DO_METODO]: hashNovo }
+    : (hashInstalado ? { [DOCUMENTO_DO_METODO]: hashInstalado } : {});
 
-  const trava = novaTrava({ anterior, tocadas, copias, fontes, destinos });
+  const trava = novaTrava({ anterior, tocadas, copias, fontes, destinos, documentos });
   const textoTrava = textoDaTrava(trava);
   const mudaTrava = textoTrava !== (fs.existsSync(absoluto(raiz, ARQUIVO_TRAVA)) ? fs.readFileSync(absoluto(raiz, ARQUIVO_TRAVA), 'utf8') : null);
 
@@ -272,11 +290,14 @@ export async function sincronizar(ctx, { colecoesPedidas = null, refs = {}, simu
   if (comando === 'atualizar' && plano.remocoes.length) linhas.push(`Skills removidas: ${[...new Set(plano.remocoes.map(r => r.skill))].sort().join(', ')}`);
   if (comando !== 'atualizar') for (const r of plano.remocoes) linhas.push(`Removi a skill ${r.skill} de ${r.destino}.`);
   for (const rel of copiar) linhas.push(`Criei ${rel}.`);
+  if (escreveDocumento) linhas.push(`Escrevi ${DOCUMENTO_DO_METODO}.`);
   if (mudaAgents) linhas.push(`Escrevi o trecho do método no ${ARQUIVO_AGENTS}.`);
   if (mudaTrava) linhas.push(`Gravei a trava ${ARQUIVO_TRAVA}.`);
   const avisos = plano.mantidas.map(m => `Aviso: mantive a skill ${m.skill} em ${m.destino}: ela não faz mais parte do método aqui, mas tem mudanças à mão.\nFaça: apague a pasta ${m.destino}/${m.skill} se não precisar mais dela, ou rode tools/ah metodo ${comando} --forcar\n`);
   if (agentsSt?.isSymbolicLink()) avisos.push(`Aviso: ${ARQUIVO_AGENTS} é um link simbólico; não mexi nele.\nFaça: copie para o arquivo de destino do link o trecho de .harness/nucleo/extensoes/metodo/modelos/agents-metodo.md\n`);
   if (agents?.aviso) avisos.push(`Aviso: ${agents.aviso}`);
+  if (doc.tipo === 'link') avisos.push(`Aviso: ${DOCUMENTO_DO_METODO} é um link simbólico; não mexi nele.\nFaça: apague o link e rode tools/ah metodo ${comando} de novo\n`);
+  if (doc.tipo === 'outro') avisos.push(`Aviso: ${DOCUMENTO_DO_METODO} não é um arquivo comum; não mexi nele.\nFaça: apague-o e rode tools/ah metodo ${comando} de novo\n`);
   const relatorio = linhas.length ? `${linhas.join('\n')}\n` : 'Nada a mudar: as skills já estão como a trava.\n';
 
   if (simular) {
@@ -290,6 +311,10 @@ export async function sincronizar(ctx, { colecoesPedidas = null, refs = {}, simu
   for (const r of plano.remocoes) fs.rmSync(absoluto(raiz, `${r.destino}/${r.skill}`), { recursive: true, force: true });
   if (mudaTrava) gravarTrava(raiz, trava);
   if (mudaAgents) fs.writeFileSync(absoluto(raiz, ARQUIVO_AGENTS), agents.texto);
+  if (escreveDocumento) {
+    fs.mkdirSync(path.dirname(absoluto(raiz, DOCUMENTO_DO_METODO)), { recursive: true });
+    fs.writeFileSync(absoluto(raiz, DOCUMENTO_DO_METODO), textoDoMetodo);
+  }
   for (const rel of copiar) {
     fs.mkdirSync(path.dirname(absoluto(raiz, rel)), { recursive: true });
     fs.writeFileSync(absoluto(raiz, rel), doProjeto[rel]);
@@ -304,7 +329,7 @@ export async function sincronizar(ctx, { colecoesPedidas = null, refs = {}, simu
   // 8. O commit.
   const base = ctx.configDoProjeto?.git?.base ?? 'dev';
   ctx.escrever(passosDoCommit(raiz, base, ctx.env, {
-    caminhos: [ARQUIVO_TRAVA, ARQUIVO_CONFIG, ...usados, ARQUIVO_AGENTS, ...Object.keys(doProjeto)],
+    caminhos: [ARQUIVO_TRAVA, ARQUIVO_CONFIG, ...usados, ARQUIVO_AGENTS, DOCUMENTO_DO_METODO, ...Object.keys(doProjeto)],
     mensagem: MENSAGEM_DO_COMMIT,
     falta: `Falta levar o método para o ramo base ${base} (as frentes partem dele)`,
   }));
