@@ -48,11 +48,16 @@ function frenteAlvo(ctx, nome) {
   }
   const f = ctx.frentes().find(x => x.nome === nome || x.id === nome);
   if (!f) throw recusa(ctx, `Não achei a frente ${nome.slice(0, 49)}.`, 'rode ah board para ver as frentes abertas');
-  if (f.estado === 'ativa' && f.dona && f.dona !== ctx.sessaoId && ctx.donaViva(f)) {
-    throw recusa(ctx, `A frente ${f.id} ${f.nome} é da sessão ${f.dona}, que está viva.`,
-      `peça à sessão dona (${f.dona}) que grave a prova; com a sessão morta (frente órfã) ou a frente passada, o --frente vale`);
-  }
+  conferirDona(ctx, f);
   return f;
+}
+
+// A frente ativa (ou em abertura) de outra sessão viva fica com a dona. Conferida antes do teste e de novo sob a
+// trava, na gravação: o teste pode demorar, e a frente pode ter mudado de dona no meio.
+function conferirDona(ctx, f) {
+  if (!f || !['ativa', 'abrindo'].includes(f.estado) || !f.dona || f.dona === ctx.sessaoId || !ctx.donaViva(f)) return;
+  throw recusa(ctx, `A frente ${f.id} ${f.nome} é da sessão ${f.dona}, que está viva.`,
+    `peça à sessão dona (${f.dona}) que grave a prova; com a sessão morta (frente órfã) ou a frente passada, o --frente vale`);
 }
 
 async function gravar(args, ctx) {
@@ -62,6 +67,7 @@ async function gravar(args, ctx) {
   const antes = corte < 0 ? args : args.slice(0, corte);
   const depois = corte < 0 ? null : args.slice(corte + 1);
   const [rotulo, ...opcoes] = antes;
+  if (rotulo?.startsWith('--')) throw recusa(ctx, 'O rótulo vem primeiro.', 'ah prova <rótulo> --frente <nome> [-- <comando>…]');
   let nome;
   if (opcoes[0] === '--frente') {
     nome = opcoes[1];
@@ -98,7 +104,10 @@ async function gravar(args, ctx) {
   const prova = { rotulo, arvore: arvoreAntes, commit: ctx.git(['rev-parse', 'HEAD'], { cwd: wt }).saida.trim(), comando, em: new Date().toISOString() };
   // Uma prova por rótulo na frente: a nova substitui a anterior do mesmo rótulo.
   const anteriores = secao => (Array.isArray(secao.provas) ? secao.provas : []).filter(p => p.rotulo !== rotulo);
-  await ctx.gravarCampos(f.nome, secao => ({ provas: [...anteriores(secao), prova] }));
+  await ctx.gravarCampos(f.nome, (secao, { frentes }) => {
+    if (nome !== undefined) conferirDona(ctx, frentes.find(x => x.nome === f.nome));
+    return { provas: [...anteriores(secao), prova] };
+  });
   fs.mkdirSync(path.dirname(arquivoDuravel(ctx)), { recursive: true });
   fs.appendFileSync(arquivoDuravel(ctx), `${JSON.stringify({ id: f.id, frente: f.nome, ...prova })}\n`);
   ctx.escrever(`Prova gravada: ${rotulo} na frente ${f.id} ${f.nome}, árvore ${curto(arvoreAntes)} (commit ${curto(prova.commit)}).\n`);
