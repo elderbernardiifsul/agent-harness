@@ -574,6 +574,75 @@ $ AH_SESSAO=ana-terminal tools/ah close
 Frente as-1 carrinho fechada.
 ```
 
+## ambiente
+
+```
+ah ambiente [mostrar] [--json]
+ah ambiente preparar
+ah ambiente desfazer
+```
+
+Comando da extensão `ambiente`, que acompanha o harness, desligada por padrão. Resolve a disputa de porta e banco entre frentes paralelas: na abertura, cada frente recebe portas livres de uma faixa, um banco próprio e um arquivo no worktree com as chaves para o programa ler; no fechamento, o banco é apagado e as portas voltam para a faixa. Construída sobre a ideia da extensão `recursos`, mas automática.
+
+**Configuração.** Os comandos de banco são listas de argumentos rodadas sem shell, na raiz do projeto, com `{banco}` e `{frente}` trocados. A extensão não conhece banco nenhum: o projeto diz qual ferramenta usa.
+
+```json
+"extensoes": { "ambiente": {
+  "arquivo": ".env.frente",
+  "portas": { "faixa": [4100, 4199], "chaves": ["PORTA_WEB", "PORTA_API"] },
+  "banco": { "nome": "loja_{frente}", "chave": "BANCO",
+             "criar": ["createdb", "{banco}"], "apagar": ["dropdb", "--if-exists", "{banco}"],
+             "listar": ["psql", "-Atc", "select datname from pg_database"] },
+  "fixos": { "portas": [3000, 5432], "bancos": ["loja", "loja_test"] }
+} }
+```
+
+| Campo | Conteúdo |
+|---|---|
+| `arquivo` | caminho, relativo ao worktree, do arquivo de ambiente (padrão `.env.frente`) |
+| `portas.faixa`, `portas.chaves` | de onde saem as portas, e uma chave por porta da frente |
+| `banco.nome` | molde do nome; `{frente}` vira o nome da frente com `-` trocado por `_` (`loja_{frente}` → `loja_cupom_novo`) |
+| `banco.chave` | a chave do nome do banco no arquivo |
+| `banco.criar`, `banco.apagar` | os comandos que criam e apagam o banco |
+| `banco.listar` | opcional: imprime os bancos existentes, um por linha (usado pelo `sweep`) |
+| `fixos` | portas e bancos que não são de frente nenhuma (desenvolvimento, teste comum, serviços do projeto): nunca vão para uma frente e nunca são apagados |
+
+`portas` e `banco` são opcionais, mas um dos dois é obrigatório.
+
+- **Abertura** (`depoisDeAbrir`, também na retomada). Portas: as menores da faixa fora das portas de outras frentes (desta extensão e, com a `recursos` ligada, as do tipo `porta`), das fixas e das que estão escutando agora nesta máquina; a escolha e a gravação ficam sob a trava das frentes, e duas aberturas ao mesmo tempo não recebem a mesma porta. Banco: roda `criar` e grava `{nome, criado}`. Arquivo: escreve no worktree um cabeçalho e uma linha `CHAVE=valor` por porta e pelo banco. Só faz o que falta: a frente que já tem portas fica com elas, e o banco já criado não é criado de novo. Falta de porta na faixa ou banco que não foi criado não impedem a abertura: viram aviso com o próximo passo.
+- **`mostrar`** (o padrão). As portas, o banco e o arquivo da frente da sessão; `--json` imprime `{"id","frente","portas","banco","arquivo"}`.
+- **`preparar`.** Refaz o que falta (depois de aumentar a faixa, ou com o banco de volta) e reescreve o arquivo. Sai com 1 quando sobra aviso.
+- **`desfazer`.** Apaga o banco criado pela frente, remove o arquivo do worktree e libera as portas.
+- **Fechamento** (`depoisDeFechar`). Apaga o banco criado pela frente, salvo se for fixo; a falha vira aviso com o comando para apagar à mão. As portas saem do estado com a frente.
+- **Arquivo de ambiente e o `close`.** O arquivo fica no worktree, e o `close` recusa worktree com arquivo não commitado ou ignorado. A extensão declara o arquivo como descartável (refeito a partir do estado), para que o `close` não o conte como perda; enquanto o núcleo não aceitar essa declaração, rode `ah ambiente desfazer` antes do `ah close`.
+- **Passagem.** O `handoff` não libera nada: a frente passada continua dona das portas e do banco.
+- **Quadro.** A coluna `AMBIENTE` mostra as portas e o banco (`4100 4101 loja_carrinho`).
+
+| Recusa ou aviso | Faça |
+|---|---|
+| `Esta sessão não tem frente.` | abra uma com ah open <nome> |
+| `Subcomando desconhecido: …` | use `ah ambiente [mostrar] [--json] \| ah ambiente preparar \| ah ambiente desfazer` |
+| Aviso: `a faixa 4100-4199 não tem 2 portas livres para a frente <nome>` | aumente extensoes.ambiente.portas.faixa e rode ah ambiente preparar |
+| Aviso: `não consegui criar o banco <banco>: …` | confira o banco e o comando extensoes.ambiente.banco.criar e rode ah ambiente preparar |
+| Aviso: `o banco <banco> não é um nome válido (minúsculas, números e _)` | mude extensoes.ambiente.banco.nome |
+| Aviso: `não consegui apagar o banco <banco>: …` | apague à mão com o comando de extensoes.ambiente.banco.apagar |
+| `não consegui apagar o banco <banco>: …` (em `desfazer`) | confira o banco e rode ah ambiente desfazer de novo |
+
+```
+$ AH_SESSAO=ana-terminal tools/ah open carrinho
+…
+$ cat <worktree>/.env.frente
+# gerado por ah ambiente para esta frente; não edite: refaça com tools/ah ambiente preparar
+PORTA_WEB=4100
+PORTA_API=4101
+BANCO=loja_carrinho
+$ AH_SESSAO=carla-terminal tools/ah open cupom
+$ AH_SESSAO=carla-terminal tools/ah ambiente
+Ambiente da frente as-2 cupom: PORTA_WEB=4102, PORTA_API=4103, banco loja_cupom (arquivo .env.frente).
+$ AH_SESSAO=ana-terminal tools/ah ambiente desfazer
+Ambiente da frente as-1 carrinho desfeito: banco apagado, portas liberadas, .env.frente removido.
+```
+
 ## migracao
 
 ```
