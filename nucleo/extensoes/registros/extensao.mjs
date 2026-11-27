@@ -34,6 +34,10 @@ import {
 const USO = 'ah registros guardar|devolver [--frente <nome>]';
 // Tipos de marcador do núcleo que dizem "este login teve a frente neste ticket" (nucleo/lib/reserva.mjs).
 const TIPOS_DA_FRENTE = new Set(['frente', 'retomada', 'tomada', 'passagem']);
+// A associação do autor ao repositório, que o GitHub dá em cada comentário (`authorAssociation`, enum
+// CommentAuthorAssociation da API). Só estas vêm de quem tem acesso ao repositório; um terceiro num repositório
+// público vem como NONE, CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR ou FIRST_TIMER.
+const COM_ACESSO = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
 const recusa = (ctx, motivo, saida) => new ctx.ErroDeUso(`${motivo}\nPróximo passo: ${saida}`);
 const lerOuNada = arquivo => { try { return fs.readFileSync(arquivo, 'utf8'); } catch { return null; } };
@@ -164,7 +168,9 @@ function loginsDaFrente(comentarios, frente) {
 // {achados: Map pasta -> {plano, texto, cortado, em, fase, ticket, tickets}, lidos: quantos tickets se leram}.
 // `tickets`: todos em que o mesmo diário (mesmo texto e mesmo `em`) está, para não comentá-lo de novo em nenhum.
 // Repositório público: qualquer um comenta, e o diário é lido pelo agente como instrução de trabalho. Por isso só
-// vale o comentário de quem tem marcador do núcleo nesta frente, naquele ticket; os outros são ignorados, com aviso.
+// vale o comentário de quem tem acesso ao repositório (associação OWNER, MEMBER ou COLLABORATOR) e marcador do núcleo
+// nesta frente, naquele ticket. O marcador sozinho não basta: um terceiro pode forjá-lo com o próprio login. Sem a
+// associação (gh antigo), vale a regra mais estrita: o comentário é ignorado. Os ignorados saem num aviso.
 function diariosDosTickets(ctx, frente, avisar) {
   const todos = new Map();
   let lidos = 0;
@@ -183,8 +189,10 @@ function diariosDosTickets(ctx, frente, avisar) {
       const m = lerMarcador(c?.body);
       if (!m || m.id !== frente.id) continue;
       const autor = c?.author?.login ?? '(sem autor)';
-      if (!daFrente.has(autor)) {
-        if (!ignorados.has(autor)) avisar(`Aviso: ignorei o diário que @${autor} comentou em #${n}: só vale o de quem tem marcador do harness nesta frente.\n`);
+      const associacao = typeof c?.authorAssociation === 'string' ? c.authorAssociation : null;
+      if (!daFrente.has(autor) || !COM_ACESSO.has(associacao)) {
+        const qual = associacao ? `associação ${associacao}` : 'associação desconhecida: o gh não informou';
+        if (!ignorados.has(autor)) avisar(`Aviso: ignorei o diário que @${autor} comentou em #${n} (${qual}): só vale o de quem tem acesso ao repositório e marcador do harness nesta frente.\n`);
         ignorados.add(autor);
         continue;
       }

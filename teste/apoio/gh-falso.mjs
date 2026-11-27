@@ -97,7 +97,14 @@ function noFormatoDoGh(n, tk, campos) {
     assignees: tk.assignees.map(l => ({ login: l })),
     labels: tk.labels.map(l => ({ name: l })),
     // url com issuecomment-<n>: n cresce no repositório inteiro (os semeados sem número ficam antes, pela posição).
-    comments: tk.comments.map((c, i) => ({ author: { login: c.author }, body: c.body, url: `https://github.com/exemplo/loja/issues/${n}#issuecomment-${c.numero ?? i + 1}` })),
+    // authorAssociation: a do comentário semeado (`associacao`), OWNER por padrão; `associacao: null` tira o campo
+    // (como um gh antigo).
+    comments: tk.comments.map((c, i) => ({
+      author: { login: c.author },
+      ...(c.associacao === null ? {} : { authorAssociation: c.associacao ?? 'OWNER' }),
+      body: c.body,
+      url: `https://github.com/exemplo/loja/issues/${n}#issuecomment-${c.numero ?? i + 1}`,
+    })),
   };
   return Object.fromEntries(campos.map(c => [c, tudo[c] ?? null]));
 }
