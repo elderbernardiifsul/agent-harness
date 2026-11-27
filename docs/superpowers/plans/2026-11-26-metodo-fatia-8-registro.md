@@ -70,6 +70,8 @@ Ficam como limites conhecidos: o `listar` marca "renumerar" na frente já integr
 
 Achado ao escrever a skill `orquestrar` (fatia 5): a orquestradora com várias frentes próprias não troca o foco (`ah open` de frente própria recusa), e o `ah prova` gravava só na frente em foco. O orquestrador aprovou `--frente <nome>`, com a regra da `recursos` e da `migracao` (frente ativa de outra sessão viva recusa). O teste roda no worktree da frente indicada, e o teste confere que a árvore gravada é a desse worktree, não a do foco nem a do checkout de onde o comando foi chamado.
 
+Depois da revisão da fatia 5 (27/11, decisão do orquestrador): a frente em abertura (`abrindo`) de outra sessão viva também recusa; a dona é conferida de novo sob a trava na gravação; `ah prova --frente <nome> <rótulo>` recusa dizendo que o rótulo vem primeiro; há teste de frente passada aceita.
+
 ## Limitações
 
 - Na retomada em outra máquina, `preparar` não recria um banco já marcado `criado`.

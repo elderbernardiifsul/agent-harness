@@ -157,3 +157,21 @@ test('--frente de outra sessão viva recusa; frente que não existe recusa', t =
   assert.match(n.erro, /Não achei a frente nada\.\nFaça: rode ah board/);
   assert.equal(p.ah(['prova', 'unit', '--frente']).codigo, 1);
 });
+
+test('--frente: frente passada vale; frente em abertura de outra sessão viva recusa; ordem trocada diz a certa', t => {
+  const p = novoProjeto(t);
+  const B = { env: { AH_SESSAO: 'sessao-b-0002' } };
+  ok(p.ah(['open', 'frete'], B));
+  ok(p.ah(['handoff', 'frete', '--nota', 'entregue'], B));
+  assert.equal(p.frente('frete').estado, 'passada');
+  assert.match(ok(p.ah(['prova', 'unit', '--frente', 'frete'])).saida, /^Prova gravada: unit na frente as-1 frete/m);
+  ok(p.ah(['open', 'cupom'], B));
+  const arquivo = path.join(p.dirEstado, 'frentes', 'cupom.json');
+  fs.writeFileSync(arquivo, JSON.stringify({ ...JSON.parse(fs.readFileSync(arquivo, 'utf8')), estado: 'abrindo' }));
+  const r = p.ah(['prova', 'unit', '--frente', 'cupom']);
+  assert.equal(r.codigo, 1);
+  assert.match(r.erro, /A frente as-2 cupom é da sessão sessao-b-0002, que está viva/);
+  const o = p.ah(['prova', '--frente', 'frete', 'unit']);
+  assert.equal(o.codigo, 1);
+  assert.match(o.erro, /O rótulo vem primeiro\.\nFaça: ah prova <rótulo> --frente <nome>/);
+});
