@@ -222,3 +222,34 @@ test('o README aponta para o guia logo no começo', () => {
   const i = readme.indexOf('docs/guia/comecar.md');
   assert.ok(i >= 0 && i < readme.indexOf('\n## '), 'a linha do guia vem antes da primeira seção do README');
 });
+
+// ---------------------------------------------------------------- quem aponta para o metodo.md (revisão final, C3 e I7)
+test('o que aponta para uma seção do metodo.md aponta para uma seção que existe', () => {
+  const titulos = titulosDe(ler(METODO)).map(t => t.replace(/^#+\s*/, '').toLowerCase());
+  const achados = [];
+  const andar = rel => {
+    for (const e of fs.readdirSync(path.join(RAIZ, rel), { withFileTypes: true })) {
+      const filho = `${rel}/${e.name}`;
+      if (e.isDirectory()) andar(filho);
+      else if (/\.(mjs|md)$/.test(e.name) && filho !== METODO) {
+        for (const m of ler(filho).matchAll(/docs\/agents\/metodo\.md \(([^)]+)\)/g)) achados.push([filho, m[1]]);
+      }
+    }
+  };
+  andar('nucleo');
+  assert.ok(achados.length > 0, 'esperava ao menos a linha de critérios do ah modelo');
+  for (const [arquivo, s] of achados) assert.ok(titulos.includes(s.toLowerCase()), `${arquivo} aponta para a seção "${s}", que o metodo.md não tem`);
+  // O texto para quem executa (skill orquestrar) manda escolher a trilha pelo metodo.md.
+  assert.match(ler('nucleo/extensoes/metodo/skills/orquestrar/executor.md'), /docs\/agents\/metodo\.md, escolha a trilha/);
+  assert.ok(titulos.includes('escolha a trilha'));
+});
+
+test('o trecho do AGENTS.md lembra o registros guardar antes de a skill apagar o diário', () => {
+  assert.match(ler(TRECHO), /`tools\/ah registros guardar`.*antes de a skill de execução apagar o diário/);
+});
+
+test('o metodo.md e o guia dizem como ligar uma extensão depois da instalação', () => {
+  for (const s of [secao(ler(METODO), '## Extensões opcionais'), secao(ler(GUIA), '## 4. Ligar as extensões opcionais')]) {
+    assert.match(s, /`\.harness\/config\.json`.*`tools\/ah metodo instalar`.*commit.*`tools\/ah doctor`/s);
+  }
+});

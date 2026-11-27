@@ -104,7 +104,7 @@ O `subagent-driven-development` grava o diário de cada plano em `.superpowers/s
 
 ## Extensões opcionais
 
-Desligadas até o aluno pedir; o agente a liga em extensoes, no `.harness/config.json`, roda `tools/ah metodo instalar` e `tools/ah doctor`. Uma linha por extensão, quando ligada:
+Desligadas até o aluno pedir. Para ligar uma depois da instalação: acrescente-a em extensoes, no `.harness/config.json`; rode `tools/ah metodo instalar`, que traz as skills dela; faça o commit que ele indica; rode `tools/ah doctor`. Uma linha por extensão, quando ligada:
 
 - **Wiki e reunião** (extensão wiki): conhecimento espalhado e resposta sem fonte. Skills da extensão wiki: `wiki-ingerir`, `wiki-consultar`, `wiki-conferir`, e `reuniao-ingerir` para levar uma gravação até a wiki (extensão wiki); confira com `tools/ah wiki conferir`.
 - **Orquestração** (extensão orquestracao): distribuir tickets entre subagentes e sessões sem perder o fio. Skill da extensão orquestracao: `orquestrar`; a parte determinística é `tools/ah candidatos`.

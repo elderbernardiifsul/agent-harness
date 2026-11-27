@@ -24,6 +24,8 @@ Registro da execução do plano `2026-11-27-metodo-fatia-2.md`, no ramo `p2-fati
 | 4 | `fb4ef49` | itens `Documento do método igual à trava` e `Skills citadas no método instaladas`; `arquivoDasColecoes` e `extensoesLigadas` em `colecoes.mjs`; `comandos.md` |
 | 5 | `564ad9b` | `docs/guia/comecar.md`, a linha do README e a linha do Mapa no `AGENTS.md` |
 | 6 | `a9b8bdb` | as duas decisões do ensaio no `metodo.md`, no guia e nos testes |
+| — | `00613df` | merge do `p2-metodo` com a revisão de ponta a ponta (`3c79fe8`) |
+| Revisão C3 e I7 | (commit desta seção) | o trecho do `AGENTS.md` lembra o `tools/ah registros guardar` antes de a skill de execução apagar o diário; "Extensões opcionais" diz como ligar uma extensão depois da instalação (config, `tools/ah metodo instalar`, commit, `tools/ah doctor`); um teste confere que quem aponta para uma seção do `metodo.md` (`nucleo/extensoes/modelo/extensao.mjs:106`, "nível de modelo"; `orquestrar/executor.md`, "escolha a trilha") acha a seção |
 
 Notas:
 
@@ -84,3 +86,9 @@ Causa: `nucleo/comandos/open.mjs:61` resolve o `--plano` no checkout principal (
 - **A spec, seção 7, tabela "Um dono por etapa"** (do orquestrador): a linha "Plano" ainda diz `ah open --tickets --plano` como o harness da etapa. O `metodo.md` diz agora `tools/ah open --tickets` antes do plano, e `tools/ah handoff` com a linha de partida na sessão nova.
 - **Já conhecida no plano:** as skills copiadas comparam hash sem normalizar CRLF; só o `metodo.md` normaliza.
 - **Revisão do autor:** o texto do `metodo.md` é item do "pronto" da fatia 2 (spec, seção 17) e espera o professor.
+
+## Verificação final
+
+`node ferramentas/verifica.mjs --node "$(mise where node@22)/bin/node" --node "$(command -v node)"`, sobre o commit da revisão C3 e I7: ver a mensagem ao orquestrador. Antes do merge da revisão (sobre `a9b8bdb`), código 0: Node v22.23.5 e v26.13.1, 1279 testes, 1278 passaram, 1 pulado; varredura ok.
+
+Itens da revisão de ponta a ponta que tocam o `metodo.md` e ficaram de fora desta fatia (não pedidos): I2 (dizer no `metodo.md` que o diário vai ao ticket sem filtro de segredo, depois do conserto na extensão registros) e a observação de que o trecho do `AGENTS.md` diz "merge na base e `tools/ah close`" sem o `git push origin dev` da `sessoes-paralelas.md`.
