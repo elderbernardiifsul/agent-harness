@@ -118,7 +118,15 @@ export const verificacoes = [
       if (velhas.length) partes.push(`a cópia do núcleo traz outra versão de ${velhas.join(', ')}`);
       for (const skill of saiu) partes.push(`a skill ${skill} não faz mais parte do harness`);
       if (!partes.length) return { estado: 'ok' };
-      return { estado: 'aviso', detalhe: partes.join('; '), conserto: 'rode tools/ah metodo atualizar (as skills do harness vêm de .harness/nucleo/extensoes/metodo/skills/)' };
+      // Skill velha que também tem arquivo mudado à mão: o atualizar recusaria, e o conserto diz isso antes.
+      let aMao = false;
+      try { aMao = conferir(ctx.raiz, trava).alterados.some(({ arquivo }) => velhas.includes(arquivo.split('/')[0])); } catch { /* ilegível: o item Skills iguais à trava diz */ }
+      const conserto = 'rode tools/ah metodo atualizar (as skills do harness vêm de .harness/nucleo/extensoes/metodo/skills/)';
+      return {
+        estado: 'aviso',
+        detalhe: partes.join('; '),
+        conserto: aMao ? `se você mudou essa skill à mão, o atualizar recusa; guarde a mudança numa skill de outro nome antes (ou use --forcar para descartá-la); depois, ${conserto}` : conserto,
+      };
     },
   },
   {

@@ -115,8 +115,19 @@ test('Skills do harness em dia: aviso quando a cópia do núcleo traz outra vers
   assert.equal(i.estado, 'aviso');
   assert.match(i.fazer, /preparar-projeto/);
   assert.match(i.fazer, /rode tools\/ah metodo atualizar/);
+  assert.doesNotMatch(i.fazer, /à mão|--forcar/);
   ok(p.ah(['metodo', 'atualizar']));
   assert.equal(itemDe(p, 'Skills do harness em dia').estado, 'ok');
+});
+
+test('Skills do harness em dia: com a skill do harness mudada à mão, o conserto avisa que o atualizar recusa', t => {
+  const { p, pasta } = cenario(t);
+  fs.writeFileSync(path.join(pasta, 'skills', 'preparar-projeto', 'SKILL.md'), 'preparar-projeto v2\n');
+  fs.writeFileSync(caminho(p, '.claude/skills/preparar-projeto/SKILL.md'), 'a preparar-projeto da Ana\n');
+  const i = itemDe(p, 'Skills do harness em dia');
+  assert.equal(i.estado, 'aviso');
+  assert.match(i.fazer, /se você mudou essa skill à mão, o atualizar recusa; guarde a mudança numa skill de outro nome antes \(ou use --forcar para descartá-la\)/);
+  assert.match(i.fazer, /tools\/ah metodo atualizar/);
 });
 
 test('Skills do harness em dia: skill que saiu do harness é dita; skill de extensão desligada não conta', t => {
