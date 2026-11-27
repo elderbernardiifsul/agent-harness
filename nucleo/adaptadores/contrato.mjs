@@ -12,6 +12,7 @@
 // frente. Se ele não vier, a sessão segue sem `fim` e a vida dela é a do pid e do sinal.
 //
 // `acao` é {tipo: 'comando', comando} | {tipo: 'edicao', arquivo, ferramenta?} | {tipo: 'outra'}.
+// Uma ferramenta que escreve vários arquivos de uma vez (patch) manda {tipo: 'edicao', arquivos: [...], ferramenta?}.
 // As travas recebem também a sessão, as frentes ativas das outras e a vida das donas (T4).
 // `amb` é o do despacho (raiz, config, dirEstado, env), mais, opcionais, `topoDe`,
 // `ramoAtual`, `baseDoPr`, `tempoDoGhMs`, `ehRef`, `existeCaminho` (para as travas), `pid` (padrão: o pid do agente,
@@ -341,8 +342,10 @@ async function antes(evento, amb) {
   const daExtensao = t => (typeof t === 'string' && t.includes('/') ? { extensao: t.split('/')[0] } : {});
   const comando = acao.tipo === 'comando' ? cortar(acao.comando, LIMITE_COMANDO_NO_EVENTO) : undefined;
   if (!r.permite) {
+    // Na edição de vários arquivos, o caminho é o que causou a recusa (r.arquivo).
+    const arquivo = r.arquivo ?? acao.arquivo;
     const daEdicao = acao.tipo === 'edicao'
-      ? { ferramenta: acao.ferramenta, caminho: typeof acao.arquivo === 'string' ? path.resolve(evento.cwd ?? amb.raiz, acao.arquivo) : undefined }
+      ? { ferramenta: acao.ferramenta, caminho: typeof arquivo === 'string' ? path.resolve(evento.cwd ?? amb.raiz, arquivo) : undefined }
       : {};
     registrarEvento(amb.dirEstado, { tipo: 'recusa', sessao: evento.sessao, trava: r.trava, ...daExtensao(r.trava), comando, ...daEdicao });
     return { decisao: 'recusa', mensagem: textoDaRecusa(r) };
@@ -382,6 +385,10 @@ export function passaNaQuebra(acao, { raiz, cwd }) {
     const [argv0] = comandos[0].argv;
     if (typeof argv0 !== 'string') return false;
     return NOMES_DO_AH.has(argv0) || (raiz != null && argv0 === path.join(raiz, 'tools', 'ah'));
+  }
+  if (acao?.tipo === 'edicao' && Object.hasOwn(acao, 'arquivos')) {
+    const { arquivos, ...resto } = acao;
+    return Array.isArray(arquivos) && arquivos.length > 0 && arquivos.every(arquivo => passaNaQuebra({ ...resto, arquivo }, { raiz, cwd }));
   }
   if (acao?.tipo === 'edicao') {
     if (raiz == null || typeof acao.arquivo !== 'string' || acao.arquivo === '') return false;

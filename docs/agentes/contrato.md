@@ -28,6 +28,7 @@ Todo evento traz `tipo`, `sessao` (o id da sessão do agente) e `cwd` (a pasta d
 |---|---|---|
 | `{tipo: 'comando', comando, shell?: 'posix'}` | O agente vai executar um comando de shell | O texto do comando. Com `shell: 'posix'`, o interpretador do harness reconhece encadeamento, subshell, `bash -c`, heredoc e `cd`; marque `posix` somente se o agente executa o comando num shell POSIX (sh, bash, zsh) |
 | `{tipo: 'edicao', arquivo, ferramenta?}` | O agente vai criar, alterar ou apagar um arquivo | O caminho (absoluto ou relativo a `cwd`); a T4 recusa a escrita no worktree de outra sessão viva. `ferramenta` é o nome da ferramenta do agente, usado apenas no registro |
+| `{tipo: 'edicao', arquivos, ferramenta?}` | O agente vai escrever vários arquivos de uma vez (um patch, por exemplo) | A lista dos caminhos. Cada um passa pelas travas como uma edição sozinha, e a primeira recusa vale; o registro da recusa traz o caminho que a causou. Lista vazia, ou com item que não é texto, é recusada (T0) |
 | `{tipo: 'outra'}` | Qualquer outra ferramenta que o adaptador decide deixar passar | Nenhum: a ação é sempre permitida |
 
 Ferramenta que o adaptador não reconhece deve resultar em erro de entrada (ver "Quando o gancho quebra"), e não em `outra`; na dúvida, a regra é recusar. `outra` serve apenas para ferramentas que comprovadamente não executam comando nem escrevem arquivo. A opção preferível é não enviar essas ferramentas ao gancho, já que o seletor do arquivo de gancho define quais ferramentas passam por ele.
