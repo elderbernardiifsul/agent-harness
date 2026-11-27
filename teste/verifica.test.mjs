@@ -67,12 +67,14 @@ test('opção desconhecida recusa com o uso', () => {
   assert.match(r.stderr, /uso: node ferramentas\/verifica\.mjs/);
 });
 
-test('a suíte do verifica usa o mesmo prazo por teste do npm test', () => {
+test('a suíte do verifica usa as mesmas opções do npm test, sem prazo global nem saída forçada', () => {
   const pacote = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8'));
-  const prazo = pacote.scripts.test.match(/--test-timeout=\d+/)?.[0];
-  assert.ok(prazo, 'o npm test tem --test-timeout');
-  assert.ok(argumentosDaSuite().includes(prazo));
-  // Sem --test-force-exit: ele encerrava arquivos antes do fim, e a suíte perdia testes sem acusar falha (27/11).
-  assert.doesNotMatch(pacote.scripts.test, /--test-force-exit/);
+  const opcoes = pacote.scripts.test.match(/--test-[a-z-]+(=\S+)?/g) ?? [];
+  for (const o of opcoes) assert.ok(argumentosDaSuite().includes(o), o);
+  // Sem --test-timeout: no Node 22 ele vale para o arquivo inteiro, que é morto sem rodar t.after nem o exit, e
+  // deixa ah pesado órfãos. Sem --test-force-exit: ele encerrava arquivos antes do fim, e a suíte perdia testes
+  // sem acusar falha (27/11).
+  assert.doesNotMatch(pacote.scripts.test, /--test-timeout|--test-force-exit/);
+  assert.deepEqual(argumentosDaSuite({ scripts: { test: 'node --test --test-timeout=5000 "teste/*.test.mjs"' } }), ['--test', '--test-reporter=spec', '--test-timeout=5000', 'teste/*.test.mjs']);
   assert.deepEqual(argumentosDaSuite({ scripts: { test: 'node --test "teste/*.test.mjs"' } }), ['--test', '--test-reporter=spec', 'teste/*.test.mjs']);
 });

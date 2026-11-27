@@ -54,14 +54,14 @@ function versaoDe(node) {
   return versao;
 }
 
-// Os argumentos da suíte: os do `npm test` (package.json), com o relatório `spec` que o resumo lê. O prazo por teste
-// (`--test-timeout`) mora só no package.json: um teste travado vira falha com nome, aqui e no `npm test`, e o
-// `t.after` dele roda (o `limpar` dos projetos de teste encerra os processos iniciados ao fundo, e o arquivo segue).
-// O `--test-force-exit` ficou de fora de propósito: em 27/11 ele encerrou arquivos antes do fim e a suíte perdeu
-// até 20 testes sem acusar falha.
+// Os argumentos da suíte: as opções `--test-*` do `npm test` (package.json), com o relatório `spec` que o resumo lê.
+// As opções moram só no package.json, e o teste de verifica.test.mjs confere que as duas linhas coincidem.
+// Ficaram de fora de propósito (27/11): o `--test-timeout`, que no Node 22 vale para o arquivo inteiro e o mata sem
+// rodar t.after nem o exit (deixa ah pesado órfãos; o close.test.mjs sozinho leva 65 s no Node 22); e o
+// `--test-force-exit`, que encerrava arquivos antes do fim e fazia a suíte perder testes sem acusar falha.
 export function argumentosDaSuite(pacote = JSON.parse(readFileSync(join(RAIZ, 'package.json'), 'utf8'))) {
-  const prazo = String(pacote?.scripts?.test ?? '').match(/--test-timeout=\d+/)?.[0];
-  return ['--test', '--test-reporter=spec', ...(prazo ? [prazo] : []), 'teste/*.test.mjs'];
+  const opcoes = String(pacote?.scripts?.test ?? '').match(/--test-[a-z-]+(=\S+)?/g) ?? [];
+  return ['--test', '--test-reporter=spec', ...opcoes.filter(o => !o.startsWith('--test-reporter')), 'teste/*.test.mjs'];
 }
 
 function rodarSuite(node, versao) {

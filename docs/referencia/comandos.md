@@ -942,6 +942,7 @@ exclusivo (todas as vagas; não casou com nenhum padrão: vale a classe mais res
 | `O estado da fila não se lê` | confira que nenhum `ah pesado` está rodando (`ah board`) e apague o `fila.json` |
 | `Configuração da fila inválida` / `não é JSON válido` / `versão N, mais nova` | corrija o arquivo (ou apague-o para voltar aos padrões); atualize o harness |
 | `Não consegui rodar o comando` | confira o nome do programa e o PATH |
+| `A senha <n> sumiu da fila de pesados (…); não rodei o comando.` | rode o comando de novo. A senha some quando o `fila.json` é apagado ou trocado com o comando esperando, ou quando outro processo julga a entrada morta (pid de outro namespace, numa fila compartilhada com um contêiner); antes, o `ah pesado` esperava para sempre |
 
 ## gancho
 

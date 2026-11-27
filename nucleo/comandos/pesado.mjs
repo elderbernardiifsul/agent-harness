@@ -138,7 +138,7 @@ export async function executar(args, amb) {
       if (r.pode) break;
       // Sem a senha na fila, a vez nunca chega: em vez de esperar para sempre, para e diz o que fazer.
       if (r.motivo === SEM_SENHA) {
-        throw new ErroDeUso(`A senha ${senha} sumiu da fila de pesados (o estado da fila em ${dir} foi apagado ou trocado enquanto este comando esperava); não rodei o comando.\nPróximo passo: rode o comando de novo`);
+        throw new ErroDeUso(`A senha ${senha} sumiu da fila de pesados (o estado da fila em ${dir} foi apagado ou trocado enquanto este comando esperava, ou outro processo julgou esta entrada morta: pid de outro namespace, fila compartilhada com um contêiner); não rodei o comando.\nPróximo passo: rode o comando de novo`);
       }
       if (r.motivo !== ultimoMotivo) {
         amb.avisar(`ah pesado: esperando a vez (senha ${senha}, classe ${classe.nome}): ${r.motivo}\n`);
