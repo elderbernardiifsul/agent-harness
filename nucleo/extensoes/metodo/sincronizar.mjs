@@ -16,6 +16,11 @@ import { comTrecho } from './trecho.mjs';
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const DO_HARNESS = 'agent-harness';
 const ARQUIVO_AGENTS = 'AGENTS.md';
+// A configuração entra no commit do método: é nela que o aluno liga as extensões, e sem ela na dev as frentes
+// nasceriam sem o método. O passosDoCommit tira da conta o que não mudou.
+const ARQUIVO_CONFIG = '.harness/config.json';
+// Os arquivos de lugar fixo que o commit do método leva (as pastas das skills e os do projeto vêm à parte).
+export const CAMINHOS_DO_METODO = [ARQUIVO_TRAVA, ARQUIVO_CONFIG, ARQUIVO_AGENTS];
 const MENSAGEM_DO_COMMIT = 'chore: instala o método do agent-harness';
 
 const eLigada = v => v === true || (v !== null && typeof v === 'object' && !Array.isArray(v));
@@ -299,7 +304,7 @@ export async function sincronizar(ctx, { colecoesPedidas = null, refs = {}, simu
   // 8. O commit.
   const base = ctx.configDoProjeto?.git?.base ?? 'dev';
   ctx.escrever(passosDoCommit(raiz, base, ctx.env, {
-    caminhos: [ARQUIVO_TRAVA, ...usados, ARQUIVO_AGENTS, ...Object.keys(doProjeto)],
+    caminhos: [ARQUIVO_TRAVA, ARQUIVO_CONFIG, ...usados, ARQUIVO_AGENTS, ...Object.keys(doProjeto)],
     mensagem: MENSAGEM_DO_COMMIT,
     falta: `Falta levar o método para o ramo base ${base} (as frentes partem dele)`,
   }));

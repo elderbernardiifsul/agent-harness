@@ -342,3 +342,11 @@ test('comTrecho com marcas do método quebradas acrescenta no fim e avisa', () =
   assert.match(r.aviso, /rode tools\/ah metodo instalar de novo/);
   assert.deepEqual(comTrecho('a\r\n', trecho).texto, `a\r\n\r\n${trecho.replace(/\n/g, '\r\n')}`);
 });
+
+test('o commit que o instalar indica leva também o .harness/config.json com as extensões ligadas', t => {
+  const { p, instalar } = cenario(t);
+  const r = ok(instalar());
+  assert.match(r.saida, /^ {2}git add -- .*\.harness\/config\.json/m);
+  commitar(p, r.saida);
+  assert.equal(p.git(['status', '--porcelain', '--', '.harness/config.json']).saida, '');
+});
