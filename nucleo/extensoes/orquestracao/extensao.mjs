@@ -19,6 +19,15 @@ const umaLinha = t => String(t ?? '').trim().split('\n').at(-1).slice(0, 300);
 
 const LIMITE = 200;
 
+// A marca de pendência vale no começo de uma linha, depois de espaço e da marcação de título, lista, citação ou
+// negrito ("## A decidir", "- A decidir:", "**A decidir:**"), sem diferenciar maiúsculas, e termina a palavra.
+// No meio da frase ela não conta: "nada a decidir" não é uma decisão pendente.
+export function temMarca(texto, marca) {
+  const literal = marca.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const prefixo = '^[ \\t]*(?:(?:#{1,6}|[-*+]|>|\\d+[.)])[ \\t]+|>)*(?:\\*\\*|__)?';
+  return new RegExp(`${prefixo}${literal}(?![\\p{L}\\p{N}])`, 'imu').test(String(texto ?? ''));
+}
+
 // Por que um ticket aberto não é candidato, ou null quando é. `daDeps` vem do `ah deps --json` ({numero, frente,
 // pendente}); `doGh`, da lista dos tickets com o rótulo de pronto (undefined quando o ticket não veio nela), com
 // `comments` só depois de lidos. `reserva` é o rótulo que o `ah open` põe no ticket reservado: o `frente` do deps
@@ -29,9 +38,8 @@ export function motivoDeFora(daDeps, doGh, { pronto, pendencia, reserva, incompl
   if (daDeps.frente) return `com frente ${daDeps.frente}`;
   if (!doGh) return incompleta ? `não está entre os ${LIMITE} prontos lidos (lista incompleta)` : `sem o rótulo ${pronto}`;
   if ((doGh.labels ?? []).some(l => l.name === reserva)) return `com o rótulo ${reserva} (frente em outra máquina?)`;
-  const tem = texto => String(texto ?? '').toLowerCase().includes(pendencia.toLowerCase());
-  if (tem(doGh.body)) return `"${pendencia}" no corpo`;
-  const comentario = (doGh.comments ?? []).find(c => tem(c.body));
+  if (temMarca(doGh.body, pendencia)) return `"${pendencia}" no corpo`;
+  const comentario = (doGh.comments ?? []).find(c => temMarca(c.body, pendencia));
   if (comentario) return `"${pendencia}" num comentário de ${comentario.author?.login ?? 'alguém'}`;
   return null;
 }

@@ -70,14 +70,14 @@ Na ordem, para cada frente entregue e conferida. Frente de outra sessão: só de
 3. **Registros.** Com a extensão `registros` ligada: `tools/ah registros guardar --frente <nome>`, que leva o diário da execução por subagentes para o ticket antes de o worktree sumir.
 4. **Prova.** Com a extensão `prova` ligada: `tools/ah prova <rótulo> --frente <nome>`, no estado reintegrado.
 5. **Merge.** `git merge --no-ff <ramo>` na base, no checkout principal. Com a prova: `tools/ah prova --confere <base>`. Código 0: a árvore é a provada, e o teste não se repete. Código 3: outra coisa entrou no meio, e o teste roda na base.
-6. **Fechamento.** `tools/ah close <nome>` no checkout principal, e o ticket fechado com o commit do merge como evidência (local enquanto a base não for publicada: diga isso no comentário). O `close` sugere enviar a base (`git push`): isso é publicar, e fica para o passo 7.
+6. **Fechamento.** A base enviada ao remoto (`git push origin <base>:<base>`, com o remoto de `git.remoto`): enviar a base faz parte do fechamento e não é publicar. Depois, `tools/ah close <nome>` no checkout principal, e só então o ticket fechado, citando o commit do merge, que já está no remoto.
 
-Resultado: a base tem o merge; os testes da base passam, com o comando e a saída anotados para o relatório; a frente saiu do quadro; o ticket está fechado com o commit.
+Resultado: a base tem o merge e está no remoto; os testes da base passam, com o comando e a saída anotados para o relatório; a frente saiu do quadro; o ticket está fechado com o commit, que qualquer um consegue abrir.
 
 ## 7. Encerrar
 
 - **PRs de fora** (de quem não usa o harness): cada lote é uma frente própria (`tools/ah open integrar-prs-<data>`), com revisão por PR e o passo 6 inteiro.
-- **Publicar** (levar a base adiante, deploy, push de ramo protegido): só com ordem explícita do humano nesta orquestração. Sem a ordem, o relatório diz o que a publicação levaria.
+- **Publicar** (levar a base para os ramos protegidos, como `stage` e `main`, ou fazer deploy): só com ordem explícita do humano nesta orquestração. Sem a ordem, o relatório diz o que a publicação levaria.
 - **Parar** quando nada mais passa no passo 2 ou o humano manda: as frentes ativas fechadas ou passadas (`tools/ah handoff <nome>`), e `tools/ah papel executor`.
 
 Resultado: o relatório, como comentário no ticket de decisões. Se passa de uma tela, também num arquivo do projeto: proponha `docs/orquestracao/<data>-<assunto>.md`, e o humano confirma. O relatório tem:

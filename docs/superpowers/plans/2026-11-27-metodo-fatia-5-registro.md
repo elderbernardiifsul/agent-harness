@@ -117,6 +117,15 @@ Ficaram, para o orquestrador decidir:
 - o `gh issue view --json comments` pode limitar os comentários por ticket (não verificado);
 - fora do julgamento do revisor: os nomes e o comportamento das ferramentas do Claude Code na tabela (`Agent` com `model`, `SendMessage` entre sessões, `ListAgents`, `ScheduleWakeup`), a confirmar no ensaio; fechar o ticket citando um commit só local, que é decisão de desenho.
 
+### Decisões do orquestrador sobre as pendências (27/11)
+
+- **Marca de pendência:** passa a casar no começo de uma linha (depois de espaço e de marcação de título, lista, citação ou negrito), sem diferenciar maiúsculas e terminando a palavra; "nada a decidir" não tira o ticket. A decisão falava em "texto exato"; ficou sem diferenciar maiúsculas, porque `a decidir:` no começo da linha tem a mesma intenção (escolha do executor).
+- **`prova --frente`:** a frente em abertura de outra sessão viva recusa como a ativa; a dona é conferida antes do teste e de novo sob a trava na gravação; a ordem trocada dos argumentos diz a certa; teste da frente passada (no `p2-opcionais`, 255c54c, trazido por merge).
+- **Teste estrutural da skill:** o orquestrador troca a lista explícita de `registros` na integração.
+- **gh do ensaio e tabela de ferramentas do Claude Code:** ficam como limites registrados.
+- **Fechamento:** o ticket só é fechado depois do envio da base (`git push origin <base>:<base>`), citando um commit que já está no remoto; enviar a base faz parte do fechamento e não é publicar. Está no passo 6 da skill.
+- **Varredura:** o registro trazia o caminho da pasta pessoal do professor no comando da rodada. A varredura não o pegou antes do commit porque só lê arquivos rastreados, e o arquivo ainda não tinha passado pelo `git add`. O commit, que não tinha sido enviado, foi refeito (a5a9c3e), com `$HOME` lido antes de o `ambiente.sh` trocá-lo. Daqui em diante, a varredura roda depois do `git add`.
+
 ## Limitações
 
 - O ensaio com agente real não rodou (acima): o texto da skill foi conferido só pelo teste estrutural e pela revisão.

@@ -58,3 +58,13 @@ test('o texto cobre o que a revisão achou: sessão entrega com handoff, subagen
   assert.match(skill, /passada ou órfã/, 'a retomada de uma orquestração parada');
   assert.match(skill, /não descarte/i, 'checkout principal sujo não se limpa por conta própria');
 });
+
+test('o fechamento envia a base antes de fechar a frente e o ticket', () => {
+  const skill = ler('SKILL.md');
+  const passo6 = skill.slice(skill.indexOf('## 6.'), skill.indexOf('## 7.'));
+  const push = passo6.indexOf('git push origin <base>:<base>');
+  assert.ok(push > 0, 'o passo 6 envia a base');
+  assert.ok(push < passo6.indexOf('tools/ah close <nome>'), 'o envio vem antes do close');
+  assert.match(passo6, /commit do merge, que já está no remoto/);
+  assert.doesNotMatch(skill, /isso é publicar/, 'enviar a base não é publicar');
+});

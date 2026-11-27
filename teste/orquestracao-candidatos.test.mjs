@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { criarProjeto } from './apoio/repo.mjs';
 import { carregarParaTeste } from '../nucleo/lib/extensoes-teste.mjs';
+import { temMarca } from '../nucleo/extensoes/orquestracao/extensao.mjs';
 
 const EXTENSAO = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'nucleo', 'extensoes', 'orquestracao', 'extensao.mjs');
 const PRONTO = 'ready-for-agent';
@@ -17,7 +18,7 @@ const ok = r => { assert.equal(r.codigo, 0, r.erro); return r; };
 const TICKETS = {
   12: { title: 'Total do carrinho', labels: [PRONTO] },
   13: { title: 'Carrinho vazio', labels: [PRONTO] },
-  14: { title: 'Frete por região', labels: [PRONTO], comments: [{ author: 'carla', body: 'Antes de começar: a decidir se o frete grátis vale para o Norte.' }] },
+  14: { title: 'Frete por região', labels: [PRONTO], comments: [{ author: 'carla', body: 'Antes de começar:\n- A decidir: o frete grátis vale para o Norte?' }] },
   15: { title: 'Cupom no checkout', labels: [PRONTO], blockedBy: [12] },
   16: { title: 'Revisão do layout', labels: [PRONTO] },
   17: { title: 'Página de ajuda' },
@@ -116,4 +117,24 @@ test('lista incompleta (mais tickets que o limite) avisa, sem motivo falso', t =
   const j = JSON.parse(ok(p.ah(['candidatos', '--json'])).saida);
   assert.equal(j.incompleta, true);
   assert.ok(!j.fora.some(f => f.motivo.startsWith('sem o rótulo')), 'nenhum pronto vira "sem o rótulo" por causa do limite');
+});
+
+test('a marca casa no começo de uma linha (com título, lista, citação ou negrito), não como trecho', () => {
+  for (const texto of ['A decidir: o frete', '## A decidir', '- A decidir: o frete', '  * a decidir', '> A decidir', '1. A decidir', '**A decidir:** o frete', 'Contexto.\nA decidir']) {
+    assert.equal(temMarca(texto, 'A decidir'), true, texto);
+  }
+  for (const texto of ['Tudo certo, nada a decidir.', 'Ficou a decidir depois', 'A decidirmos amanhã', '', null]) {
+    assert.equal(temMarca(texto, 'A decidir'), false, String(texto));
+  }
+});
+
+test('"nada a decidir" no corpo não tira o ticket; "## A decidir" tira', t => {
+  const tickets = {
+    12: { title: 'Total do carrinho', labels: [PRONTO], body: 'Tudo certo, nada a decidir.' },
+    13: { title: 'Carrinho vazio', labels: [PRONTO], body: 'Contexto.\n\n## A decidir\n\nO texto da mensagem.' },
+  };
+  const p = projeto(t, { tickets });
+  const j = JSON.parse(ok(p.ah(['candidatos', '--json'])).saida);
+  assert.deepEqual(j.candidatos.map(c => c.numero), [12]);
+  assert.deepEqual(j.fora.map(f => [f.numero, f.motivo]), [[13, '"A decidir" no corpo']]);
 });
