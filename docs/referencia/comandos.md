@@ -574,6 +574,51 @@ $ AH_SESSAO=ana-terminal tools/ah close
 Frente as-1 carrinho fechada.
 ```
 
+## modelo
+
+```
+ah modelo [alto|medio|leve] [--agente <nome>] [--json]
+```
+
+Comando da extensão `modelo`, que acompanha o harness e só existe com `"modelo"` ligada em `extensoes` (a preparação do método a liga). Traduz os três níveis neutros que o plano marca em cada tarefa (`Nível: alto|medio|leve`) para o modelo e o esforço reais de cada agente. Nunca recusa por causa de modelo: as únicas recusas são de uso do comando.
+
+- **Com nível.** Uma linha por agente (ou só o de `--agente`): `alto (claude-code): modelo opus, esforço high`, seguida de `Como usar: …`, com a opção de linha de comando ou o campo do subagente em que o par entra. Esforço `null` sai como `padrão do agente`.
+- **Sem nível.** A tabela inteira, a data dos padrões e `Critérios: docs/agents/metodo.md (nível de modelo).`
+- **`--json`.** `{"nivel"?, "padroesDe", "traducoes": [{"agente", "nivel", "modelo", "esforco", "origem", "uso"}]}`, com `origem` `padrao` ou `projeto`.
+- **Sessão.** Não exige sessão.
+- **Padrões.** Em `.harness/nucleo/extensoes/modelo/padroes.json`, com a data e as fontes (a documentação oficial de cada agente, conferida em 2026-11-27). No OpenCode, o modelo é `provedor/modelo` e o esforço é uma variante do catálogo do provedor (`--model <modelo>#<variante>`); como variante desconhecida dá erro de resolução, o padrão não fixa variante. Nomes de modelo mudam: o projeto troca os dele na configuração.
+- **Configuração.** `extensoes.modelo.agentes.<agente>.<nível>` com `modelo` (texto) e `esforco` (texto ou `null`), mesclados campo a campo sobre o padrão. Um agente que não está nos padrões pode ser acrescentado; o nível que ele não traduz sai como `sem tradução (acrescente em extensoes.modelo.agentes)`.
+
+```json
+"extensoes": { "modelo": { "agentes": { "opencode": { "leve": { "modelo": "opencode-go/claude-haiku-5-5" } } } } }
+```
+
+- **Quadro.** A coluna `MODELO` do `board` mostra o modelo que a sessão dona da frente declarou ao começar (`modelo` do registro da sessão, lido por `ctx.sessao`); hoje só o adaptador do Claude Code informa. Sem dona ou sem o dado, `—`.
+
+```
+$ tools/ah modelo
+Níveis de modelo (padrões de 2026-11-27; o projeto muda os dele em extensoes.modelo.agentes):
+  alto (claude-code): modelo opus, esforço high
+  medio (claude-code): modelo sonnet, esforço medium
+  leve (claude-code): modelo haiku, esforço low
+  alto (codex): modelo gpt-6.2-astra, esforço high
+  medio (codex): modelo gpt-6.2-sol, esforço medium
+  leve (codex): modelo gpt-6-luna, esforço low
+  alto (opencode): modelo anthropic/claude-opus-5-5, esforço padrão do agente
+  medio (opencode): modelo anthropic/claude-sonnet-5-5, esforço padrão do agente
+  leve (opencode): modelo anthropic/claude-haiku-5-5, esforço padrão do agente
+Critérios: docs/agents/metodo.md (nível de modelo).
+$ tools/ah modelo leve --agente codex
+leve (codex): modelo gpt-6-luna, esforço low
+Como usar: codex -m <modelo> -c model_reasoning_effort=<esforço>
+```
+
+| Recusa | Faça |
+|---|---|
+| `Nível desconhecido: altissimo.` | use alto, medio ou leve (tools/ah modelo mostra a tabela) |
+| `Agente desconhecido: cursor.` | use claude-code, codex ou opencode, ou acrescente o agente em extensoes.modelo.agentes |
+| `Opção desconhecida: …` / `Argumento a mais: …` / `A opção --agente precisa do nome do agente.` | use o uso acima |
+
 ## whoami
 
 ```

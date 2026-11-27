@@ -1,0 +1,29 @@
+{
+  "data": "2026-11-27",
+  "nota": "Padrões conferidos na documentação oficial de cada agente nesta data (fontes abaixo e no registro das fatias 3 e 4). Nomes de modelo mudam: o projeto troca os dele em extensoes.modelo.agentes no .harness/config.json.",
+  "fontes": {
+    "claude-code": ["https://code.claude.com/docs/en/model-config", "https://code.claude.com/docs/en/sub-agents"],
+    "codex": ["https://learn.chatgpt.com/docs/models", "https://learn.chatgpt.com/docs/config-file/config-reference", "https://learn.chatgpt.com/docs/developer-commands?surface=cli"],
+    "opencode": ["https://opencode.ai/docs/models/", "https://opencode.ai/docs/agents/", "https://opencode.ai/docs/config/"]
+  },
+  "agentes": {
+    "claude-code": {
+      "uso": "claude --model <modelo> --effort <esforço>; num subagente, os campos model e effort",
+      "alto": { "modelo": "opus", "esforco": "high" },
+      "medio": { "modelo": "sonnet", "esforco": "medium" },
+      "leve": { "modelo": "haiku", "esforco": "low" }
+    },
+    "codex": {
+      "uso": "codex -m <modelo> -c model_reasoning_effort=<esforço>",
+      "alto": { "modelo": "gpt-6.2-astra", "esforco": "high" },
+      "medio": { "modelo": "gpt-6.2-sol", "esforco": "medium" },
+      "leve": { "modelo": "gpt-6-luna", "esforco": "low" }
+    },
+    "opencode": {
+      "uso": "opencode run --model <modelo>[#<variante>]; num agente, o campo model; as variantes vêm do catálogo do provedor",
+      "alto": { "modelo": "anthropic/claude-opus-5-5", "esforco": null },
+      "medio": { "modelo": "anthropic/claude-sonnet-5-5", "esforco": null },
+      "leve": { "modelo": "anthropic/claude-haiku-5-5", "esforco": null }
+    }
+  }
+}
