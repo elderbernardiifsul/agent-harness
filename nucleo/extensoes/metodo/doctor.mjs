@@ -2,19 +2,18 @@
 // sugere e registra, quem decide é o autor do projeto.
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { PASTAS, lerColecoes } from './colecoes.mjs';
+import { PASTAS, arquivoDasColecoes, extensoesLigadas, lerColecoes } from './colecoes.mjs';
+import { skillsCitadas, skillsNoLugar } from './citadas.mjs';
+import { DOCUMENTO_DO_METODO, MODELO_DO_METODO, hashDoDocumento, lerDocumento } from './documento.mjs';
+import { trechoDe } from './trecho.mjs';
 import { pluginsDuplicados } from './plugins.mjs';
 import { ARQUIVO_TRAVA, conferir, hashesDe, lerTrava } from './trava.mjs';
 
-const DIR = path.dirname(fileURLToPath(import.meta.url));
 const DO_HARNESS = 'agent-harness';
-const eLigada = v => v === true || (v !== null && typeof v === 'object' && !Array.isArray(v));
 const curto = h => String(h).slice(0, 7);
 
 const avisoSemTrava = { estado: 'aviso', detalhe: `falta a trava ${ARQUIVO_TRAVA}`, conserto: 'rode tools/ah metodo instalar' };
 
-const arquivoDasColecoes = env => (env.AH_METODO_COLECOES ? path.resolve(env.AH_METODO_COLECOES) : path.join(DIR, 'colecoes.json'));
 const colecoesRecomendadas = env => lerColecoes(arquivoDasColecoes(env)).colecoes;
 
 // Resultado de lerTrava, ou o resultado final da conferência quando não há trava para conferir.
@@ -75,7 +74,7 @@ export const verificacoes = [
       let doHarness = null;
       try { doHarness = colecoesRecomendadas(ctx.env)[DO_HARNESS]; } catch { /* lista ilegível: a instalação já recusa e diz */ }
       if (doHarness) {
-        const ligadas = new Set(Object.entries(ctx.configDoProjeto?.extensoes ?? {}).filter(([, v]) => eLigada(v)).map(([k]) => k));
+        const ligadas = extensoesLigadas(ctx.configDoProjeto);
         const instaladas = new Set(trava.colecoes[DO_HARNESS]?.skills ?? []);
         for (const [skill, ext] of Object.entries(doHarness.extensoes)) {
           if (instaladas.has(skill) && !ligadas.has(ext)) partes.push(`a skill ${skill} está instalada, mas a extensão ${ext} desligada`);
@@ -118,7 +117,15 @@ export const verificacoes = [
       if (velhas.length) partes.push(`a cópia do núcleo traz outra versão de ${velhas.join(', ')}`);
       for (const skill of saiu) partes.push(`a skill ${skill} não faz mais parte do harness`);
       if (!partes.length) return { estado: 'ok' };
-      return { estado: 'aviso', detalhe: partes.join('; '), conserto: 'rode tools/ah metodo atualizar (as skills do harness vêm de .harness/nucleo/extensoes/metodo/skills/)' };
+      // Skill velha que também tem arquivo mudado à mão: o atualizar recusaria, e o conserto diz isso antes.
+      let aMao = false;
+      try { aMao = conferir(ctx.raiz, trava).alterados.some(({ arquivo }) => velhas.includes(arquivo.split('/')[0])); } catch { /* ilegível: o item Skills iguais à trava diz */ }
+      const conserto = 'rode tools/ah metodo atualizar (as skills do harness vêm de .harness/nucleo/extensoes/metodo/skills/)';
+      return {
+        estado: 'aviso',
+        detalhe: partes.join('; '),
+        conserto: aMao ? `se você mudou essa skill à mão, o atualizar recusa; guarde a mudança numa skill de outro nome antes (ou use --forcar para descartá-la); depois, ${conserto}` : conserto,
+      };
     },
   },
   {
@@ -181,6 +188,58 @@ export const verificacoes = [
         estado: 'aviso',
         detalhe: `o OpenCode lê mais de uma pasta e a mesma skill tem conteúdo diferente: ${repetidas.map(([n, v]) => `${n} (${v.map(x => x.pasta).join(', ')})`).join('; ')}`,
         conserto: 'deixe cópias iguais: renomeie a skill própria ou rode tools/ah metodo instalar --forcar para igualar à trava',
+      };
+    },
+  },
+  {
+    item: 'Documento do método igual à trava',
+    // O docs/agents/metodo.md mudado à mão faz a próxima instalação recusar: melhor saber antes.
+    conferir(ctx) {
+      const { trava } = travaOuResultado(ctx);
+      if (!trava) return { estado: 'ok' }; // o item Trava das skills já avisa
+      // O tipo vem antes da trava: um link nunca chega à trava, e "rode o instalar" giraria em falso.
+      const doc = lerDocumento(ctx.raiz);
+      if (doc.tipo === 'link' || doc.tipo === 'outro') return { estado: 'aviso', detalhe: `${DOCUMENTO_DO_METODO} não é um arquivo comum`, conserto: 'apague-o e rode tools/ah metodo instalar' };
+      const instalado = trava.documentos?.[DOCUMENTO_DO_METODO];
+      if (doc.tipo === 'ausente') {
+        return { estado: 'aviso', detalhe: `${DOCUMENTO_DO_METODO} ${instalado ? 'não existe' : 'ainda não foi instalado'}`, conserto: 'rode tools/ah metodo instalar' };
+      }
+      let novo = null;
+      try { novo = hashDoDocumento(fs.readFileSync(MODELO_DO_METODO)); } catch { /* cópia do harness incompleta: o item do núcleo avisa */ }
+      // Igual ao texto desta versão do harness: nada se perde, mesmo que a trava registre outro texto.
+      if (doc.hash === novo) return { estado: 'ok' };
+      if (doc.hash === instalado) {
+        return { estado: 'aviso', detalhe: `o harness trouxe um texto novo do método, e ${DOCUMENTO_DO_METODO} ainda é o anterior`, conserto: 'rode tools/ah metodo instalar' };
+      }
+      if (!instalado) return { estado: 'aviso', detalhe: `${DOCUMENTO_DO_METODO} ainda não foi instalado (o arquivo que existe não é o do método, e a instalação recusa sobrescrevê-lo)`, conserto: 'leve o que for seu para o AGENTS.md, fora das marcas, e rode tools/ah metodo instalar --forcar' };
+      return {
+        estado: 'aviso',
+        detalhe: `${DOCUMENTO_DO_METODO} foi mudado à mão; a próxima instalação recusa sobrescrevê-lo`,
+        conserto: 'leve as suas notas para o AGENTS.md, fora das marcas, e rode tools/ah metodo instalar --forcar',
+      };
+    },
+  },
+  {
+    item: 'Skills citadas no método instaladas',
+    // Texto que manda usar uma skill que o projeto não tem deixa o agente sem chão. Convenção: código inline de uma
+    // palavra minúscula é nome de skill (citadas.mjs). A skill de extensão desligada pode ser citada: falta por escolha.
+    conferir(ctx) {
+      const { trava } = travaOuResultado(ctx);
+      if (!trava) return { estado: 'ok' }; // o item Trava das skills já avisa
+      const ler = rel => { try { return fs.readFileSync(path.join(ctx.raiz, ...rel.split('/')), 'utf8'); } catch { return null; } };
+      const trecho = trechoDe(ler('AGENTS.md')) ?? '';
+      const documento = lerDocumento(ctx.raiz).tipo === 'arquivo' ? ler(DOCUMENTO_DO_METODO) ?? '' : '';
+      const permitidas = new Set([...Object.values(trava.colecoes).flatMap(c => c.skills), ...skillsNoLugar(trecho)]);
+      let doHarness = null;
+      try { doHarness = colecoesRecomendadas(ctx.env)[DO_HARNESS]; } catch { /* lista ilegível: outro item avisa */ }
+      const ligadas = extensoesLigadas(ctx.configDoProjeto);
+      for (const [skill, ext] of Object.entries(doHarness?.extensoes ?? {})) if (!ligadas.has(ext)) permitidas.add(skill);
+      const faltam = [...new Set([...skillsCitadas(documento), ...skillsCitadas(trecho)])].filter(s => !permitidas.has(s)).sort();
+      if (!faltam.length) return { estado: 'ok' };
+      return {
+        estado: 'aviso',
+        detalhe: `${faltam.length} citada(s) e fora da trava: ${faltam.slice(0, 5).join(', ')}${faltam.length > 5 ? ` e mais ${faltam.length - 5}` : ''}`,
+        conserto: 'rode tools/ah metodo instalar; se o aviso continuar, o texto cita uma skill que o método não instala',
       };
     },
   },

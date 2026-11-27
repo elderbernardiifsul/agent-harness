@@ -10,3 +10,13 @@ export const MARCA_FIM = '<!-- agent-harness/metodo: fim -->';
 export const comTrecho = (atual, trecho) => trechoEntreMarcas(atual, trecho, {
   inicio: '<!-- agent-harness/metodo: início', fim: MARCA_FIM, arquivo: 'AGENTS.md', dono: 'do método', comando: 'tools/ah metodo instalar',
 });
+
+// O trecho do método dentro de um AGENTS.md (do começo da marca de início até a marca de fim seguinte, marcas
+// incluídas), ou null sem o par.
+export function trechoDe(texto) {
+  if (typeof texto !== 'string') return null;
+  const i = texto.indexOf('<!-- agent-harness/metodo: início');
+  if (i < 0) return null;
+  const f = texto.indexOf(MARCA_FIM, i);
+  return f < 0 ? null : texto.slice(i, f + MARCA_FIM.length);
+}

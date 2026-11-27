@@ -297,7 +297,9 @@ export default {
           const daFrente = new Set(frentes.flatMap(f => [secaoDe(f).banco?.nome, nomeDoBanco(b.nome, f.nome)]));
           for (const nome of r.saida.split('\n').map(l => l.trim()).filter(Boolean)) {
             if (!doMolde.test(nome) || daFrente.has(nome) || fixos.bancos.has(nome)) continue;
-            linhas.push(`banco ${nome} sem frente; Faça: apague com o comando de extensoes.ambiente.banco.apagar ou declare em fixos.bancos`);
+            // O sweep só conhece as frentes desta máquina: com o banco num servidor compartilhado, a frente dele pode
+            // estar em outra máquina.
+            linhas.push(`banco ${nome} sem frente nesta máquina (pode ser de uma frente de outra máquina); Faça: confira se ninguém o usa e apague com o comando de extensoes.ambiente.banco.apagar, ou declare em fixos.bancos`);
           }
         }
       }
